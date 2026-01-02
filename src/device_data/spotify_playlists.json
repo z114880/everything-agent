@@ -1,0 +1,24 @@
+{
+  "playlists": [
+    {
+      "name": "Commute",
+      "tracks": ["Radiohead - Paranoid Android", "Massive Attack - Teardrop", "Portishead - Glory Box"]
+    },
+    {
+      "name": "Focus",
+      "tracks": [
+        "Boards of Canada - Roygbiv",
+        "Aphex Twin - Xtal",
+        "Burial - Archangel"
+      ]
+    },
+    {
+      "name": "Late Night",
+      "tracks": [
+        "Nine Inch Nails - Hurt",
+        "Thom Yorke - Hearing Damage",
+        "Autechre - Rae"
+      ]
+    }
+  ]
+}

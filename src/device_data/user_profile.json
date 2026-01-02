@@ -1,0 +1,127 @@
+{
+  "name": "Dan",
+  "age": 31,
+  "gender": "male",
+  "profession": "software engineer",
+  "email": "dan.clarke.dev@gmail.com",
+  "location": {
+    "home": {
+      "city": "London",
+      "country": "United Kingdom",
+      "coordinates": {
+        "latitude": 51.5074,
+        "longitude": -0.1278
+      }
+    },
+    "work": {
+      "city": "London",
+      "country": "United Kingdom",
+      "coordinates": {
+        "latitude": 51.5144,
+        "longitude": -0.0931
+      }
+    }
+  },
+  "previous_notifications": [
+    {
+      "date": "2024-05-14",
+      "time": "17:30",
+      "message": "SLACK: Sarah - tomorrow's code review moved to 11am"
+    },
+    {
+      "date": "2024-05-14",
+      "time": "20:15",
+      "message": "WhatsApp: Tom - pub quiz tomorrow at Crown & Shuttle?"
+    },
+    {
+      "date": "2024-05-15",
+      "time": "08:45",
+      "message": "CALENDAR: Team standup in 15 mins"
+    },
+    {
+      "date": "2024-05-15",
+      "time": "15:30",
+      "message": "GITHUB: PR #247 approved, ready to merge"
+    },
+    {
+      "date": "2024-05-15",
+      "time": "18:45",
+      "message": "CITYMAPPER: 12 min walk to The Ten Bells"
+    }
+  ],
+  "app_usage": {
+    "most_used_apps": [
+      {
+        "name": "Reddit",
+        "usage_time": "2h 45m"
+      },
+      {
+        "name": "Terminal",
+        "usage_time": "4h 20m"
+      },
+      {
+        "name": "Spotify",
+        "usage_time": "6h 15m"
+      },
+      {
+        "name": "Chrome",
+        "usage_time": "7h 30m"
+      },
+      {
+        "name": "Slack",
+        "usage_time": "4h 50m"
+      }
+    ],
+    "last_opened_app": "Terminal",
+    "screen_time": "12h 20m"
+  },
+  "contacts": [
+    {
+      "name": "Tom Walsh",
+      "phone": "+44 7894 123456",
+      "email": "tom.walsh@gmail.com"
+    },
+    {
+      "name": "Sarah Kim",
+      "phone": "+44 7875 234567",
+      "email": "sarah@company.com"
+    },
+    {
+      "name": "Mike Chen",
+      "phone": "+44 7833 456789",
+      "email": "mchen.runner@gmail.com"
+    }
+  ],
+  "purchases": [
+    {
+      "item": "Mechanical Keyboard (Cherry MX)",
+      "date": "2024-05-10",
+      "price": "£180",
+      "store": "Amazon"
+    },
+    {
+      "item": "USB-C Hub (because dongles)",
+      "date": "2024-05-12",
+      "price": "£45",
+      "store": "Currys"
+    },
+    {
+      "item": "Coffee (oat flat white)",
+      "date": "2024-05-14",
+      "price": "£3.20",
+      "store": "Monmouth Coffee"
+    }
+  ],
+  "fitness_data": {
+    "steps_today": 6800,
+    "last_workout": {
+      "type": "Run",
+      "distance_km": 4.2,
+      "felt": "sluggish"
+    },
+    "sleep": {
+      "last_night": "6h 20m",
+      "quality": "poor - phone notifications"
+    }
+  }
+}
