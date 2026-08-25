@@ -15,7 +15,7 @@ describe("Graph", () => {
     expect(() => new Graph("")).toThrow("图名称必须是非空字符串");
 
     const graph = new Graph("invalid-node");
-    expect(() => graph.addNode({ name: "plain-object" })).toThrow("只接受 Node 实例");
+    expect(() => graph.addNode({ name: "plain-object" } as never)).toThrow("只接受 Node 实例");
     expect(() => graph.addNode(node(START, () => ({})))).toThrow("保留名称");
 
     graph.addNode(node("same", () => ({})));
@@ -38,8 +38,8 @@ describe("Graph", () => {
 
     expect(() => graph.addRouter("missing", () => "done", { done: END }))
       .toThrow("未知路由节点");
-    expect(() => graph.addRouter("gate", null, { done: END })).toThrow("route 必须是函数");
-    expect(() => graph.addRouter("gate", () => "done", [])).toThrow("targets 必须是对象");
+    expect(() => graph.addRouter("gate", null as never, { done: END })).toThrow("route 必须是函数");
+    expect(() => graph.addRouter("gate", () => "done", [] as never)).toThrow("targets 必须是对象");
     expect(() => graph.addRouter("gate", () => "done", {})).toThrow("路由目标不能为空");
     expect(() => graph.addRouter("gate", () => "done", { done: "missing" }))
       .toThrow('未知节点 "missing"');

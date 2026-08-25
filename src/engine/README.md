@@ -10,7 +10,7 @@
 
 ## 快速开始
 
-```js
+```ts
 import { END, START, Graph, node, runGraph } from "everything-agent";
 
 const graph = new Graph("demo")
@@ -28,7 +28,7 @@ console.log(result.state.output); // 结果: 42
 
 路由是读取状态的普通代码，不由模型直接控制执行流：
 
-```js
+```ts
 graph.addRouter(
   "classify",
   (state) => state.route,
@@ -50,9 +50,9 @@ graph.addRouter(
 
 ## 事件
 
-可通过 observer 获取 `graph_start`、`node_start`、`node_end`、`route`、`graph_stalled`、`graph_end`：
+可通过 observer 获取 `graph_start`、`wave_start`、`node_start`、`node_end`、`route`、`graph_stalled`、`graph_end`。`wave_start` 包含真实的波次编号、该波并发节点和实际触发的 `activatedEdges`；未命中的条件分支不会出现在激活边中。`node_start`、`node_end` 也包含对应的 `wave`：
 
-```js
+```ts
 await runGraph(graph, initialState, {
   maxSteps: 25,
   observer(kind, event) {
@@ -69,6 +69,8 @@ await runGraph(graph, initialState, {
 npm test             # 单次运行全部 Vitest 测试
 npm run test:watch   # 开发时监听文件变化
 npm run test:coverage
+npm run typecheck    # 严格检查源码、测试和示例
+npm run build        # 生成 ESM 和 .d.ts 到 dist/
 npm run example
 ```
 

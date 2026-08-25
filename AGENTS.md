@@ -20,8 +20,8 @@
 
 ## 当前状态
 
-- `engine/` 是当前 Node.js 基础引擎，实现了 State、Node、Graph、Describe 和 runGraph。
-- LLM、Tool Registry、Session、Memory 和可视化 UI 尚未完成。
+- `src/engine/` 是当前 Node.js 基础引擎，实现了 State、Node、Graph、Describe 和 runGraph。
+- `src/loop/` 已实现基础 Agent Loop；真实 LLM 客户端、Tool Registry、Session、Memory 和可视化 UI 尚未完成。
 - 文档必须明确区分已经实现的能力和规划能力，不得把路线图描述成现成功能。
 
 ## 架构约束
@@ -54,21 +54,24 @@
 
 ## 目录与模块规则
 
-- `engine/src/state.js`：状态容器、合并规则和状态冲突。
-- `engine/src/node.js`：节点接口及节点元数据。
-- `engine/src/graph.js`：拓扑声明和 describe。
-- `engine/src/run-graph.js`：调度、并发、路由、错误和生命周期事件。
-- `engine/src/index.js`：包的公开接口。
-- `engine/test/`：只通过公开接口验证可观察行为。
+- `src/engine/src/state.ts`：状态容器、合并规则和状态冲突。
+- `src/engine/src/node.ts`：节点接口及节点元数据。
+- `src/engine/src/graph.ts`：拓扑声明和 describe。
+- `src/engine/src/run-graph.ts`：调度、并发、路由、错误和生命周期事件。
+- `src/engine/src/index.ts`：Engine 的公开接口。
+- `src/engine/test/`：只通过公开接口验证可观察行为。
+- `src/loop/agent-loop.ts`：模型与工具无关的 Agent 回合循环。
+- `src/index.ts`：包的统一公开接口。
 
 新增模块时应保持接口小而稳定，把调度或集成复杂度封装在模块内部。除非确实存在两个实现，不要提前增加抽象层或适配器接口。
 
 ## 编码规范
 
-- 当前 Engine 使用 Node.js 20+、ESM 和原生 JavaScript。
+- 当前 Engine 使用 Node.js 20+、ESM 和严格模式 TypeScript。
 - 保持零运行时依赖；测试和开发工具可以作为 `devDependencies`。
 - 公共类和函数需要简洁的中文 JSDoc，解释接口约定和重要错误模式。
 - 注释解释设计原因、执行语义或容易误解的约束，不逐行复述代码。
+- 修改现有代码时尽量保留有价值的注释；只有在注释已过时、与实现冲突或明显冗余时才删除，并在行为变更后同步更新相关注释。
 - 优先使用明确的数据结构和返回值，避免隐式全局状态。
 - 不吞掉异常。要么抛出调用方可处理的错误，要么记录到运行状态并发送事件。
 - 不提交密钥、`.env`、个人数据、模型原始敏感输入、`node_modules` 或覆盖率产物。
@@ -76,8 +79,8 @@
 
 ## 测试要求
 
-- 测试框架使用 Vitest，配置位于根目录 `vitest.config.js`。
-- 测试 seam 是 `engine/src/index.js` 导出的公开接口，不测试私有字段或内部辅助实现。
+- 测试框架使用 Vitest，配置位于根目录 `vitest.config.ts`。
+- 测试 seam 是 `src/index.ts` 或对应模块公开入口导出的接口，不测试私有字段或内部辅助实现。
 - 每个行为变更都需要测试；修复缺陷时先添加能够复现问题的失败测试。
 - 并发测试不能依赖不稳定的固定延时，应使用可控 Promise、fake timer 或明确同步点。
 - 新增 observer 事件时，测试事件名称、关键字段和相对顺序。
@@ -88,6 +91,8 @@
 
 ```bash
 npm install
+npm run typecheck
+npm run build
 npm test
 npm run test:coverage
 npm run example
@@ -96,7 +101,8 @@ npm run example
 ## 文档要求
 
 - 根目录 `README.md` 描述项目目标、总体架构、当前进度和路线图。
-- `engine/README.md` 描述 Engine 的公开接口、执行语义和示例。
+- `src/engine/README.md` 描述 Engine 的公开接口、执行语义和示例。
+- `src/loop/README.md` 描述 Agent Loop 的依赖接口、执行语义和事件。
 - 行为、事件或命令发生变化时，在同一个任务内同步更新相关文档。
 - Mermaid 或架构图必须从真实模块关系出发，并明确标记尚未实现的部分。
 

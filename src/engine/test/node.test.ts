@@ -13,7 +13,7 @@ describe("Node", () => {
       maxVisits: 1,
       onError: null,
     });
-    await expect(value.run({ input: 1 }, {})).resolves.toEqual({ output: 2 });
+    await expect(value.run({ input: 1 }, {} as never)).resolves.toEqual({ output: 2 });
   });
 
   it("支持异步 handler，并将空返回值转换为空增量", async () => {
@@ -23,14 +23,14 @@ describe("Node", () => {
       onError: "recover",
     });
 
-    await expect(value.run({}, {})).resolves.toEqual({});
+    await expect(value.run({}, {} as never)).resolves.toEqual({});
     expect(value).toMatchObject({ kind: "tool", maxVisits: 2, onError: "recover" });
   });
 
   it.each([
     ["空名称", () => node("", () => ({})), "节点名称必须是非空字符串"],
-    ["非函数 handler", () => node("bad", null), "handler 必须是函数"],
-    ["未知 kind", () => node("bad", () => ({}), { kind: "network" }), "kind 不受支持"],
+    ["非函数 handler", () => node("bad", null as never), "handler 必须是函数"],
+    ["未知 kind", () => node("bad", () => ({}), { kind: "network" as never }), "kind 不受支持"],
     ["非正数 maxVisits", () => node("bad", () => ({}), { maxVisits: 0 }), "maxVisits 必须是正整数"],
   ])("拒绝%s", (_case, create, message) => {
     expect(create).toThrow(message);

@@ -1,4 +1,38 @@
 import { Node } from "./node.js";
+import type { AnyState, StateRecord } from "./state.js";
+
+type RouteFunction<TState extends StateRecord> = (
+  state: Readonly<TState>,
+) => string | Promise<string>;
+
+interface Edge {
+  source: string;
+  target: string;
+}
+
+interface Router<TState extends StateRecord> {
+  route: RouteFunction<TState>;
+  targets: Record<string, string>;
+}
+
+/** `describe` 输出中的节点元数据。 */
+export interface GraphNodeDescription {
+  name: string;
+  kind: Node["kind"];
+  maxVisits: number;
+}
+
+/** `describe` 输出中的普通边或条件边。 */
+export interface GraphEdgeDescription extends Edge {
+  conditional: boolean;
+}
+
+/** 可序列化的静态 Graph 拓扑。 */
+export interface GraphDescription {
+  name: string;
+  nodes: GraphNodeDescription[];
+  edges: GraphEdgeDescription[];
+}
 
 export const START = "START";
 export const END = "END";
@@ -7,19 +41,20 @@ export const END = "END";
  * Graph 只负责声明拓扑；实际调度完全封装在 runGraph 中。
  * Map 保留节点声明顺序，这个顺序也会成为波次合并与 path 记录的稳定顺序。
  */
-export class Graph {
-  #nodes = new Map();
-  #edges = [];
-  #routers = new Map();
+export class Graph<TState extends StateRecord = AnyState> {
+  #nodes = new Map<string, Node<TState>>();
+  #edges: Edge[] = [];
+  #routers = new Map<string, Router<TState>>();
+  readonly name: string;
 
-  constructor(name) {
+  constructor(name: string) {
     if (!name || typeof name !== "string") {
       throw new TypeError("图名称必须是非空字符串");
     }
     this.name = name;
   }
 
-  addNode(value) {
+  addNode(value: Node<TState>): this {
     if (!(value instanceof Node)) {
       throw new TypeError("addNode 只接受 Node 实例");
     }
@@ -34,7 +69,7 @@ export class Graph {
     return this;
   }
 
-  addEdge(source, target) {
+  addEdge(source: string, target: string): this {
     // 拓扑错误在建图阶段暴露，避免工作流运行到一半才发现目标不存在。
     this.#assertEndpoint(source, true);
     this.#assertEndpoint(target, false);
@@ -49,7 +84,11 @@ export class Graph {
     return this;
   }
 
-  addRouter(source, route, targets) {
+  addRouter(
+    source: string,
+    route: RouteFunction<TState>,
+    targets: Record<string, string>,
+  ): this {
     if (!this.#nodes.has(source)) {
       throw new Error(`未知路由节点 "${source}"`);
     }
@@ -75,36 +114,36 @@ export class Graph {
     return this;
   }
 
-  describe() {
+  describe(): GraphDescription {
     return describe(this);
   }
 
   // 以下读取方法只服务于引擎实现，不向调用方暴露可变集合。
-  getNode(name) {
+  getNode(name: string): Node<TState> | undefined {
     return this.#nodes.get(name);
   }
 
-  nodeEntries() {
+  nodeEntries(): [string, Node<TState>][] {
     return [...this.#nodes.entries()];
   }
 
-  edges() {
+  edges(): Edge[] {
     return this.#edges.map((edge) => ({ ...edge }));
   }
 
-  routerFor(name) {
+  routerFor(name: string): Router<TState> | undefined {
     const router = this.#routers.get(name);
     return router ? { route: router.route, targets: { ...router.targets } } : undefined;
   }
 
-  routerEntries() {
+  routerEntries(): [string, Router<TState>][] {
     return [...this.#routers.entries()].map(([source, router]) => [
       source,
       { route: router.route, targets: { ...router.targets } },
     ]);
   }
 
-  #assertEndpoint(name, allowStart) {
+  #assertEndpoint(name: string, allowStart: boolean): void {
     if (this.#nodes.has(name) || name === END || (allowStart && name === START)) return;
     throw new Error(`未知节点 "${name}"`);
   }
@@ -113,7 +152,7 @@ export class Graph {
 /**
  * 将实际拓扑转换为可序列化数据，供日志、调试器或 UI 使用。
  */
-export function describe(graph) {
+export function describe<TState extends StateRecord>(graph: Graph<TState>): GraphDescription {
   // 普通边与条件边使用同一数据结构，UI 无需理解路由函数本身。
   const edges = graph.edges().map(({ source, target }) => ({
     source,

@@ -3,9 +3,25 @@
  * 返回增量，再由引擎在波次结束时统一合并。这样并发执行仍然具有确定性。
  */
 
+/** 引擎状态与节点增量使用的基础对象类型。 */
+export type StateRecord = Record<string, unknown>;
+
+/** 未显式声明状态结构时使用的兼容类型；业务代码应优先传入具体接口。 */
+export type AnyState = Record<string, any>;
+
+/** 单个节点在一个波次中产生的状态增量。 */
+export interface StateWrite {
+  node: string;
+  update: StateRecord;
+}
+
 /** 同一波次的并行节点写入了相同状态键。 */
 export class StateCollisionError extends Error {
-  constructor(key, firstNode, secondNode) {
+  readonly key: string;
+  readonly firstNode: string;
+  readonly secondNode: string;
+
+  constructor(key: string, firstNode: string, secondNode: string) {
     super(`节点 "${firstNode}" 与 "${secondNode}" 在同一波次写入了状态键 "${key}"`);
     this.name = "StateCollisionError";
     this.key = key;
@@ -18,10 +34,10 @@ export class StateCollisionError extends Error {
  * 创建一次引擎运行所持有的状态容器。
  * 节点只能拿到快照，写入必须通过 mergeWave 统一合并。
  */
-export class State {
-  #value;
+export class State<TState extends StateRecord = AnyState> {
+  #value: StateRecord;
 
-  constructor(initialValue = {}) {
+  constructor(initialValue: TState = {} as TState) {
     if (!isRecord(initialValue)) {
       throw new TypeError("初始状态必须是普通对象");
     }
@@ -29,21 +45,21 @@ export class State {
     this.#value = { ...initialValue };
   }
 
-  snapshot() {
+  snapshot(): Readonly<TState> {
     // 首版只复制顶层对象，约定节点把状态视为只读数据，不原地修改嵌套值。
-    return { ...this.#value };
+    return { ...this.#value } as TState;
   }
 
-  value() {
+  value(): TState {
     // 不泄露内部对象引用，调用方修改返回结果不会覆盖容器的顶层状态。
-    return { ...this.#value };
+    return { ...this.#value } as TState;
   }
 
   /**
    * 按节点声明顺序合并一个波次的结果，保证输出和并发完成顺序无关。
    */
-  mergeWave(writes) {
-    const owners = new Map();
+  mergeWave(writes: readonly StateWrite[]): void {
+    const owners = new Map<string, string>();
 
     for (const { node, update } of writes) {
       if (!isRecord(update)) {
@@ -65,7 +81,7 @@ export class State {
     }
   }
 
-  recordError(source, error) {
+  recordError(source: string, error: unknown): void {
     // errors 是引擎保留键；旧值不合法时直接归一化，保证最终结果可序列化。
     const current = isRecord(this.#value.errors) ? this.#value.errors : {};
     this.#value.errors = {
@@ -75,7 +91,7 @@ export class State {
   }
 }
 
-export function isRecord(value) {
+export function isRecord(value: unknown): value is StateRecord {
   // 数组虽然 typeof 为 object，但不能表达按名称合并的状态增量。
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }

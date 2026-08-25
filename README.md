@@ -1,8 +1,18 @@
 # Everything Agent
 
+## Graph 可视化前端
+
+仓库已包含一个 React + Tailwind 的本地 Graph 控制台。页面会枚举 `src/engine/workflows/` 下的 TypeScript 文件，可通过下拉框选择、编辑和执行任一工作流。拓扑来自真实 `Graph.describe()`，执行由本地 Node.js 进程调用 `runGraph()`，observer 事件会流式传回浏览器，用于展示节点状态、真实并发波次与最终结果。
+
+```bash
+npm run dev:web
+```
+
+`npm run dev:web` 同时启动页面与本地 Engine 桥接接口；浏览器不会执行工作流源码。编辑器保存会修改上述本地工作流文件，当前工作流只使用内存中的模拟数据，不会产生外部写操作。`npm run build:web` 可验证并构建浏览器静态资源到 `dist-web/`，但执行工作流仍需要本地开发服务器。当前尚未连接真实模型、工具注册表或持久化服务。
+
 Everything Agent 的目标是构建一个真正可长期使用的个人助理 Agent：它能够理解用户意图、调用工具完成任务、保留必要的个人记忆，并以可视化方式展示每一次执行过程。
 
-项目当前处于基础引擎阶段。已经完成可运行的 Graph Engine；模型接入、工具系统、记忆、会话运行时和可视化界面仍在后续规划中。
+项目当前已完成 Graph Engine 和基础 Agent Loop。真实模型客户端、工具注册表、记忆、会话管理和可视化界面仍在后续规划中。
 
 ## 项目目标
 
@@ -22,11 +32,12 @@ Everything Agent 的目标是构建一个真正可长期使用的个人助理 Ag
 | Graph | 已完成 | 支持普通边、条件路由和并行汇合 |
 | Describe | 已完成 | 从真实 Graph 生成可序列化拓扑 |
 | Graph 执行器 | 已完成 | `runGraph` 支持波次并发、条件汇合、停滞检测、错误收敛和循环保护 |
-| 执行事件 | 基础能力完成 | observer 可接收生命周期及节点自定义事件 |
-| Agent 执行过程 | 规划中 | 模型推理、工具调用、观察结果、继续推理 |
+| 执行事件 | 基础能力完成 | observer 可接收生命周期、真实波次及节点自定义事件 |
+| Agent Loop | 基础能力完成 | 支持模型推理、工具调用、结果观察、流式文本、迭代限制、超时和取消 |
 | Tool Registry | 规划中 | 工具注册、参数校验、权限与执行结果 |
 | Session / Memory | 规划中 | 会话状态、短期记忆与长期个人记忆 |
-| 可视化界面 | 规划中 | 图拓扑、实时执行轨迹、状态和工具调用面板 |
+| Graph 前端 | 本地闭环完成 | 浏览器读写本地 TypeScript 工作流，消费真实 describe 与 observer 事件，并展示波次、耗时和结果 |
+| 完整可视化界面 | 进行中 | 状态差异、事件回放、脱敏和工具调用详情仍待补充 |
 
 ## 总体架构
 
@@ -34,10 +45,12 @@ Everything Agent 的目标是构建一个真正可长期使用的个人助理 Ag
 flowchart LR
     U[用户] --> C[会话入口]
     C --> R[Agent Runtime]
+    R --> L[Agent Loop]
     R --> G[Graph Engine]
-    G --> M[模型]
-    G --> T[工具系统]
-    G --> ME[记忆系统]
+    L --> M[模型客户端]
+    L --> T[工具注册表]
+    R --> ME[记忆系统]
+    L --> E[执行事件流]
     G --> E[执行事件流]
     G --> D[Graph.describe]
     E --> V[可视化界面]
@@ -53,7 +66,7 @@ flowchart LR
 
 ## 可视化执行过程
 
-计划中的执行界面至少包含四个区域：
+当前 Graph 前端已经实现代码编辑、Graph 画布、波次运行卡片和最终结果。完整执行界面还将补充以下能力：
 
 1. **Graph 画布**：展示节点、普通边、条件边和当前执行位置。
 2. **运行时间线**：按顺序展示节点开始、结束、路由选择和错误。
@@ -65,6 +78,7 @@ flowchart LR
 | 事件 | 用途 |
 | --- | --- |
 | `graph_start` | 初始化一次 Graph 运行及其节点列表 |
+| `wave_start` | 给出真实波次编号、并发节点及实际激活的入边 |
 | `node_start` | 将节点标记为运行中 |
 | `node_end` | 展示耗时、写入键和异常 |
 | `route` | 高亮实际选择的条件边 |
@@ -72,7 +86,7 @@ flowchart LR
 | `graph_end` | 展示最终路径、步数和首个错误 |
 | 自定义事件 | 展示工具调用、模型输出进度等节点内部过程 |
 
-后续会在不破坏现有事件的前提下，为每次运行和事件增加稳定 ID、时间戳、波次编号及脱敏后的状态增量。
+后续会在不破坏现有事件的前提下，为每次运行和事件增加稳定 ID、时间戳及脱敏后的状态增量。波次编号已经由 `wave_start`、`node_start` 和 `node_end` 提供。
 
 ## 目录结构
 
@@ -81,11 +95,18 @@ everything-agent/
 ├── AGENTS.md          # 编码 Agent 的项目约束和开发规则
 ├── README.md          # 项目目标、架构和路线图
 ├── package.json       # 根目录统一管理脚本和开发依赖
-├── vitest.config.js   # Engine 测试与覆盖率配置
-├── engine/            # 当前已实现的 Node.js Graph Engine
-│   ├── src/           # State、Node、Graph、Describe、runGraph
-│   ├── test/          # Vitest 行为测试
-│   └── examples/      # 最小运行示例
+├── tsconfig.json      # TypeScript 严格类型检查配置
+├── tsconfig.build.json # 生产构建与声明文件配置
+├── vitest.config.ts   # Engine 测试与覆盖率配置
+├── src/
+│   ├── index.ts       # 包公开入口
+│   ├── engine/        # Node.js Graph Engine
+│   │   ├── src/       # State、Node、Graph、Describe、runGraph
+│   │   ├── test/      # Vitest 行为测试
+│   │   ├── examples/  # 命令行使用示例
+│   │   └── workflows/ # 可由本地控制台编辑、执行的真实工作流
+│   └── loop/          # observe → reason → act → repeat Agent Loop
+└── web/               # 本地 Graph 控制台及 Vite Engine 桥接接口
 ```
 
 ## 快速开始
@@ -94,13 +115,14 @@ everything-agent/
 
 ```bash
 npm install
+npm run typecheck
 npm test
 npm run example
 ```
 
 最小工作流：
 
-```js
+```ts
 import { END, START, Graph, node, runGraph } from "everything-agent";
 
 const graph = new Graph("assistant-demo")
@@ -126,7 +148,7 @@ console.log(events);
 console.log(result.state.reply);
 ```
 
-完整的引擎接口和执行语义请查看 [engine/README.md](./engine/README.md)。
+完整的引擎接口和执行语义请查看 [Engine 文档](./src/engine/README.md)，Agent 回合接口请查看 [Agent Loop 文档](./src/loop/README.md)。
 
 ## 设计原则
 
@@ -152,10 +174,11 @@ console.log(result.state.reply);
 
 ### 阶段二：Agent Runtime
 
-- 消息与模型响应的统一数据结构
-- `observe → reason → act → repeat` Agent 执行过程
+- `observe → reason → act → repeat` Agent 执行过程（基础能力已完成）
+- 迭代限制、超时、取消和运行事件（基础能力已完成）
+- 消息与模型响应的统一数据结构（当前暂用 Anthropic Messages 形状）
 - Tool Registry、工具参数校验和执行策略
-- 会话级取消、超时和中断
+- 会话管理及跨回合中断
 
 ### 阶段三：可观测性与可视化
 
@@ -178,13 +201,16 @@ console.log(result.state.reply);
 npm test
 npm run test:watch
 npm run test:coverage
+npm run typecheck
+npm run build
 ```
 
 当前测试通过公开接口验证行为，不依赖私有实现。覆盖率门槛为：行、函数和语句 90%，分支 85%。
+`npm run build` 会把可供 Node.js 20 加载的 ESM 与类型声明输出到忽略提交的 `dist/`。
 
 ## 当前边界
 
-- 当前仓库只有基础 Graph Engine，不包含可直接对话的完整 Agent。
+- 当前仓库包含 Graph Engine 和依赖注入式 Agent Loop，但还没有真实模型客户端、Tool Registry 或可直接对话的完整应用。
 - 当前 observer 是进程内回调，还不是网络事件流或持久化追踪系统。
 - `State.snapshot()` 是顶层复制；节点应把收到的状态视为只读对象。
 - 当前没有内置鉴权、密钥管理或个人数据加密能力。

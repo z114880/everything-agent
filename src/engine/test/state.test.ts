@@ -9,7 +9,7 @@ describe("State", () => {
 
     initial.count = 2;
     const snapshot = state.snapshot();
-    snapshot.count = 3;
+    (snapshot as { count: number }).count = 3;
 
     expect(state.value()).toEqual({ count: 1 });
   });
@@ -35,9 +35,9 @@ describe("State", () => {
   });
 
   it("拒绝非对象初始状态和节点增量", () => {
-    expect(() => new State([])).toThrow("初始状态必须是普通对象");
+    expect(() => new State([] as never)).toThrow("初始状态必须是普通对象");
     expect(() => new State().mergeWave([
-      { node: "invalid", update: null },
+      { node: "invalid", update: null as never },
     ])).toThrow('节点 "invalid" 必须返回普通对象');
   });
 

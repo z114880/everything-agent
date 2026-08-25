@@ -13,7 +13,7 @@ import {
 describe("runGraph", () => {
   it("作为唯一的 Graph 执行入口公开", () => {
     expect(engine.runGraph).toBeTypeOf("function");
-    expect(engine).not.toHaveProperty("loop");
+    expect(engine).not.toHaveProperty("runAgentLoop");
   });
 
   it("顺序执行节点并合并状态", async () => {
@@ -35,9 +35,9 @@ describe("runGraph", () => {
   });
 
   it("同一波次并发执行，并在所有依赖完成后汇合", async () => {
-    let releaseSlow;
-    const slowGate = new Promise((resolve) => { releaseSlow = resolve; });
-    const started = [];
+    let releaseSlow!: () => void;
+    const slowGate = new Promise<void>((resolve) => { releaseSlow = resolve; });
+    const started: string[] = [];
 
     const graph = new Graph("parallel")
       .addNode(node("slow", async (state) => {
@@ -103,6 +103,36 @@ describe("runGraph", () => {
     expect(result.status).toBe("completed");
   });
 
+  it("wave_start 只报告本波次实际激活的入边", async () => {
+    const activatedEdges: unknown[] = [];
+    const graph = new Graph("observable-branch-join")
+      .addNode(node("classify", () => ({ route: "normal" })))
+      .addNode(node("context", () => ({ context: true })))
+      .addNode(node("urgent", () => ({ advice: "urgent" })))
+      .addNode(node("normal", () => ({ advice: "normal" })))
+      .addNode(node("reply", (state) => ({ reply: `${state.context}:${state.advice}` })))
+      .addEdge(START, "classify")
+      .addEdge(START, "context")
+      .addRouter("classify", (state) => state.route, { urgent: "urgent", normal: "normal" })
+      .addEdge("urgent", "reply")
+      .addEdge("normal", "reply")
+      .addEdge("context", "reply")
+      .addEdge("reply", END);
+
+    await runGraph(graph, {}, {
+      observer(kind, event) {
+        if (kind === "wave_start" && event.wave === 3) {
+          activatedEdges.push(event.activatedEdges);
+        }
+      },
+    });
+
+    expect(activatedEdges).toEqual([[
+      { source: "normal", target: "reply", conditional: false },
+      { source: "context", target: "reply", conditional: false },
+    ]]);
+  });
+
   it("并行上游失败时不会把失败分支当作跳过并运行汇合节点", async () => {
     const graph = new Graph("failed-join")
       .addNode(node("broken", () => { throw new Error("boom"); }))
@@ -140,6 +170,7 @@ describe("runGraph", () => {
     expect(result.error).toContain("运行停滞");
     expect(observer.mock.calls.map(([kind]) => kind)).toEqual([
       "graph_start",
+      "wave_start",
       "node_start",
       "node_end",
       "graph_stalled",
@@ -210,14 +241,14 @@ describe("runGraph", () => {
 
   it("拒绝节点返回非对象增量", async () => {
     const graph = new Graph("invalid-update")
-      .addNode(node("invalid", () => []))
+      .addNode(node("invalid", () => [] as never))
       .addEdge(START, "invalid");
 
     await expect(runGraph(graph)).rejects.toThrow("必须返回普通对象");
   });
 
   it("maxSteps 和 maxVisits 分别限制全局步数与节点访问次数", async () => {
-    const createCycle = (maxVisits) => new Graph("bounded")
+    const createCycle = (maxVisits: number) => new Graph("bounded")
       .addNode(node("again", (state) => ({ count: (state.count ?? 0) + 1 }), { maxVisits }))
       .addEdge(START, "again")
       .addRouter("again", () => "again", { again: "again" });
@@ -245,6 +276,7 @@ describe("runGraph", () => {
 
     expect(observer.mock.calls.map(([kind]) => kind)).toEqual([
       "graph_start",
+      "wave_start",
       "node_start",
       "progress",
       "node_end",
@@ -255,6 +287,18 @@ describe("runGraph", () => {
       graph: "events",
       nodes: ["work"],
     });
+    expect(observer).toHaveBeenCalledWith("wave_start", {
+      graph: "events",
+      wave: 1,
+      nodes: ["work"],
+      activatedEdges: [
+        { source: START, target: "work", conditional: false },
+      ],
+    });
+    expect(observer).toHaveBeenCalledWith("node_start", expect.objectContaining({
+      node: "work",
+      wave: 1,
+    }));
     expect(observer).toHaveBeenCalledWith("graph_end", expect.objectContaining({
       graph: "events",
       steps: 1,
@@ -272,7 +316,7 @@ describe("runGraph", () => {
     });
     await expect(runGraph(new Graph("bad-steps"), {}, { maxSteps: 0 }))
       .rejects.toThrow("maxSteps 必须是正整数");
-    await expect(runGraph(new Graph("bad-observer"), {}, { observer: true }))
+    await expect(runGraph(new Graph("bad-observer"), {}, { observer: true as never }))
       .rejects.toThrow("observer 必须是函数");
   });
 });

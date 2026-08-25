@@ -3,4 +3,6 @@
 .env.*
 node_modules/
 coverage/
+dist/
+dist-web/
 *.tgz
