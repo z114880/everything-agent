@@ -7,7 +7,7 @@ import { isRecord, State } from "./state.js";
  * 一个波次包含当前所有就绪节点。波次内并发、波次间串行，使执行既能利用
  * 独立分支的并发，又能让状态合并、事件和 path 保持可复现的顺序。
  */
-export async function loop(graph, initialState = {}, options = {}) {
+export async function runGraph(graph, initialState = {}, options = {}) {
   const state = new State(initialState);
   const maxSteps = options.maxSteps ?? 25;
   const observer = options.observer ?? (() => {});
@@ -70,7 +70,10 @@ export async function loop(graph, initialState = {}, options = {}) {
     return wave;
   };
 
-  await notify("loop_start", { graph: graph.name, nodes: graph.nodeEntries().map(([name]) => name) });
+  await notify("graph_start", {
+    graph: graph.name,
+    nodes: graph.nodeEntries().map(([name]) => name),
+  });
   let wave = nextWave();
 
   while (wave.length > 0) {
@@ -177,7 +180,7 @@ export async function loop(graph, initialState = {}, options = {}) {
   const firstError = isRecord(finalState.errors)
     ? Object.values(finalState.errors)[0] ?? null
     : null;
-  await notify("loop_end", {
+  await notify("graph_end", {
     graph: graph.name,
     ms: Math.round(performance.now() - startedAt),
     steps: path.length,
@@ -192,5 +195,3 @@ export async function loop(graph, initialState = {}, options = {}) {
     error: firstError,
   };
 }
-
-export const runGraph = loop;

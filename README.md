@@ -21,9 +21,9 @@ Everything Agent 的目标是构建一个真正可长期使用的个人助理 Ag
 | Node | 已完成 | 支持同步和异步执行函数 |
 | Graph | 已完成 | 支持普通边、条件路由和并行汇合 |
 | Describe | 已完成 | 从真实 Graph 生成可序列化拓扑 |
-| Loop | 已完成 | 支持波次并发、错误收敛和循环保护 |
+| Graph 执行器 | 已完成 | `runGraph` 支持波次并发、错误收敛和循环保护 |
 | 执行事件 | 基础能力完成 | observer 可接收生命周期及节点自定义事件 |
-| Agent Loop | 规划中 | 模型推理、工具调用、观察结果、继续推理 |
+| Agent 执行过程 | 规划中 | 模型推理、工具调用、观察结果、继续推理 |
 | Tool Registry | 规划中 | 工具注册、参数校验、权限与执行结果 |
 | Session / Memory | 规划中 | 会话状态、短期记忆与长期个人记忆 |
 | 可视化界面 | 规划中 | 图拓扑、实时执行轨迹、状态和工具调用面板 |
@@ -34,7 +34,7 @@ Everything Agent 的目标是构建一个真正可长期使用的个人助理 Ag
 flowchart LR
     U[用户] --> C[会话入口]
     C --> R[Agent Runtime]
-    R --> G[Graph + Loop Engine]
+    R --> G[Graph Engine]
     G --> M[模型]
     G --> T[工具系统]
     G --> ME[记忆系统]
@@ -48,7 +48,7 @@ flowchart LR
 其中：
 
 - `Graph.describe()` 提供静态拓扑，是可视化节点和边的唯一事实来源。
-- `loop(..., { observer })` 提供动态事件，是节点状态、路径、耗时和错误的事实来源。
+- `runGraph(..., { observer })` 提供动态事件，是节点状态、路径、耗时和错误的事实来源。
 - 可视化层只消费拓扑与事件，不复制一套工作流定义，避免界面和实际执行逻辑漂移。
 
 ## 可视化执行过程
@@ -64,11 +64,11 @@ flowchart LR
 
 | 事件 | 用途 |
 | --- | --- |
-| `loop_start` | 初始化一次运行及其节点列表 |
+| `graph_start` | 初始化一次 Graph 运行及其节点列表 |
 | `node_start` | 将节点标记为运行中 |
 | `node_end` | 展示耗时、写入键和异常 |
 | `route` | 高亮实际选择的条件边 |
-| `loop_end` | 展示最终路径、步数和首个错误 |
+| `graph_end` | 展示最终路径、步数和首个错误 |
 | 自定义事件 | 展示工具调用、模型输出进度等节点内部过程 |
 
 后续会在不破坏现有事件的前提下，为每次运行和事件增加稳定 ID、时间戳、波次编号及脱敏后的状态增量。
@@ -82,7 +82,7 @@ everything-agent/
 ├── package.json       # 根目录统一管理脚本和开发依赖
 ├── vitest.config.js   # Engine 测试与覆盖率配置
 ├── engine/            # 当前已实现的 Node.js Graph Engine
-│   ├── src/           # State、Node、Graph、Describe、Loop
+│   ├── src/           # State、Node、Graph、Describe、runGraph
 │   ├── test/          # Vitest 行为测试
 │   └── examples/      # 最小运行示例
 ```
@@ -100,7 +100,7 @@ npm run example
 最小工作流：
 
 ```js
-import { END, START, Graph, loop, node } from "everything-agent";
+import { END, START, Graph, node, runGraph } from "everything-agent";
 
 const graph = new Graph("assistant-demo")
   .addNode(node("understand", (state) => ({
@@ -114,7 +114,7 @@ const graph = new Graph("assistant-demo")
   .addEdge("reply", END);
 
 const events = [];
-const result = await loop(graph, { message: "今天天气怎么样？" }, {
+const result = await runGraph(graph, { message: "今天天气怎么样？" }, {
   observer(kind, event) {
     events.push({ kind, event });
   },
@@ -142,7 +142,7 @@ console.log(result.state.reply);
 
 ### 阶段一：基础引擎（已完成）
 
-- State、Node、Graph、Describe、Loop
+- State、Node、Graph、Describe、runGraph
 - 条件路由与并行汇合
 - 错误恢复与循环保护
 - Vitest 测试和覆盖率门槛
@@ -150,7 +150,7 @@ console.log(result.state.reply);
 ### 阶段二：Agent Runtime
 
 - 消息与模型响应的统一数据结构
-- `observe → reason → act → repeat` Agent Loop
+- `observe → reason → act → repeat` Agent 执行过程
 - Tool Registry、工具参数校验和执行策略
 - 会话级取消、超时和中断
 

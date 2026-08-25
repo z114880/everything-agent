@@ -20,7 +20,7 @@
 
 ## 当前状态
 
-- `engine/` 是当前 Node.js 基础引擎，实现了 State、Node、Graph、Describe 和 Loop。
+- `engine/` 是当前 Node.js 基础引擎，实现了 State、Node、Graph、Describe 和 runGraph。
 - LLM、Tool Registry、Session、Memory 和可视化 UI 尚未完成。
 - 文档必须明确区分已经实现的能力和规划能力，不得把路线图描述成现成功能。
 
@@ -39,7 +39,7 @@
 ### 可视化与可观测性
 
 - `Graph.describe()` 是静态拓扑的唯一事实来源。不要在前端手工复制节点和边。
-- `loop` 的 observer 事件是动态执行过程的事实来源。UI 不应通过猜测最终状态还原执行路径。
+- `runGraph` 的 observer 事件是动态执行过程的事实来源。UI 不应通过猜测最终状态还原执行路径。
 - 新增执行能力时，需要同步考虑它应产生哪些事件，以及事件如何被回放和展示。
 - 事件字段应可序列化并保持向后兼容；新增字段优于改变现有字段含义。
 - 事件和状态展示必须支持敏感字段脱敏，禁止默认记录密钥、令牌或完整私人内容。
@@ -47,7 +47,7 @@
 
 ### Agent Runtime
 
-- Agent Loop 遵循 `observe → reason → act → repeat`，并设置迭代次数、超时和取消机制。
+- Agent 执行过程遵循 `observe → reason → act → repeat`，并设置迭代次数、超时和取消机制。
 - 工具通过独立注册模块注入；模型不能自行创建任意工具或绕过参数验证。
 - 读取操作与外部写操作需要区分。发送消息、修改日历、删除文件等操作必须保留确认策略和审计信息。
 - 记忆模块必须支持来源、时间、范围和删除；不要把完整聊天记录无条件写入长期记忆。
@@ -57,7 +57,7 @@
 - `engine/src/state.js`：状态容器、合并规则和状态冲突。
 - `engine/src/node.js`：节点接口及节点元数据。
 - `engine/src/graph.js`：拓扑声明和 describe。
-- `engine/src/loop.js`：调度、并发、路由、错误和生命周期事件。
+- `engine/src/run-graph.js`：调度、并发、路由、错误和生命周期事件。
 - `engine/src/index.js`：包的公开接口。
 - `engine/test/`：只通过公开接口验证可观察行为。
 

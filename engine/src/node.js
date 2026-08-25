@@ -4,7 +4,7 @@ const NODE_KINDS = new Set(["fn", "tool", "llm", "agent"]);
  * 图中的最小执行单元：读取状态快照，返回需要合并的状态增量。
  *
  * kind 只用于 describe、日志和可视化，不改变执行行为；maxVisits 与
- * onError 则由 loop 读取，用来控制循环次数和失败后的恢复路径。
+ * onError 则由 runGraph 读取，用来控制循环次数和失败后的恢复路径。
  */
 export class Node {
   constructor(name, handler, options = {}) {

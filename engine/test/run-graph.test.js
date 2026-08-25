@@ -1,16 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
+import * as engine from "../src/index.js";
 
 import {
   END,
   START,
   Graph,
   StateCollisionError,
-  loop,
   node,
   runGraph,
 } from "../src/index.js";
 
-describe("loop", () => {
+describe("runGraph", () => {
+  it("作为唯一的 Graph 执行入口公开", () => {
+    expect(engine.runGraph).toBeTypeOf("function");
+    expect(engine).not.toHaveProperty("loop");
+  });
+
   it("顺序执行节点并合并状态", async () => {
     const graph = new Graph("basic")
       .addNode(node("double", (state) => ({ doubled: state.value * 2 })))
@@ -52,7 +57,7 @@ describe("loop", () => {
       .addEdge("fast", "join")
       .addEdge("join", END);
 
-    const result = await loop(graph, { seed: 10 });
+    const result = await runGraph(graph, { seed: 10 });
 
     expect(started).toEqual(["slow", "fast"]);
     expect(result.path).toEqual(["slow", "fast", "join"]);
@@ -69,7 +74,7 @@ describe("loop", () => {
       .addEdge("quick", END)
       .addEdge("full", END);
 
-    const result = await loop(graph, { short: true });
+    const result = await runGraph(graph, { short: true });
 
     expect(result.path).toEqual(["classify", "quick"]);
     expect(result.state.reply).toBe("quick");
@@ -84,7 +89,7 @@ describe("loop", () => {
       .addEdge(START, "broken")
       .addEdge("recover", END);
 
-    const result = await loop(graph);
+    const result = await runGraph(graph);
 
     expect(result.state.errors.broken).toContain("boom");
     expect(result.state.recovered).toBe(true);
@@ -98,7 +103,7 @@ describe("loop", () => {
       .addEdge(START, "broken")
       .addEdge("broken", "unreached");
 
-    const result = await loop(graph);
+    const result = await runGraph(graph);
 
     expect(result.path).toEqual(["broken"]);
     expect(result.state.reached).toBeUndefined();
@@ -115,8 +120,8 @@ describe("loop", () => {
       .addEdge(START, "gate")
       .addRouter("gate", () => "toString", { done: END });
 
-    const throwingResult = await loop(throwing);
-    const unknownResult = await loop(unknown);
+    const throwingResult = await runGraph(throwing);
+    const unknownResult = await runGraph(unknown);
 
     expect(throwingResult.state.errors.gate).toContain("bad route");
     expect(unknownResult.state.errors.gate).toContain("未知标签");
@@ -129,7 +134,7 @@ describe("loop", () => {
       .addEdge(START, "one")
       .addEdge(START, "two");
 
-    await expect(loop(graph)).rejects.toBeInstanceOf(StateCollisionError);
+    await expect(runGraph(graph)).rejects.toBeInstanceOf(StateCollisionError);
   });
 
   it("拒绝节点返回非对象增量", async () => {
@@ -137,7 +142,7 @@ describe("loop", () => {
       .addNode(node("invalid", () => []))
       .addEdge(START, "invalid");
 
-    await expect(loop(graph)).rejects.toThrow("必须返回普通对象");
+    await expect(runGraph(graph)).rejects.toThrow("必须返回普通对象");
   });
 
   it("maxSteps 和 maxVisits 分别限制全局步数与节点访问次数", async () => {
@@ -146,8 +151,8 @@ describe("loop", () => {
       .addEdge(START, "again")
       .addRouter("again", () => "again", { again: "again" });
 
-    const stepLimited = await loop(createCycle(10), {}, { maxSteps: 3 });
-    const visitLimited = await loop(createCycle(2));
+    const stepLimited = await runGraph(createCycle(10), {}, { maxSteps: 3 });
+    const visitLimited = await runGraph(createCycle(2));
 
     expect(stepLimited.state.count).toBe(3);
     expect(stepLimited.state.errors.engine).toContain("maxSteps=3");
@@ -165,28 +170,38 @@ describe("loop", () => {
       .addEdge(START, "work")
       .addEdge("work", END);
 
-    await loop(graph, {}, { observer });
+    await runGraph(graph, {}, { observer });
 
     expect(observer.mock.calls.map(([kind]) => kind)).toEqual([
-      "loop_start",
+      "graph_start",
       "node_start",
       "progress",
       "node_end",
-      "loop_end",
+      "graph_end",
     ]);
     expect(observer).toHaveBeenCalledWith("progress", { percent: 100, node: "work" });
+    expect(observer).toHaveBeenCalledWith("graph_start", {
+      graph: "events",
+      nodes: ["work"],
+    });
+    expect(observer).toHaveBeenCalledWith("graph_end", expect.objectContaining({
+      graph: "events",
+      steps: 1,
+      path: ["work"],
+      error: null,
+    }));
   });
 
-  it("空图正常结束，并验证 loop 选项", async () => {
-    await expect(loop(new Graph("empty"))).resolves.toMatchObject({
+  it("空图正常结束，并验证 runGraph 选项", async () => {
+    await expect(runGraph(new Graph("empty"))).resolves.toMatchObject({
       state: {},
       path: [],
       steps: 0,
       error: null,
     });
-    await expect(loop(new Graph("bad-steps"), {}, { maxSteps: 0 }))
+    await expect(runGraph(new Graph("bad-steps"), {}, { maxSteps: 0 }))
       .rejects.toThrow("maxSteps 必须是正整数");
-    await expect(loop(new Graph("bad-observer"), {}, { observer: true }))
+    await expect(runGraph(new Graph("bad-observer"), {}, { observer: true }))
       .rejects.toThrow("observer 必须是函数");
   });
 });
