@@ -1,435 +1,187 @@
-# Everything AI Agent 🤖
+# Everything Agent
 
-An intelligent AI agent system powered by LLM, designed to be a proactive personal assistant that helps with music recommendations, email management, task analysis, and personalized suggestions.
+Everything Agent 的目标是构建一个真正可长期使用的个人助理 Agent：它能够理解用户意图、调用工具完成任务、保留必要的个人记忆，并以可视化方式展示每一次执行过程。
 
-## Overview
+项目当前处于基础引擎阶段。已经完成可运行的 Graph Engine；模型接入、工具系统、记忆、会话运行时和可视化界面仍在后续规划中。
 
-Everything AI Agent is a sophisticated multi-tool conversational AI system that leverages user data (calendar, location, music preferences, social media, etc.) to provide intelligent and contextual assistance. The agent uses LangChain to manage complex tool interactions and maintains conversation history for coherent multi-turn interactions.
+## 项目目标
 
-## Features
+这个项目重点解决四件事：
 
-The system comes with four powerful operation tools:
+- **个人助理**：围绕个人任务、日程、知识和工作流提供持续协助。
+- **可以行动**：通过受控工具读取信息或执行操作，而不只是生成文本。
+- **过程透明**：展示节点、路由、工具调用、状态变化、耗时和错误。
+- **安全可控**：限制循环次数，记录错误，对具有外部影响的操作保留确认机制。
 
-### 1. **Music Recommendation Tool** 🎵
-- Analyzes your current activity, mood, location, and music preferences
-- Intelligently recommends songs from your Spotify playlists
-- Considers calendar events, location data, and time of day
-- Provides personalized music selection for work, relaxation, or exercise
+## 当前进度
 
-### 2. **Email Management Tool** ✉️
-- Composes and polishes professional emails with LLM assistance
-- Supports multiple email types: business, personal, notification, apology, and follow-up emails
-- Automatically improves grammar, tone, and formatting
-- Finds recipient information from your contact list
-- Simulates email sending with confirmation
+| 能力 | 状态 | 说明 |
+| --- | --- | --- |
+| State | 已完成 | 保存共享状态，以增量方式合并节点输出 |
+| Node | 已完成 | 支持同步和异步执行函数 |
+| Graph | 已完成 | 支持普通边、条件路由和并行汇合 |
+| Describe | 已完成 | 从真实 Graph 生成可序列化拓扑 |
+| Loop | 已完成 | 支持波次并发、错误收敛和循环保护 |
+| 执行事件 | 基础能力完成 | observer 可接收生命周期及节点自定义事件 |
+| Agent Loop | 规划中 | 模型推理、工具调用、观察结果、继续推理 |
+| Tool Registry | 规划中 | 工具注册、参数校验、权限与执行结果 |
+| Session / Memory | 规划中 | 会话状态、短期记忆与长期个人记忆 |
+| 可视化界面 | 规划中 | 图拓扑、实时执行轨迹、状态和工具调用面板 |
 
-### 3. **Notification & Task Analysis Tool** 📋
-- Analyzes application notifications with priority assessment
-- Categorizes notifications by app and urgency level
-- Analyzes calendar todos and tasks
-- Provides intelligent action suggestions and management recommendations
-- Supports three analysis modes: notifications only, todos only, or both
+## 总体架构
 
-### 4. **Comprehensive Suggestions Tool** 💡
-- Generates personalized life and work suggestions based on all user data
-- Analyzes calendar schedules, location history, health metrics, and activity patterns
-- Provides focused suggestions on specific areas (health, work, social, etc.)
-- Considers sleep quality, fitness data, app usage, and recent purchases
-- Delivers actionable recommendations for productivity and well-being
-
-## Project Structure
-
-```
-.
-├── package.json                 # Project dependencies and scripts
-├── tsconfig.json               # TypeScript configuration
-├── src/
-│   ├── index.ts               # Main agent setup and tool creation
-│   ├── cli.ts                 # Interactive CLI interface
-│   ├── conversationManager.ts # Conversation history management
-│   ├── dataLoader.ts          # User data loading
-│   ├── device_data/           # Sample user data files
-│   │   ├── calendar.csv       # Calendar events
-│   │   ├── location.csv       # Location history
-│   │   ├── social_media.json  # Social media data
-│   │   ├── spotify_playlists.json  # Music preferences
-│   │   └── user_profile.json  # User profile information
-│   └── operations/            # Tool implementations
-│       ├── types.ts           # Type definitions
-│       ├── musicOperation.ts           # Music recommendation logic
-│       ├── emailOperation.ts           # Email management logic
-│       ├── suggestionsOperation.ts     # Suggestion generation logic
-│       └── analyzeOperation.ts         # Notification analysis logic
+```mermaid
+flowchart LR
+    U[用户] --> C[会话入口]
+    C --> R[Agent Runtime]
+    R --> G[Graph + Loop Engine]
+    G --> M[模型]
+    G --> T[工具系统]
+    G --> ME[记忆系统]
+    G --> E[执行事件流]
+    G --> D[Graph.describe]
+    E --> V[可视化界面]
+    D --> V
+    V --> U
 ```
 
-## Installation
+其中：
 
-### Prerequisites
-- Node.js (v16 or higher)
-- TypeScript
-- OpenAI/Qwen API key
+- `Graph.describe()` 提供静态拓扑，是可视化节点和边的唯一事实来源。
+- `loop(..., { observer })` 提供动态事件，是节点状态、路径、耗时和错误的事实来源。
+- 可视化层只消费拓扑与事件，不复制一套工作流定义，避免界面和实际执行逻辑漂移。
 
-### Setup Steps
+## 可视化执行过程
 
-1. **Clone the project**
-```bash
-cd everything-agent
+计划中的执行界面至少包含四个区域：
+
+1. **Graph 画布**：展示节点、普通边、条件边和当前执行位置。
+2. **运行时间线**：按顺序展示节点开始、结束、路由选择和错误。
+3. **状态检查器**：展示每个波次合并前后的状态变化，并隐藏敏感字段。
+4. **工具与模型详情**：展示工具名称、参数摘要、结果摘要、模型耗时和 token 使用量。
+
+当前引擎已经提供以下基础事件：
+
+| 事件 | 用途 |
+| --- | --- |
+| `loop_start` | 初始化一次运行及其节点列表 |
+| `node_start` | 将节点标记为运行中 |
+| `node_end` | 展示耗时、写入键和异常 |
+| `route` | 高亮实际选择的条件边 |
+| `loop_end` | 展示最终路径、步数和首个错误 |
+| 自定义事件 | 展示工具调用、模型输出进度等节点内部过程 |
+
+后续会在不破坏现有事件的前提下，为每次运行和事件增加稳定 ID、时间戳、波次编号及脱敏后的状态增量。
+
+## 目录结构
+
+```text
+everything-agent/
+├── AGENTS.md          # 编码 Agent 的项目约束和开发规则
+├── README.md          # 项目目标、架构和路线图
+├── package.json       # 根目录统一管理脚本和开发依赖
+├── vitest.config.js   # Engine 测试与覆盖率配置
+├── engine/            # 当前已实现的 Node.js Graph Engine
+│   ├── src/           # State、Node、Graph、Describe、Loop
+│   ├── test/          # Vitest 行为测试
+│   └── examples/      # 最小运行示例
 ```
 
-2. **Install dependencies**
+## 快速开始
+
+环境要求：Node.js 20 或更高版本。
+
 ```bash
 npm install
+npm test
+npm run example
 ```
 
-3. **Configure environment variables**
-Create a `.env` file in the root directory:
+最小工作流：
+
+```js
+import { END, START, Graph, loop, node } from "everything-agent";
+
+const graph = new Graph("assistant-demo")
+  .addNode(node("understand", (state) => ({
+    intent: state.message.includes("天气") ? "weather" : "chat",
+  })))
+  .addNode(node("reply", (state) => ({
+    reply: `识别到意图：${state.intent}`,
+  })))
+  .addEdge(START, "understand")
+  .addEdge("understand", "reply")
+  .addEdge("reply", END);
+
+const events = [];
+const result = await loop(graph, { message: "今天天气怎么样？" }, {
+  observer(kind, event) {
+    events.push({ kind, event });
+  },
+});
+
+console.log(graph.describe());
+console.log(events);
+console.log(result.state.reply);
 ```
-DASHSCOPE_API_KEY=your_api_key_here
-```
 
-4. **Prepare user data** (already included in `src/device_data/`)
-   - Place CSV files in the `device_data` directory
-   - Ensure JSON files are properly formatted
+完整的引擎接口和执行语义请查看 [engine/README.md](./engine/README.md)。
 
-## Usage
+## 设计原则
 
-### Interactive Chat Mode
+- **状态是共享黑板**：节点读取快照并返回状态增量，不直接修改引擎内部状态。
+- **控制流由代码决定**：模型可以写入分类结果，路由函数负责验证并选择下一节点。
+- **并发必须确定**：同一波次并行执行，但按节点声明顺序合并结果和记录路径。
+- **冲突必须显式**：并行节点写入同一个状态键会失败，不允许静默覆盖。
+- **错误需要可观察**：节点异常写入状态和事件；失败节点不会触发普通下游边。
+- **循环必须有界**：节点通过 `maxVisits` 限制访问次数，运行通过 `maxSteps` 设置总上限。
+- **可视化来自事实**：拓扑来自 `describe`，运行过程来自 observer 事件。
+- **个人数据默认最小化**：日志、事件、模型上下文和长期记忆只保留完成任务所需信息。
 
-Start the interactive CLI:
+## 路线图
+
+### 阶段一：基础引擎（已完成）
+
+- State、Node、Graph、Describe、Loop
+- 条件路由与并行汇合
+- 错误恢复与循环保护
+- Vitest 测试和覆盖率门槛
+
+### 阶段二：Agent Runtime
+
+- 消息与模型响应的统一数据结构
+- `observe → reason → act → repeat` Agent Loop
+- Tool Registry、工具参数校验和执行策略
+- 会话级取消、超时和中断
+
+### 阶段三：可观测性与可视化
+
+- 稳定的 run、event、node、wave 标识
+- 事件流持久化与回放
+- 实时 Graph 画布和运行时间线
+- 状态差异、路由原因、模型和工具详情
+- 敏感字段脱敏
+
+### 阶段四：个人助理能力
+
+- 会话管理和短期记忆
+- 可检索、可删除的长期个人记忆
+- 日历、任务、笔记、文件等工具适配器
+- 外部写操作确认、权限边界和审计记录
+
+## 测试
+
 ```bash
-npm run chat
+npm test
+npm run test:watch
+npm run test:coverage
 ```
 
-The agent will display a prompt and wait for your input. You can have multi-turn conversations with the agent.
+当前测试通过公开接口验证行为，不依赖私有实现。覆盖率门槛为：行、函数和语句 90%，分支 85%。
 
-### Special Commands
+## 当前边界
 
-Within the chat interface, you can use these commands:
-
-- `help` - Display available commands
-- `history` - Show conversation history
-- `stats` - Display conversation statistics
-- `clear` - Clear conversation history
-- `exit` - Exit the application
-
-## Agent Conversation Examples
-
-### Example 1: Music Recommendation
-```
-You: I'm at the office working on a presentation today, can you recommend some music?
-
-⏳ Agent is thinking...
-
-Agent: 🎵 Based on your current activity (working on a presentation) and location (office), 
-I recommend playing "Focus Flow" playlist which includes:
-- "Deep Work" (from Focus Flow playlist)
-- "Concentration" (from Ambient playlist)
-- "Productivity Boost" (from Electronic playlist)
-
-These tracks are perfect for concentration and maintaining a productive work atmosphere. 
-They have minimal lyrics and steady tempo which supports focused work. All tracks are from 
-your existing playlists, so you can start playing immediately!
-
-Would you like me to adjust the tempo or mood of the recommendations?
-```
-
-### Example 2: Email Composition
-```
-You: Send an email to John about the project deadline extension request
-
-⏳ Agent is thinking...
-
-Agent: ✉️ I've found John Doe in your contacts and composed a professional email:
-
-**To:** john.doe@company.com
-**Subject:** Project Timeline Discussion - Extension Request
-
-**Body:**
-Dear John,
-
-I hope this message finds you well. I wanted to reach out regarding the current project 
-timeline. I would like to discuss the possibility of extending the deadline to ensure we 
-can deliver the highest quality results.
-
-I believe with an additional two weeks, we can significantly improve the project outcomes 
-and address potential issues comprehensively. I'm confident this adjustment will benefit 
-both our teams in the long run.
-
-Would you be available for a brief call this week to discuss this further?
-
-Best regards,
-[Your Name]
-
----
-
-✅ Email has been polished for professional tone and grammar. Ready to send?
-```
-
-### Example 3: Notification Analysis
-```
-You: Can you analyze my notifications and suggest what I should prioritize today?
-
-⏳ Agent is thinking...
-
-Agent: 📋 **Notification Analysis & Priority Report**
-
-**Critical Priority (Immediate Action):**
-- Slack (15 minutes ago): Your urgent code review request from team lead
-- Calendar alert (5 minutes ago): Team standup meeting starts in 5 minutes
-
-**High Priority (Today):**
-- Gmail (2 hours ago): Client feedback on design mockups
-- Jira (3 hours ago): Bug assigned to you with severity HIGH
-
-**Medium Priority (This week):**
-- LinkedIn (6 hours ago): Connection request from industry peer
-- Github (8 hours ago): PR comments on your contribution
-
-**Recommendations:**
-1. ⏰ Join the standup meeting immediately (5 min meeting)
-2. 👥 Review the code changes flagged by team lead (15 min)
-3. 🐛 Investigate the HIGH severity bug (estimate 30 min)
-4. 💬 Review client feedback and design mockups (20 min)
-5. 📧 Respond to client feedback before EOD
-
-**Estimated time to clear high-priority items:** ~1.5 hours
-**Best time to handle medium priorities:** Tomorrow morning
-```
-
-### Example 4: Comprehensive Life Suggestions
-```
-You: Give me some suggestions to improve my health and productivity this week
-
-⏳ Agent is thinking...
-
-Agent: 💡 **Personalized Health & Productivity Suggestions**
-
-**Health Insights:**
-- 📊 You walked 8,432 steps yesterday (slightly below your 10k daily goal)
-- 😴 Last night's sleep was 6.5 hours with good quality
-- 🏃 Your recent workout was a 5km run yesterday - great effort!
-
-**Recommendations for Health:**
-1. Increase daily step count by 2-3k - Try taking walking meetings or walking lunch breaks
-2. Schedule a rest day this week - Your workout pattern suggests you might benefit from active recovery
-3. Maintain current sleep quality - Your 10:30 PM bedtime is optimal for your schedule
-4. Add strength training 2x this week to complement your running routine
-
-**Productivity Insights:**
-- 📅 You have 6 meetings scheduled this week - significant context switching overhead
-- 💻 App usage shows Slack is consuming 4+ hours daily
-- 📈 Your typical productive hours are 9-11 AM and 2-4 PM
-
-**Recommendations for Productivity:**
-1. **Deep work blocks:** Protect your 9-11 AM window - No meetings during this time
-2. **Communication windows:** Batch check Slack at 12:00, 3:00, 5:00 PM only
-3. **Meeting optimization:** Try to consolidate Tuesday's 4 separate meetings into 2 longer ones
-4. **Energy management:** Your afternoon dip happens at 3-4 PM - save routine tasks for this window
-5. **Focus setup:** Based on your preferences, I recommend "Lo-Fi Hip Hop" playlist for deep work
-
-**Action Plan for This Week:**
-- Mon: 10k steps target + 30min meeting consolidation
-- Tue-Wed: Protect morning hours + start strength training
-- Thu-Fri: Review progress + plan weekend activity
-```
-
-### Example 5: Context-Aware Multi-Turn Conversation
-```
-You: I have a busy day tomorrow, what should I listen to while commuting?
-
-Agent: 🎵 Based on your schedule tomorrow, you have:
-- 8:00 AM - Standup meeting (office)
-- 10:00 AM - Client presentation (downtown)
-- 2:00 PM - Team brainstorm (office)
-
-For your commute, I recommend "Travel Playlist" with upbeat and energizing tracks to keep 
-you motivated. Estimated commute time is 45 minutes, perfect for 3-4 songs.
-
----
-
-You: What songs are in the Travel Playlist exactly?
-
-Agent: 🎵 Here are the tracks in your Travel Playlist:
-1. "Morning Sunshine" - Great for starting your commute with positive energy
-2. "Urban Explorer" - Energetic track perfect for mid-commute
-3. "Commute Chronicles" - Uplifting beat to maintain momentum
-4. "Arrival Boost" - Energizing final track to arrive at work ready to present
-
-These are all from your existing collection. The total duration is approximately 18 minutes, 
-so you might want to loop it once, or I can recommend the Workout Motivation playlist as 
-a follow-up to fill the remaining commute time?
-
----
-
-You: Perfect! By the way, can you send my client a confirmation email about tomorrow's presentation?
-
-Agent: ✉️ I found Sarah Johnson (your main client contact) in your contacts. Here's the 
-polished confirmation email:
-
-**To:** sarah.johnson@clientcorp.com
-**Subject:** Confirmation: Client Presentation - Tomorrow at 10:00 AM
-
-**Body:**
-Dear Sarah,
-
-I hope you're having a great week. I'm writing to confirm our presentation scheduled for 
-tomorrow at 10:00 AM. I'm excited to share our latest deliverables and gather your feedback.
-
-I will arrive at your downtown office by 9:45 AM. Please let me know if you need any 
-technical setup assistance or have specific topics you'd like us to prioritize.
-
-Looking forward to our discussion!
-
-Best regards,
-[Your Name]
-
----
-
-✅ Email ready to send to Sarah Johnson!
-```
-
-## Data Sources
-
-The agent uses the following data files to provide personalized recommendations:
-
-### Calendar Data (`calendar.csv`)
-- Events with dates, times, locations, and durations
-- Used for activity context in music and suggestion recommendations
-
-### Location History (`location.csv`)
-- Timestamped location records
-- Enables location-aware suggestions and recommendations
-
-### Spotify Playlists (`spotify_playlists.json`)
-- User's music playlists and track lists
-- Source data for music recommendations
-
-### User Profile (`user_profile.json`)
-Contains:
-- Basic information (name, age, profession)
-- Contact information and email addresses
-- Fitness/health data (steps, sleep, workout information)
-- Location preferences (home, work)
-- Purchase history
-- App usage statistics
-- Previous notifications
-
-### Social Media (`social_media.json`)
-- Social media engagement data
-- Used for comprehensive suggestion generation
-
-## Configuration
-
-### Conversation Management
-- Maintains conversation history for context-aware responses
-- Default history window: 20 recent messages
-- Supports clearing history with `clear` command
-
-## Architecture
-
-### Core Components
-
-1. **LangChain Agent** (`index.ts`)
-   - Creates the main agent executor with all tools
-   - Sets up system prompts and prompt templates
-   - Handles tool calling and response generation
-
-2. **Conversation Manager** (`conversationManager.ts`)
-   - Manages multi-turn conversation history
-   - Maintains message count and conversation flow
-   - Supports history clearing and retrieval
-
-3. **Data Loader** (`dataLoader.ts`)
-   - Loads user data from CSV and JSON files
-   - Prepares data in the format required by operations
-   - Handles data parsing and validation
-
-4. **CLI Interface** (`cli.ts`)
-   - Provides interactive command-line interface
-   - Supports special commands (history, stats, clear, help)
-   - Displays agent responses with timing information
-
-## API Integration
-
-The agent integrates with:
-
-- **LLM**: For natural language understanding and generation
-- **LangChain**: For agent orchestration, tool management, and conversation flow
-- **Local Data**: CSV and JSON files for user information
-
-## Error Handling
-
-The application includes error handling for:
-- Invalid email formats
-- Missing user data
-- API call failures
-- Conversation processing errors
-
-Errors are caught and displayed gracefully in the CLI with helpful context.
-
-## Environment Variables
-
-Create a `.env` file with:
-
-```env
-# Required
-DASHSCOPE_API_KEY=your_api_key_here
-
-## Performance Considerations
-
-- **Message Processing Time**: Typically 2-5 seconds per query (depending on LLM response time)
-- **Conversation Memory**: Maintains last 20 messages for context
-- **Data Loading**: User data is loaded once at startup
-- **Tool Execution**: Runs sequentially; largest operations are LLM calls
-
-## Development
-
-### Building
-TypeScript files are compiled on-the-fly using `tsx`:
-```bash
-npm run dev
-```
-
-### Dependencies
-- `@langchain/core`: Core LangChain abstractions
-- `@langchain/openai`: OpenAI/Qwen integration
-- `@langchain/community`: Community tools and integrations
-- `langchain`: Main LangChain library
-- `zod`: Type validation and schema definition
-- `dotenv`: Environment variable management
-- `express` & `cors`: For potential API server integration
-
-## Future Enhancements
-
-Potential features for future development:
-
-1. **Persistent Storage**: Save conversation history to database
-2. **API Server**: REST API endpoints for remote agent access
-3. **Real-time Notifications**: Integrate with actual notification systems
-4. **Calendar Integration**: Direct Google Calendar/Outlook sync
-5. **Email Sending**: Real SMTP integration for actual email sending
-6. **Multi-language Support**: Support for Chinese, Spanish, and other languages
-7. **Advanced Analytics**: Detailed usage patterns and insights
-8. **Custom Tool Creation**: User-defined tools and workflows
-9. **Scheduling**: Automated tasks at specific times or conditions
-10. **Voice Interface**: Speech-to-text and text-to-speech capabilities
-
-## License
-
-MIT License - feel free to use this project for personal or commercial purposes.
-
-## Contributing
-
-Contributions are welcome! Feel free to:
-- Report bugs and issues
-- Suggest new features
-- Submit pull requests with improvements
-- Improve documentation
-
-## Support
-
-For issues, questions, or suggestions, please create an issue in the repository.
-
----
-
-**Made with ❤️ for intelligent personal assistance**
+- 当前仓库只有基础 Graph Engine，不包含可直接对话的完整 Agent。
+- 当前 observer 是进程内回调，还不是网络事件流或持久化追踪系统。
+- `State.snapshot()` 是顶层复制；节点应把收到的状态视为只读对象。
+- 当前没有内置鉴权、密钥管理或个人数据加密能力。

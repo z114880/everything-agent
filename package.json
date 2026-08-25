@@ -1,32 +1,25 @@
 {
-  "name": "everything-ai-agent",
-  "version": "1.0.0",
-  "description": "AI Agent system for Dan - proactive intelligent assistant",
+  "name": "everything-agent",
+  "version": "0.1.0",
+  "description": "具有透明执行过程的个人助理 Agent",
+  "private": true,
   "type": "module",
-  "main": "src/cli.ts",
+  "main": "./engine/src/index.js",
+  "exports": {
+    ".": "./engine/src/index.js"
+  },
   "scripts": {
-    "chat": "tsx src/cli.ts"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "example": "node engine/examples/basic.js"
   },
-  "keywords": [
-    "ai",
-    "agent",
-    "langchain",
-    "assistant"
-  ],
-  "author": "",
+  "engines": {
+    "node": ">=20"
+  },
   "license": "MIT",
-  "dependencies": {
-    "@langchain/core": "^0.3.0",
-    "@langchain/openai": "^0.3.0",
-    "@langchain/community": "^0.3.0",
-    "langchain": "^0.3.0",
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
-    "zod": "^3.22.4"
-  },
   "devDependencies": {
-    "tsx": "^4.7.0",
-    "typescript": "^5.3.0"
+    "@vitest/coverage-v8": "^4.1.11",
+    "vitest": "^4.1.11"
   }
 }
