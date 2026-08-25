@@ -20,33 +20,108 @@ export async function runGraph(graph, initialState = {}, options = {}) {
   }
 
   const edges = graph.edges();
-  // incoming 是静态依赖，fired 是本次运行已经完成的入边，二者相等时节点就绪。
-  const incoming = new Map(graph.nodeEntries().map(([name]) => [name, new Set()]));
-  const fired = new Map(graph.nodeEntries().map(([name]) => [name, new Set()]));
-  // visits 独立于 fired：普通 DAG 节点只运行一次，路由跳转可按 maxVisits 重访。
+  // 普通入边构成汇合依赖；条件入边是独立的激活入口。每条边必须明确变为
+  // fired、skipped 或 failed，避免把未选中的静态分支误认为仍在运行。
+  const incoming = new Map(graph.nodeEntries().map(([name]) => [name, new Map()]));
+  const conditionalIncoming = new Map(graph.nodeEntries().map(([name]) => [name, new Map()]));
+  const propagated = new Map();
+  // visits 独立于边决议：普通 DAG 节点只运行一次，路由跳转可按 maxVisits 重访。
   const visits = new Map(graph.nodeEntries().map(([name]) => [name, 0]));
   const path = [];
   const startedAt = performance.now();
 
   for (const { source, target } of edges) {
-    if (target !== END) incoming.get(target)?.add(source);
+    if (target !== END) incoming.get(target)?.set(source, "pending");
     // START 不是真实节点，因此在进入主循环前直接视为已经完成。
-    if (source === START && target !== END) fired.get(target)?.add(START);
+    if (source === START && target !== END) incoming.get(target)?.set(START, "fired");
+  }
+  for (const [source, router] of graph.routerEntries()) {
+    for (const target of new Set(Object.values(router.targets))) {
+      if (target !== END) conditionalIncoming.get(target)?.set(source, "pending");
+    }
   }
 
   const notify = async (kind, event) => {
     await observer(kind, event);
   };
 
+  const setDecision = (target, source, decision, conditional = false) => {
+    const decisions = (conditional ? conditionalIncoming : incoming).get(target);
+    if (decisions?.has(source)) decisions.set(source, decision);
+  };
+
+  const resolveOutgoing = (name, decision) => {
+    for (const edge of edges) {
+      if (edge.source === name && edge.target !== END) {
+        setDecision(edge.target, name, decision);
+      }
+    }
+    const router = graph.routerFor(name);
+    if (router) {
+      for (const target of new Set(Object.values(router.targets))) {
+        if (target !== END) setDecision(target, name, decision, true);
+      }
+    }
+  };
+
+  const summarizeInputs = (name) => {
+    const ordinary = [...incoming.get(name).entries()];
+    const conditional = [...conditionalIncoming.get(name).entries()];
+    const isResolved = ([, decision]) => decision !== "pending";
+    const isFired = ([, decision]) => decision === "fired";
+    const isFailed = ([, decision]) => decision === "failed";
+
+    const ordinaryReady = ordinary.length > 0
+      && ordinary.every(isResolved)
+      && ordinary.some(isFired)
+      && !ordinary.some(isFailed);
+    const conditionalReady = conditional.some(isFired);
+    const ordinaryImpossible = ordinary.length === 0
+      || (ordinary.every(isResolved)
+        && (!ordinary.some(isFired) || ordinary.some(isFailed)));
+    const conditionalImpossible = conditional.length === 0
+      || (conditional.every(isResolved) && !conditional.some(isFired));
+
+    return {
+      ready: ordinaryReady || conditionalReady,
+      impossible: ordinaryImpossible && conditionalImpossible,
+      failed: ordinary.some(isFailed) || conditional.some(isFailed),
+      inputCount: ordinary.length + conditional.length,
+      pending: [...ordinary, ...conditional]
+        .filter(([, decision]) => decision === "pending")
+        .map(([source]) => source),
+      fired: [...ordinary, ...conditional].some(isFired),
+    };
+  };
+
+  const settleInactiveNodes = (protectedNodes) => {
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const [name] of graph.nodeEntries()) {
+        if (visits.get(name) > 0 || protectedNodes.has(name)) continue;
+
+        const summary = summarizeInputs(name);
+        // 没有入口的孤立节点不是被跳过的分支，保留 pending 才能报告错误汇合。
+        if (summary.ready || !summary.impossible || summary.inputCount === 0) continue;
+
+        const decision = summary.failed ? "failed" : "skipped";
+        if (propagated.get(name) === decision) continue;
+        propagated.set(name, decision);
+        resolveOutgoing(name, decision);
+        changed = true;
+      }
+    }
+  };
+
   const nextWave = (jumps = []) => {
     // 路由和错误恢复是强制跳转，不需要等待目标节点的静态入边。
     const candidates = [...jumps];
+    settleInactiveNodes(new Set(jumps));
 
-    // 非跳转节点只有在全部上游完成、且从未运行时才会进入波次。
+    // 普通汇合等待所有入边完成决议；skipped 不阻塞汇合，failed 则阻止执行。
     for (const [name] of graph.nodeEntries()) {
-      const dependencies = incoming.get(name);
-      const completed = fired.get(name);
-      if (dependencies.size > 0 && dependencies.size === completed.size && visits.get(name) === 0) {
+      if (visits.get(name) === 0 && summarizeInputs(name).ready) {
         candidates.push(name);
       }
     }
@@ -133,6 +208,7 @@ export async function runGraph(graph, initialState = {}, options = {}) {
       const value = graph.getNode(result.name);
       if (result.error) {
         state.recordError(result.name, result.error);
+        resolveOutgoing(result.name, "failed");
         if (value.onError) jumps.push(value.onError);
         // 失败节点不触发普通出边，否则下游会消费不完整状态。
         continue;
@@ -145,6 +221,7 @@ export async function runGraph(graph, initialState = {}, options = {}) {
           label = await router.route(state.snapshot());
         } catch (error) {
           state.recordError(result.name, error);
+          resolveOutgoing(result.name, "failed");
           continue;
         }
 
@@ -158,8 +235,25 @@ export async function runGraph(graph, initialState = {}, options = {}) {
         });
         if (!target) {
           state.recordError(result.name, `路由返回了未知标签 "${label}"`);
-        } else if (target !== END) {
-          jumps.push(target);
+          resolveOutgoing(result.name, "failed");
+        } else {
+          // 路由独占控制流：普通出边本次全部跳过，条件目标则完整记录选中与未选中。
+          for (const edge of edges) {
+            if (edge.source === result.name && edge.target !== END) {
+              setDecision(edge.target, result.name, "skipped");
+            }
+          }
+          for (const candidate of new Set(Object.values(router.targets))) {
+            if (candidate !== END) {
+              setDecision(
+                candidate,
+                result.name,
+                candidate === target ? "fired" : "skipped",
+                true,
+              );
+            }
+          }
+          if (target !== END) jumps.push(target);
         }
         // 有路由的节点由路由独占控制流，不再触发它的普通出边。
         continue;
@@ -168,7 +262,7 @@ export async function runGraph(graph, initialState = {}, options = {}) {
       // 普通边只记录“哪个上游已完成”；目标是否就绪由下一轮统一判断。
       for (const edge of edges) {
         if (edge.source === result.name && edge.target !== END) {
-          fired.get(edge.target)?.add(result.name);
+          setDecision(edge.target, result.name, "fired");
         }
       }
     }
@@ -176,16 +270,38 @@ export async function runGraph(graph, initialState = {}, options = {}) {
     wave = nextWave(jumps);
   }
 
+  const blockedNodes = graph.nodeEntries()
+    .filter(([name]) => visits.get(name) === 0)
+    .map(([name]) => ({ name, summary: summarizeInputs(name) }))
+    .filter(({ summary }) => summary.fired && summary.pending.length > 0)
+    .map(({ name, summary }) => ({
+      node: name,
+      waitingFor: [...new Set(summary.pending)],
+    }));
+  if (blockedNodes.length > 0) {
+    state.recordError(
+      "engine",
+      `运行停滞，节点仍在等待未解决的上游: ${blockedNodes.map(({ node }) => node).join(", ")}`,
+    );
+    await notify("graph_stalled", {
+      graph: graph.name,
+      blockedNodes,
+    });
+  }
+
   const finalState = state.value();
   const firstError = isRecord(finalState.errors)
     ? Object.values(finalState.errors)[0] ?? null
     : null;
+  const status = blockedNodes.length > 0 ? "stalled" : firstError ? "failed" : "completed";
   await notify("graph_end", {
     graph: graph.name,
     ms: Math.round(performance.now() - startedAt),
     steps: path.length,
     path: [...path],
     error: firstError,
+    status,
+    blockedNodes,
   });
 
   return {
@@ -193,5 +309,7 @@ export async function runGraph(graph, initialState = {}, options = {}) {
     path,
     steps: path.length,
     error: firstError,
+    status,
+    blockedNodes,
   };
 }

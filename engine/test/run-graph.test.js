@@ -80,6 +80,77 @@ describe("runGraph", () => {
     expect(result.state.reply).toBe("quick");
   });
 
+  it("条件分支未命中的路径会跳过，并允许后续节点汇合", async () => {
+    const graph = new Graph("conditional-join")
+      .addNode(node("classify", () => ({ route: "quick" })))
+      .addNode(node("quick", () => ({ quickResult: true })))
+      .addNode(node("full", () => ({ fullResult: true })))
+      .addNode(node("fullDetail", () => ({ detail: true })))
+      .addNode(node("reply", (state) => ({ reply: state.quickResult ? "quick" : "full" })))
+      .addEdge(START, "classify")
+      .addRouter("classify", (state) => state.route, { quick: "quick", full: "full" })
+      .addEdge("quick", "reply")
+      .addEdge("full", "fullDetail")
+      .addEdge("fullDetail", "reply")
+      .addEdge("reply", END);
+
+    const result = await runGraph(graph);
+
+    expect(result.path).toEqual(["classify", "quick", "reply"]);
+    expect(result.state).toMatchObject({ quickResult: true, reply: "quick" });
+    expect(result.state.fullResult).toBeUndefined();
+    expect(result.state.detail).toBeUndefined();
+    expect(result.status).toBe("completed");
+  });
+
+  it("并行上游失败时不会把失败分支当作跳过并运行汇合节点", async () => {
+    const graph = new Graph("failed-join")
+      .addNode(node("broken", () => { throw new Error("boom"); }))
+      .addNode(node("healthy", () => ({ healthy: true })))
+      .addNode(node("join", () => ({ joined: true })))
+      .addEdge(START, "broken")
+      .addEdge(START, "healthy")
+      .addEdge("broken", "join")
+      .addEdge("healthy", "join");
+
+    const result = await runGraph(graph);
+
+    expect(result.path).toEqual(["broken", "healthy"]);
+    expect(result.state.joined).toBeUndefined();
+    expect(result.status).toBe("failed");
+  });
+
+  it("没有可运行节点但仍有部分激活依赖时返回 stalled", async () => {
+    const observer = vi.fn();
+    const graph = new Graph("stalled")
+      .addNode(node("active", () => ({ active: true })))
+      .addNode(node("orphan", () => ({ orphan: true })))
+      .addNode(node("join", () => ({ joined: true })))
+      .addEdge(START, "active")
+      .addEdge("active", "join")
+      .addEdge("orphan", "join");
+
+    const result = await runGraph(graph, {}, { observer });
+
+    expect(result.status).toBe("stalled");
+    expect(result.path).toEqual(["active"]);
+    expect(result.blockedNodes).toEqual([
+      { node: "join", waitingFor: ["orphan"] },
+    ]);
+    expect(result.error).toContain("运行停滞");
+    expect(observer.mock.calls.map(([kind]) => kind)).toEqual([
+      "graph_start",
+      "node_start",
+      "node_end",
+      "graph_stalled",
+      "graph_end",
+    ]);
+    expect(observer).toHaveBeenCalledWith("graph_end", expect.objectContaining({
+      status: "stalled",
+      blockedNodes: [{ node: "join", waitingFor: ["orphan"] }],
+    }));
+  });
+
   it("节点异常写入状态，并通过 onError 跳转到恢复节点", async () => {
     const graph = new Graph("recover")
       .addNode(node("broken", () => {

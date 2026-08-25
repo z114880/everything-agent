@@ -41,12 +41,16 @@ graph.addRouter(
 1. `START` 的所有出边形成首个波次。
 2. 同一波次节点读取各自的状态快照，并通过 `Promise.all` 并发运行。
 3. 引擎按图中节点顺序合并增量；并行节点写入相同键会抛出 `StateCollisionError`。
-4. 节点异常不会让整个 Graph 执行崩溃，错误写入 `state.errors`；配置 `onError` 可跳转到恢复节点。
-5. `maxVisits` 限制单个节点访问次数，`maxSteps` 限制整次运行步数。
+4. 条件路由会把命中的分支标记为已激活，并将未命中的分支标记为已跳过；跳过状态会向下传播，因此条件分支之后可以正常汇合。
+5. 普通并行汇合等待所有已声明的上游完成决议：成功和跳过允许继续，任一上游失败都会阻止依赖其输出的节点运行。
+6. 节点异常不会让整个 Graph 执行崩溃，错误写入 `state.errors`；配置 `onError` 可跳转到恢复节点。
+7. `maxVisits` 限制单个节点访问次数，`maxSteps` 限制整次运行步数。
+
+`runGraph` 返回的 `status` 为 `completed`、`failed` 或 `stalled`。当没有可运行节点、但已有节点仍在等待无法解决的部分上游时，状态为 `stalled`，`blockedNodes` 会列出阻塞节点及其等待的上游。原有的 `state`、`path`、`steps` 和 `error` 字段保持不变。
 
 ## 事件
 
-可通过 observer 获取 `graph_start`、`node_start`、`node_end`、`route`、`graph_end`：
+可通过 observer 获取 `graph_start`、`node_start`、`node_end`、`route`、`graph_stalled`、`graph_end`：
 
 ```js
 await runGraph(graph, initialState, {
@@ -56,6 +60,8 @@ await runGraph(graph, initialState, {
   },
 });
 ```
+
+`graph_stalled` 只在运行停滞时发送。`graph_end` 始终发送，并包含 `status` 和 `blockedNodes`，便于调用方区分正常完成、失败和调度停滞。
 
 ## 本地验证
 
