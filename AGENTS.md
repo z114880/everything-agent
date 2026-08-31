@@ -21,7 +21,7 @@
 ## 当前状态
 
 - `src/engine/` 是当前 Node.js 基础引擎，实现了 State、Node、Graph、Describe 和 runGraph。
-- `src/loop/` 已实现基础 Agent Loop；真实 LLM 客户端、Tool Registry、Session、Memory 和可视化 UI 尚未完成。
+- `src/agent-loop/` 已实现基础 Agent Loop，`src/agent-graph/` 提供 Harness 拓扑，`src/tools/` 提供本地 Tool Registry；`src/model/` 已实现真实 LLM 协议适配，Session 和 Memory 尚未完成。
 - 文档必须明确区分已经实现的能力和规划能力，不得把路线图描述成现成功能。
 
 ## 架构约束
@@ -30,7 +30,7 @@
 
 - Engine 保持模型、工具、数据库和 UI 无关，不在核心调度代码中直接初始化这些依赖。
 - State 是共享黑板。节点读取状态快照并返回增量，不应原地修改输入状态。
-- 同一波次的节点可以并行，但状态合并、路径和事件顺序必须确定且可重复。
+- 同一 wave 的节点可以并行，但状态合并、路径和事件顺序必须确定且可重复。
 - 并行节点写入相同键必须显式报错，不能使用最后写入者覆盖前者。
 - 路由由普通代码执行。模型可以产生路由候选值，但代码必须验证标签后再改变控制流。
 - 节点异常应转换为可观察的状态和事件；失败节点不能继续触发依赖其正常输出的普通边。
@@ -60,8 +60,15 @@
 - `src/engine/src/run-graph.ts`：调度、并发、路由、错误和生命周期事件。
 - `src/engine/src/index.ts`：Engine 的公开接口。
 - `src/engine/test/`：只通过公开接口验证可观察行为。
-- `src/loop/agent-loop.ts`：模型与工具无关的 Agent 回合循环。
+- `src/agent-loop/agent-loop.ts`：模型与工具无关的 Agent 回合循环；行为测试放在 `src/agent-loop/test/`。
+- `src/agent-graph/`：Agent Harness 拓扑；行为测试放在 `src/agent-graph/test/`。
+- `src/tools/`：本地工具注册表；行为测试放在 `src/tools/test/`。
+- `src/model/model-client.ts`：独立于 Agent Runtime 的真实模型协议适配与配置接口；行为测试放在 `src/model/test/`。
+- `src/workflows/`：与 Engine、Agent 同级的本地工作流；行为测试放在 `src/workflows/test/`。
+- `web/test/`：Web 模块的行为测试。
 - `src/index.ts`：包的统一公开接口。
+
+所有测试代码必须放在被测模块同级的 `test/` 目录中，不得与实现文件混放；测试文件统一使用 `*.test.ts` 或 `*.test.tsx` 命名。
 
 新增模块时应保持接口小而稳定，把调度或集成复杂度封装在模块内部。除非确实存在两个实现，不要提前增加抽象层或适配器接口。
 
@@ -102,7 +109,8 @@ npm run example
 
 - 根目录 `README.md` 描述项目目标、总体架构、当前进度和路线图。
 - `src/engine/README.md` 描述 Engine 的公开接口、执行语义和示例。
-- `src/loop/README.md` 描述 Agent Loop 的依赖接口、执行语义和事件。
+- `src/agent-loop/README.md` 描述 Agent Loop 的依赖接口、执行语义和事件。
+- `src/agent-graph/README.md` 描述 Agent Harness 的静态拓扑与可视化边界。
 - 行为、事件或命令发生变化时，在同一个任务内同步更新相关文档。
 - Mermaid 或架构图必须从真实模块关系出发，并明确标记尚未实现的部分。
 

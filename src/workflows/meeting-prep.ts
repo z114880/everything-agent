@@ -1,5 +1,5 @@
-import { END, START, Graph, node } from "../src/index.js";
-import type { AnyState } from "../src/index.js";
+import { END, START, Graph, node } from "../engine/src/index.js";
+import type { AnyState } from "../engine/src/index.js";
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -18,7 +18,7 @@ export const graph = new Graph("个人助理 · 会议准备")
     return { meetingGoal: state.message || "准备产品评审会议" };
   }, { kind: "llm" }))
 
-  // 三个节点在同一波次并发执行，用于展示真实的 Engine 并发语义。
+  // 三个节点在同一 wave 并发执行，用于展示真实的 Engine 并发语义。
   .addNode(node("读取会议议程", async () => {
     await wait(860);
     return { agenda: ["确认目标", "评审方案", "明确后续行动"] };

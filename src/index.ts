@@ -3,8 +3,7 @@ export {
   AgentLoopAbortError,
   AgentLoopTimeoutError,
   runAgentLoop,
-  runLoop,
-} from "./loop/agent-loop.js";
+} from "./agent-loop/agent-loop.js";
 export type {
   AgentLoopOptions,
   AgentLoopResult,
@@ -18,4 +17,8 @@ export type {
   ToolCallRecord,
   ToolExecutionContext,
   ToolRegistry,
-} from "./loop/agent-loop.js";
+} from "./agent-loop/agent-loop.js";
+export { AGENT_HARNESS_NODES, agentHarnessGraph } from "./agent-graph/harness-graph.js";
+export { LocalToolRegistry } from "./tools/tool-registry.js";
+export { createModelClient } from "./model/model-client.js";
+export type { AgentProvider, ModelClientConfig } from "./model/model-client.js";

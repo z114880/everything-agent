@@ -53,9 +53,9 @@ export interface GraphRunResult<TState extends StateRecord> {
 }
 
 /**
- * 按波次执行图，直到没有可运行节点，或命中全局最大步数。
+ * 按 wave 执行图，直到没有可运行节点，或命中全局最大步数。
  *
- * 一个波次包含当前所有就绪节点。波次内并发、波次间串行，使执行既能利用
+ * 一个 wave 包含当前所有就绪节点。wave 内并发、wave 间串行，使执行既能利用
  * 独立分支的并发，又能让状态合并、事件和 path 保持可复现的顺序。
  */
 export async function runGraph<TState extends StateRecord = AnyState>(
@@ -238,7 +238,7 @@ export async function runGraph<TState extends StateRecord = AnyState>(
   let waveIndex = 0;
 
   while (wave.length > 0) {
-    // 整个波次要么执行、要么不执行，避免只运行一半并行分支。
+    // 整个 wave 要么执行、要么不执行，避免只运行一半并行分支。
     if (path.length + wave.length > maxSteps) {
       state.recordError("engine", `maxSteps=${maxSteps} 已达到`);
       break;
@@ -262,7 +262,7 @@ export async function runGraph<TState extends StateRecord = AnyState>(
       });
     }
 
-    // 每个节点读取同一波次开始前的独立快照，因此并发结果不会互相污染。
+    // 每个节点读取同一 wave 开始前的独立快照，因此并发结果不会互相污染。
     const results: NodeExecutionResult[] = await Promise.all(wave.map(async (name) => {
       const value = graph.getNode(name)!;
       const nodeStartedAt = performance.now();
@@ -284,7 +284,7 @@ export async function runGraph<TState extends StateRecord = AnyState>(
       .map((result) => ({ node: result.name, update: result.update ?? {} }));
     state.mergeWave(successfulWrites);
 
-    // 先合并整个波次，再计算路由，保证路由能看到同波次所有节点的写入。
+    // 先合并整个 wave，再计算路由，保证路由能看到同一 wave 所有节点的写入。
     const jumps: string[] = [];
     for (const result of results) {
       path.push(result.name);

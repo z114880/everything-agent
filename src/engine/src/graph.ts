@@ -39,7 +39,7 @@ export const END = "END";
 
 /**
  * Graph 只负责声明拓扑；实际调度完全封装在 runGraph 中。
- * Map 保留节点声明顺序，这个顺序也会成为波次合并与 path 记录的稳定顺序。
+ * Map 保留节点声明顺序，这个顺序也会成为 wave 合并与 path 记录的稳定顺序。
  */
 export class Graph<TState extends StateRecord = AnyState> {
   #nodes = new Map<string, Node<TState>>();

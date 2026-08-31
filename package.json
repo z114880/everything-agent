@@ -15,9 +15,25 @@
       "types": "./dist/engine/src/index.d.ts",
       "default": "./dist/engine/src/index.js"
     },
-    "./loop": {
-      "types": "./dist/loop/agent-loop.d.ts",
-      "default": "./dist/loop/agent-loop.js"
+    "./agent": {
+      "types": "./dist/agent-loop/agent-loop.d.ts",
+      "default": "./dist/agent-loop/agent-loop.js"
+    },
+    "./agent-loop": {
+      "types": "./dist/agent-loop/agent-loop.d.ts",
+      "default": "./dist/agent-loop/agent-loop.js"
+    },
+    "./agent-graph": {
+      "types": "./dist/agent-graph/harness-graph.d.ts",
+      "default": "./dist/agent-graph/harness-graph.js"
+    },
+    "./tools": {
+      "types": "./dist/tools/tool-registry.d.ts",
+      "default": "./dist/tools/tool-registry.js"
+    },
+    "./model": {
+      "types": "./dist/model/model-client.d.ts",
+      "default": "./dist/model/model-client.js"
     }
   },
   "scripts": {

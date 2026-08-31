@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadLocalWorkflow, runLocalWorkflow, saveLocalWorkflow } from "./workflow-api";
+import { loadLocalWorkflow, runLocalWorkflow, saveLocalWorkflow } from "../src/workflow-api";
 
 describe("本地工作流接口", () => {
   afterEach(() => {

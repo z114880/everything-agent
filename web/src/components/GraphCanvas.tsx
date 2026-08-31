@@ -88,7 +88,7 @@ export function GraphCanvas({ workflow, nodeStates, activeEdges }: GraphCanvasPr
                   <>
                     {Icon && <Icon x={position.x + 14} y={position.y + 15} width={14} height={14} />}
                     <text x={position.x + 36} y={position.y + 27} className="node-label">{node?.label}</text>
-                    <text x={position.x + 14} y={position.y + 48} className="node-description">{kindLabel[node!.kind]}</text>
+                    <text x={position.x + 15} y={position.y + 48} className="node-description">{kindLabel[node!.kind]}</text>
                   </>
                 )}
               </g>

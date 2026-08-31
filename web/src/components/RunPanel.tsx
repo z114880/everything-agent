@@ -47,7 +47,7 @@ export function RunPanel(props: RunPanelProps) {
             return (
               <div key={wave.index} className="wave-section">
                 <div className="wave-heading">
-                  波次 {wave.index}<span>·</span>{wave.nodes.length} 个节点
+                  Wave {wave.index}<span>·</span>{wave.nodes.length} 个节点
                   {wave.nodes.some((node) => node.ms > 0) && <><span>·</span>{(maxMs / 1000).toFixed(2)} 秒</>}
                 </div>
                 <div className="wave-grid">

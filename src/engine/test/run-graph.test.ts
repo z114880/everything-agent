@@ -34,7 +34,7 @@ describe("runGraph", () => {
     });
   });
 
-  it("同一波次并发执行，并在所有依赖完成后汇合", async () => {
+  it("同一 wave 并发执行，并在所有依赖完成后汇合", async () => {
     let releaseSlow!: () => void;
     const slowGate = new Promise<void>((resolve) => { releaseSlow = resolve; });
     const started: string[] = [];
@@ -103,7 +103,7 @@ describe("runGraph", () => {
     expect(result.status).toBe("completed");
   });
 
-  it("wave_start 只报告本波次实际激活的入边", async () => {
+  it("wave_start 只报告当前 wave 实际激活的入边", async () => {
     const activatedEdges: unknown[] = [];
     const graph = new Graph("observable-branch-join")
       .addNode(node("classify", () => ({ route: "normal" })))

@@ -1,6 +1,8 @@
-import { GitBranch, PanelLeftClose, PanelLeftOpen, Sparkles } from "lucide-react";
+import { Bot, GitBranch, PanelLeftClose, PanelLeftOpen, Settings, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CodeEditor } from "./components/CodeEditor";
+import { AgentPage } from "./components/AgentPage";
+import { ConfigPage } from "./components/ConfigPage";
 import { GraphCanvas, type VisualNodeState } from "./components/GraphCanvas";
 import { ResultPanel, RunPanel } from "./components/RunPanel";
 import {
@@ -14,6 +16,7 @@ import {
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [page, setPage] = useState<"agent" | "workflow" | "config">("agent");
   const [code, setCode] = useState("");
   const [workflowFiles, setWorkflowFiles] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState("");
@@ -172,7 +175,7 @@ export default function App() {
         }
         if (kind === "graph_end") {
           setActiveEdges(new Set(workflow.edges.filter((edge) => edge.target === "END").map((edge) => `${edge.source}->END`)));
-          endFlashTimerRef.current = setTimeout(() => setActiveEdges(new Set()), 1000);
+          endFlashTimerRef.current = setTimeout(() => setActiveEdges(new Set()), 200);
           setNodeStates((states) => ({ ...states, END: event.status === "completed" ? "done" : "error" }));
         }
       });
@@ -191,26 +194,29 @@ export default function App() {
       <aside className={`sidebar ${sidebarOpen ? "open" : "closed"}`}>
         <div className="brand-row">
           <div className="brand-mark"><Sparkles size={15} /></div>
-          <div><strong>Everything Agent</strong><span>透明执行控制台</span></div>
+          <div><strong>Everything Agent</strong><span>可视化Agent控制台</span></div>
           <button className="sidebar-toggle" onClick={() => setSidebarOpen(false)} aria-label="收起侧边栏"><PanelLeftClose size={16} /></button>
         </div>
         <div className="nav-group">系统</div>
-        <button className="nav-item active"><GitBranch size={15} /><span>Workflow</span><span className="nav-count">01</span></button>
+        <button className={`nav-item ${page === "agent" ? "active" : ""}`} onClick={() => setPage("agent")}><Bot size={15} /><span>Agent</span></button>
+        <button className={`nav-item ${page === "workflow" ? "active" : ""}`} onClick={() => setPage("workflow")}><GitBranch size={15} /><span>Workflow</span><span className="nav-count">01</span></button>
+        <button className={`nav-item ${page === "config" ? "active" : ""}`} onClick={() => setPage("config")}><Settings size={15} /><span>配置</span></button>
         <div className="sidebar-note"><span className="signal bg-emerald-500" />本地 Engine 已连接</div>
       </aside>
       {!sidebarOpen && <button className="sidebar-reopen" onClick={() => setSidebarOpen(true)} aria-label="展开侧边栏"><PanelLeftOpen size={17} /></button>}
 
-      <main className="main-content">
+      <main className={`main-content ${page === "agent" ? "agent-main-content" : ""}`}>
+        {page === "agent" ? <AgentPage onOpenConfig={() => setPage("config")} /> : page === "config" ? <ConfigPage /> : <>
         <header className="page-header">
           <div>
             <div className="eyebrow">工作流 / 可视化执行</div>
             <h1>Workflow</h1>
-            <p>用代码定义智能体工作流，并实时观察节点、路由、并行波次和最终结果。</p>
+            <p>用代码定义智能体工作流，并实时观察节点、路由、并行 wave 和最终结果。</p>
           </div>
         </header>
 
         <div className="content-wrap">
-          <div className="intro-note"><GitBranch size={16} /><p><strong>本地代码是事实来源。</strong> 下方编辑器直接读写 <code>src/engine/workflows/{selectedFile || "…"}</code>；拓扑来自 <code>Graph.describe()</code>，执行过程来自本地 <code>runGraph()</code> 的 observer 事件。</p></div>
+          <div className="intro-note"><GitBranch size={16} /><p><strong>本地代码是事实来源。</strong> 下方编辑器直接读写 <code>src/workflows/{selectedFile || "…"}</code>；拓扑来自 <code>Graph.describe()</code>，执行过程来自本地 <code>runGraph()</code> 的 observer 事件。</p></div>
           <div className="workspace-grid">
             {workflow ? <GraphCanvas workflow={workflow} nodeStates={nodeStates} activeEdges={activeEdges} /> : <div className="panel grid min-h-[580px] place-items-center text-sm text-[var(--muted)]">等待有效的工作流代码…</div>}
           </div>
@@ -229,6 +235,7 @@ export default function App() {
           </div>
           {workflow && <ResultPanel result={result} />}
         </div>
+        </>}
       </main>
     </div>
   );

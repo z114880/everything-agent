@@ -14,7 +14,7 @@ describe("State", () => {
     expect(state.value()).toEqual({ count: 1 });
   });
 
-  it("按波次合并互不冲突的节点增量，并忽略内部键", () => {
+  it("按 wave 合并互不冲突的节点增量，并忽略内部键", () => {
     const state = new State({ input: "hello" });
 
     state.mergeWave([
@@ -25,7 +25,7 @@ describe("State", () => {
     expect(state.value()).toEqual({ input: "hello", left: 1, right: 2 });
   });
 
-  it("拒绝同一波次的节点覆盖相同状态键", () => {
+  it("拒绝同一 wave 的节点覆盖相同状态键", () => {
     const state = new State();
 
     expect(() => state.mergeWave([

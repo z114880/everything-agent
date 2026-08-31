@@ -1,18 +1,32 @@
 # Everything Agent
 
-## Graph 可视化前端
+## 本地可视化控制台
 
-仓库已包含一个 React + Tailwind 的本地 Graph 控制台。页面会枚举 `src/engine/workflows/` 下的 TypeScript 文件，可通过下拉框选择、编辑和执行任一工作流。拓扑来自真实 `Graph.describe()`，执行由本地 Node.js 进程调用 `runGraph()`，observer 事件会流式传回浏览器，用于展示节点状态、真实并发波次与最终结果。
+仓库已包含一个 React + Tailwind 的本地控制台：
+
+- **Agent**：运行真实 `runAgentLoop`，展示 User Prompt、Client Chat History、System Prompt、Working Memory、LLM、Tools 和 Reply。Loop 拓扑来自专用 Graph 的 `describe()`，节点状态来自 Agent observer 事件；活动边通过独立播放队列保证快速连续事件仍逐条可见，回复逐字显示在右侧会话 Dock。
+- **Workflow**：枚举 `src/workflows/` 下的 TypeScript 文件，可编辑和执行任一工作流。拓扑来自真实 `Graph.describe()`，执行由本地 Node.js 进程调用 `runGraph()`。
+- **配置**：把模型提供方、Model、Base URL 和密钥写入根目录 `.env`，把 System Prompt 显式保存到 `EVERYTHING.md`。浏览器只能读取密钥是否存在及末四位。
 
 ```bash
 npm run dev:web
 ```
 
-`npm run dev:web` 同时启动页面与本地 Engine 桥接接口；浏览器不会执行工作流源码。编辑器保存会修改上述本地工作流文件，当前工作流只使用内存中的模拟数据，不会产生外部写操作。`npm run build:web` 可验证并构建浏览器静态资源到 `dist-web/`，但执行工作流仍需要本地开发服务器。当前尚未连接真实模型、工具注册表或持久化服务。
+首次运行后打开“配置”菜单，选择 Anthropic 或 OpenAI Compatible。对应环境变量为：
+
+```dotenv
+EVERYTHING_PROVIDER="anthropic"
+EVERYTHING_MODEL="your-model-id"
+EVERYTHING_BASE_URL=""
+ANTHROPIC_API_KEY=""
+OPENAI_API_KEY=""
+```
+
+`npm run dev:web` 同时启动页面与本地 Engine/Agent 桥接接口；浏览器不会执行工作流源码，也不会读取完整模型密钥。修改新密钥或 Base URL 时，服务端会先进行只读连接测试；失败不会覆盖旧配置，除非用户显式选择“仍然保存”。`.env` 已被 Git 忽略，不应提交。`npm run build:web` 可验证并构建浏览器静态资源到 `dist-web/`，但执行仍需要本地开发服务器。
 
 Everything Agent 的目标是构建一个真正可长期使用的个人助理 Agent：它能够理解用户意图、调用工具完成任务、保留必要的个人记忆，并以可视化方式展示每一次执行过程。
 
-项目当前已完成 Graph Engine 和基础 Agent Loop。真实模型客户端、工具注册表、记忆、会话管理和可视化界面仍在后续规划中。
+项目当前已完成 Graph Engine、基础 Agent Loop、两类真实模型协议适配、首个只读工具与本地 Agent Harness。持久 Session、长期 Memory、更多受控工具和执行回放仍在后续规划中。
 
 ## 项目目标
 
@@ -31,13 +45,15 @@ Everything Agent 的目标是构建一个真正可长期使用的个人助理 Ag
 | Node | 已完成 | 支持同步和异步执行函数 |
 | Graph | 已完成 | 支持普通边、条件路由和并行汇合 |
 | Describe | 已完成 | 从真实 Graph 生成可序列化拓扑 |
-| Graph 执行器 | 已完成 | `runGraph` 支持波次并发、条件汇合、停滞检测、错误收敛和循环保护 |
-| 执行事件 | 基础能力完成 | observer 可接收生命周期、真实波次及节点自定义事件 |
+| Graph 执行器 | 已完成 | `runGraph` 支持 wave 并发、条件汇合、停滞检测、错误收敛和循环保护 |
+| 执行事件 | 基础能力完成 | observer 可接收生命周期、真实 wave 及节点自定义事件 |
 | Agent Loop | 基础能力完成 | 支持模型推理、工具调用、结果观察、流式文本、迭代限制、超时和取消 |
-| Tool Registry | 规划中 | 工具注册、参数校验、权限与执行结果 |
+| 模型客户端 | 基础能力完成 | 支持 Anthropic Messages 与 OpenAI Compatible，包含普通响应、SSE 流式响应和降级 |
+| Tool Registry | 基础能力完成 | 首版仅注册安全只读的 `get_current_time`；参数验证、脱敏事件与取消已接通 |
 | Session / Memory | 规划中 | 会话状态、短期记忆与长期个人记忆 |
-| Graph 前端 | 本地闭环完成 | 浏览器读写本地 TypeScript 工作流，消费真实 describe 与 observer 事件，并展示波次、耗时和结果 |
-| 完整可视化界面 | 进行中 | 状态差异、事件回放、脱敏和工具调用详情仍待补充 |
+| Graph 前端 | 本地闭环完成 | 浏览器读写本地 TypeScript 工作流，消费真实 describe 与 observer 事件，并展示 wave、耗时和结果 |
+| Agent Harness 前端 | 基础闭环完成 | 真实 Agent Loop、动态 SVG、流式 Reply、临时客户端历史、停止与 60 秒超时 |
+| 完整可视化界面 | 进行中 | 状态差异、事件回放、持久 Session、长期 Memory 和更多受控工具仍待补充 |
 
 ## 总体架构
 
@@ -66,11 +82,11 @@ flowchart LR
 
 ## 可视化执行过程
 
-当前 Graph 前端已经实现代码编辑、Graph 画布、波次运行卡片和最终结果。完整执行界面还将补充以下能力：
+当前 Graph 前端已经实现代码编辑、Graph 画布、wave 运行卡片和最终结果。完整执行界面还将补充以下能力：
 
 1. **Graph 画布**：展示节点、普通边、条件边和当前执行位置。
 2. **运行时间线**：按顺序展示节点开始、结束、路由选择和错误。
-3. **状态检查器**：展示每个波次合并前后的状态变化，并隐藏敏感字段。
+3. **状态检查器**：展示每个 wave 合并前后的状态变化，并隐藏敏感字段。
 4. **工具与模型详情**：展示工具名称、参数摘要、结果摘要、模型耗时和 token 使用量。
 
 当前引擎已经提供以下基础事件：
@@ -78,7 +94,7 @@ flowchart LR
 | 事件 | 用途 |
 | --- | --- |
 | `graph_start` | 初始化一次 Graph 运行及其节点列表 |
-| `wave_start` | 给出真实波次编号、并发节点及实际激活的入边 |
+| `wave_start` | 给出真实 wave 编号、并发节点及实际激活的入边 |
 | `node_start` | 将节点标记为运行中 |
 | `node_end` | 展示耗时、写入键和异常 |
 | `route` | 高亮实际选择的条件边 |
@@ -86,7 +102,7 @@ flowchart LR
 | `graph_end` | 展示最终路径、步数和首个错误 |
 | 自定义事件 | 展示工具调用、模型输出进度等节点内部过程 |
 
-后续会在不破坏现有事件的前提下，为每次运行和事件增加稳定 ID、时间戳及脱敏后的状态增量。波次编号已经由 `wave_start`、`node_start` 和 `node_end` 提供。
+后续会在不破坏现有事件的前提下，为每次运行和事件增加稳定 ID、时间戳及脱敏后的状态增量。wave 编号已经由 `wave_start`、`node_start` 和 `node_end` 提供。
 
 ## 目录结构
 
@@ -103,10 +119,16 @@ everything-agent/
 │   ├── engine/        # Node.js Graph Engine
 │   │   ├── src/       # State、Node、Graph、Describe、runGraph
 │   │   ├── test/      # Vitest 行为测试
-│   │   ├── examples/  # 命令行使用示例
-│   │   └── workflows/ # 可由本地控制台编辑、执行的真实工作流
-│   └── loop/          # observe → reason → act → repeat Agent Loop
+│   │   └── examples/  # 命令行使用示例
+│   ├── agent-loop/    # 模型与工具无关的 Agent 回合循环及文档
+│   ├── agent-graph/    # Agent Harness 静态拓扑及文档
+│   │   └── test/      # Harness 与 Runtime 集成行为测试
+│   ├── tools/         # 本地工具注册表
+│   ├── model/         # 模型协议适配与配置接口
+│   └── workflows/     # 可由本地控制台编辑、执行的真实工作流
+│       └── test/      # 工作流行为测试，不参与控制台文件枚举
 └── web/               # 本地 Graph 控制台及 Vite Engine 桥接接口
+    └── test/          # Web 行为测试
 ```
 
 ## 快速开始
@@ -148,13 +170,13 @@ console.log(events);
 console.log(result.state.reply);
 ```
 
-完整的引擎接口和执行语义请查看 [Engine 文档](./src/engine/README.md)，Agent 回合接口请查看 [Agent Loop 文档](./src/loop/README.md)。
+完整的引擎接口和执行语义请查看 [Engine 文档](./src/engine/README.md)，Agent 回合接口请查看 [Agent Loop 文档](./src/agent-loop/README.md)，静态 Harness 拓扑请查看 [Agent Graph 文档](./src/agent-graph/README.md)。
 
 ## 设计原则
 
 - **状态是共享黑板**：节点读取快照并返回状态增量，不直接修改引擎内部状态。
 - **控制流由代码决定**：模型可以写入分类结果，路由函数负责验证并选择下一节点。
-- **并发必须确定**：同一波次并行执行，但按节点声明顺序合并结果和记录路径。
+- **并发必须确定**：同一 wave 并行执行，但按节点声明顺序合并结果和记录路径。
 - **激活决定汇合**：条件分支未命中的路径会显式跳过，汇合只等待本次运行需要解决的上游。
 - **冲突必须显式**：并行节点写入同一个状态键会失败，不允许静默覆盖。
 - **错误需要可观察**：节点异常写入状态和事件；失败节点不会触发普通下游边。

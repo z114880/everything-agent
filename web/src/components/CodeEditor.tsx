@@ -23,7 +23,7 @@ export function CodeEditor(props: CodeEditorProps) {
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <Code2 size={15} />
           <span>工作流代码</span>
-          <label className="workflow-picker" title="选择 src/engine/workflows 中的本地工作流">
+          <label className="workflow-picker" title="选择 src/workflows 中的本地工作流">
             <Check size={11} />
             <span>已连接本地 Engine ·</span>
             <select
@@ -33,7 +33,7 @@ export function CodeEditor(props: CodeEditorProps) {
               onChange={(event) => onSelect(event.target.value)}
             >
               {workflowFiles.map((file) => (
-                <option key={file} value={file}>src/engine/workflows/{file}</option>
+                <option key={file} value={file}>src/workflows/{file}</option>
               ))}
             </select>
           </label>

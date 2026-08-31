@@ -2,11 +2,15 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    // 收集核心模块和 Web 端的公开行为测试，避免示例脚本被误识别为测试。
-    include: ["src/**/*.test.ts", "web/src/**/*.test.ts"],
+    // 测试统一放在模块同级的 test 目录，避免实现目录混入测试代码。
+    include: ["src/**/test/**/*.test.ts", "web/test/**/*.test.ts"],
     coverage: {
       provider: "v8",
-      include: ["src/engine/src/**/*.ts", "src/loop/**/*.ts", "src/index.ts"],
+      include: [
+        "src/engine/src/**/*.ts",
+        "src/agent-loop/agent-loop.ts",
+        "src/index.ts",
+      ],
       reporter: ["text", "html"],
       // 基础引擎代码量较小，较高门槛可防止新增分支却没有相应用例。
       thresholds: {

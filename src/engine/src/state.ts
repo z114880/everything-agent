@@ -1,6 +1,6 @@
 /**
  * State 是整次运行共享的“黑板”。节点不会直接修改黑板，而是读取快照、
- * 返回增量，再由引擎在波次结束时统一合并。这样并发执行仍然具有确定性。
+ * 返回增量，再由引擎在 wave 结束时统一合并。这样并发执行仍然具有确定性。
  */
 
 /** 引擎状态与节点增量使用的基础对象类型。 */
@@ -9,20 +9,20 @@ export type StateRecord = Record<string, unknown>;
 /** 未显式声明状态结构时使用的兼容类型；业务代码应优先传入具体接口。 */
 export type AnyState = Record<string, any>;
 
-/** 单个节点在一个波次中产生的状态增量。 */
+/** 单个节点在一个 wave 中产生的状态增量。 */
 export interface StateWrite {
   node: string;
   update: StateRecord;
 }
 
-/** 同一波次的并行节点写入了相同状态键。 */
+/** 同一 wave 的并行节点写入了相同状态键。 */
 export class StateCollisionError extends Error {
   readonly key: string;
   readonly firstNode: string;
   readonly secondNode: string;
 
   constructor(key: string, firstNode: string, secondNode: string) {
-    super(`节点 "${firstNode}" 与 "${secondNode}" 在同一波次写入了状态键 "${key}"`);
+    super(`节点 "${firstNode}" 与 "${secondNode}" 在同一 wave 写入了状态键 "${key}"`);
     this.name = "StateCollisionError";
     this.key = key;
     this.firstNode = firstNode;
@@ -56,7 +56,7 @@ export class State<TState extends StateRecord = AnyState> {
   }
 
   /**
-   * 按节点声明顺序合并一个波次的结果，保证输出和并发完成顺序无关。
+   * 按节点声明顺序合并一个 wave 的结果，保证输出和并发完成顺序无关。
    */
   mergeWave(writes: readonly StateWrite[]): void {
     const owners = new Map<string, string>();

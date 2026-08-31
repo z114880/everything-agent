@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { runGraph } from "../src/index.js";
+import { runGraph } from "../../engine/src/index.js";
 import {
   createInitialState as createInboxState,
   graph as inboxGraph,
-} from "../workflows/inbox-triage.js";
+} from "../inbox-triage.js";
 import {
   createInitialState as createMeetingState,
   graph as meetingGraph,
-} from "../workflows/meeting-prep.js";
+} from "../meeting-prep.js";
 
 describe("本地可视化工作流", () => {
   afterEach(() => {

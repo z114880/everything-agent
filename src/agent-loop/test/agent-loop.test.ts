@@ -3,15 +3,14 @@ import {
   AgentLoopAbortError,
   AgentLoopTimeoutError,
   runAgentLoop,
-  runLoop,
-} from "../index.js";
+} from "../../index.js";
 import type {
   AgentLoopOptions,
   AgentMessage,
   AgentModelClient,
   ModelResponse,
   ToolRegistry,
-} from "./agent-loop.js";
+} from "../agent-loop.js";
 
 type ObservedEvent = { kind: string; event: Record<string, any> };
 
@@ -53,7 +52,6 @@ function fakeTools(execute = vi.fn()): ToolRegistry {
 
 describe("runAgentLoop", () => {
   it("通过根入口公开，并在模型不请求工具时自然结束", async () => {
-    expect(runLoop).toBe(runAgentLoop);
     const client = scriptedClient([textResponse("你好")]);
     const tools = fakeTools();
     const messages: AgentMessage[] = [{ role: "user", content: "打招呼" }];
@@ -86,8 +84,16 @@ describe("runAgentLoop", () => {
       messages,
       max_tokens: 2048,
     }));
-    expect(events.map(({ kind }) => kind)).toEqual(["loop_start", "llm", "loop_end"]);
-    expect(events[1]!.event).toMatchObject({
+    expect(events.map(({ kind }) => kind)).toEqual([
+      "working_memory",
+      "loop_start",
+      "llm_start",
+      "llm_end",
+      "llm",
+      "reply",
+      "loop_end",
+    ]);
+    expect(events[4]!.event).toMatchObject({
       iteration: 1,
       stopReason: "end_turn",
       usage: { in: 3, out: 2 },
@@ -146,6 +152,15 @@ describe("runAgentLoop", () => {
       tool: "lookup",
       args: "[已隐藏]",
       output: "[已隐藏]",
+    });
+    expect(events.find(({ kind }) => kind === "tool_start")!.event).toMatchObject({
+      tool: "lookup",
+      iteration: 1,
+    });
+    expect(events.find(({ kind }) => kind === "tool_end")!.event).toMatchObject({
+      tool: "lookup",
+      isError: false,
+      ms: expect.any(Number),
     });
   });
 

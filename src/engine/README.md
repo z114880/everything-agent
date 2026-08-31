@@ -6,7 +6,7 @@
 - `Node`：`handler(state, context) -> update`，同步和异步函数都支持。
 - `Graph`：声明节点、普通边和条件路由。
 - `describe`：从真实 Graph 生成可序列化拓扑，避免文档与代码漂移。
-- `runGraph`：按波次并发执行就绪节点，合并状态并推进图。
+- `runGraph`：按 wave 并发执行就绪节点，合并状态并推进图。
 
 ## 快速开始
 
@@ -38,8 +38,8 @@ graph.addRouter(
 
 ## 执行语义
 
-1. `START` 的所有出边形成首个波次。
-2. 同一波次节点读取各自的状态快照，并通过 `Promise.all` 并发运行。
+1. `START` 的所有出边形成首个 wave。
+2. 同一 wave 的节点读取各自的状态快照，并通过 `Promise.all` 并发运行。
 3. 引擎按图中节点顺序合并增量；并行节点写入相同键会抛出 `StateCollisionError`。
 4. 条件路由会把命中的分支标记为已激活，并将未命中的分支标记为已跳过；跳过状态会向下传播，因此条件分支之后可以正常汇合。
 5. 普通并行汇合等待所有已声明的上游完成决议：成功和跳过允许继续，任一上游失败都会阻止依赖其输出的节点运行。
@@ -50,7 +50,7 @@ graph.addRouter(
 
 ## 事件
 
-可通过 observer 获取 `graph_start`、`wave_start`、`node_start`、`node_end`、`route`、`graph_stalled`、`graph_end`。`wave_start` 包含真实的波次编号、该波并发节点和实际触发的 `activatedEdges`；未命中的条件分支不会出现在激活边中。`node_start`、`node_end` 也包含对应的 `wave`：
+可通过 observer 获取 `graph_start`、`wave_start`、`node_start`、`node_end`、`route`、`graph_stalled`、`graph_end`。`wave_start` 包含真实的 wave 编号、当前 wave 的并发节点和实际触发的 `activatedEdges`；未命中的条件分支不会出现在激活边中。`node_start`、`node_end` 也包含对应的 `wave`：
 
 ```ts
 await runGraph(graph, initialState, {
