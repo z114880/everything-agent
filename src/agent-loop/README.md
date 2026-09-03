@@ -71,12 +71,12 @@ console.log(result.reply);
 - 工具异常会转换成带 `is_error` 的 `tool_result` 交回模型。
 - 模型、observer 或响应结构错误会在发送 `loop_error` 后继续向调用方抛出。
 
-observer 会收到 `working_memory`、`loop_start`、`llm_start`、`llm_end`、`text`、`stream_fallback`、`tool_start`、`tool_end`、`reply`、`loop_end` 和 `loop_error` 等事件。所有事件带同一 `runId`，迭代相关事件带 `iteration`。
+observer 会收到 `working_memory`、`loop_start`、`llm_start`、`llm_end`、`text`、`stream_fallback`、`tool_start`、`tool_end`、`reply`、`loop_end` 和 `loop_error` 等事件。所有事件带同一 `runId`，迭代相关事件带 `iteration`。调用方可传入 `runId` 与持久 Session 对齐；省略时由 Loop 生成 UUID。
 
-工具事件默认隐藏完整参数和输出。需要展示详情时，应通过 `serializeToolEvent` 只返回脱敏摘要。启用 `stream: true` 且客户端实现 `messages.stream()` 时，流式调用失败会降级到普通调用；取消和超时不会触发降级。
+工具事件默认包含完整参数和输出；涉及凭证的调用方必须通过 `serializeToolEvent` 移除 API Key、令牌、Cookie 等字段。启用 `stream: true` 且客户端实现 `messages.stream()` 时，流式调用失败会降级到普通调用；取消和超时不会触发降级。
 
 ## 安全边界
 
 - Agent 回合同时受到迭代上限、整轮超时和客户端取消信号约束。
-- Loop 不记录模型密钥，也不默认暴露完整工具参数和输出。
+- Loop 不记录模型密钥。工具参数和输出会进入 observer；持久化或向外发送前由调用方移除凭证字段。
 - 外部写操作的确认和审计策略由注入的工具注册表执行。

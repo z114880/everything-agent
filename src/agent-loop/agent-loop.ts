@@ -1,6 +1,10 @@
 /**
- * THE LOOP — observe → reason → act → repeat。
- *
+ * Agent Loop 遵循 observe → reason → act → repeat：模型根据消息推理，需要工具
+ * 时执行调用并把结果放回工作记忆，不再请求工具时向用户回复。模型自然结束和
+ * maxIterations 硬限制共同保证循环一定能够退出。
+ */
+
+/**
  * 本文件保留 Agent Loop 的公开接口和调度主干；类型、执行保护、模型响应与工具
  * 执行分别由同目录内部模块负责。
  */
@@ -51,7 +55,7 @@ function validateOptions(options: AgentLoopOptions): void {
     maxTokens = DEFAULT_MAX_TOKENS,
     observer = () => {},
     timeoutMs,
-    serializeToolEvent = privateToolEvent,
+    serializeToolEvent = defaultToolEvent,
   } = options;
 
   assertPositiveInteger(maxIterations, "maxIterations");
@@ -70,14 +74,13 @@ function validateOptions(options: AgentLoopOptions): void {
   }
 }
 
-function privateToolEvent(call: ToolCallRecord): EventData {
+function defaultToolEvent(call: ToolCallRecord): EventData {
   return {
     tool: call.tool,
     toolUseId: call.toolUseId,
     iteration: call.iteration,
-    // 默认不把工具参数和结果复制到 observer；调用方可显式提供脱敏摘要。
-    args: "[已隐藏]",
-    output: "[已隐藏]",
+    args: call.args,
+    output: call.output,
     isError: call.isError,
   };
 }
@@ -102,10 +105,10 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
     stream = false,
     signal,
     timeoutMs,
-    serializeToolEvent = privateToolEvent,
+    serializeToolEvent = defaultToolEvent,
   } = options;
 
-  const runId = crypto.randomUUID();
+  const runId = options.runId ?? crypto.randomUUID();
   const startedAt = performance.now();
   const deadline = timeoutMs === undefined ? null : Date.now() + timeoutMs;
   const guard: GuardOptions = { signal, deadline, timeoutMs: timeoutMs ?? 0 };
@@ -132,6 +135,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
       };
 
       await notify("llm_start", { iteration });
+      const llmStartedAt = performance.now();
       const response = await requestModelResponse(
         client,
         request,
@@ -142,7 +146,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
       );
       const usage = usageFrom(response);
       const stopReason = response.stop_reason ?? response.stopReason ?? null;
-      await notify("llm_end", { iteration, stopReason, usage });
+      await notify("llm_end", { iteration, stopReason, usage, ms: Math.round(performance.now() - llmStartedAt) });
       await notify("llm", { iteration, stopReason, usage });
       messages.push({ role: "assistant", content: response.content });
 

@@ -1,8 +1,10 @@
-import { Bot, GitBranch, PanelLeftClose, PanelLeftOpen, Settings, Sparkles } from "lucide-react";
+import { Activity, Bot, Brain, GitBranch, PanelLeftClose, PanelLeftOpen, Settings, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CodeEditor } from "./components/CodeEditor";
 import { AgentPage } from "./components/AgentPage";
 import { ConfigPage } from "./components/ConfigPage";
+import { MemoryPage } from "./components/MemoryPage";
+import { TracePage } from "./components/TracePage";
 import { GraphCanvas, type VisualNodeState } from "./components/GraphCanvas";
 import { ResultPanel, RunPanel } from "./components/RunPanel";
 import {
@@ -16,7 +18,7 @@ import {
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [page, setPage] = useState<"agent" | "workflow" | "config">("agent");
+  const [page, setPage] = useState<"agent" | "workflow" | "memory" | "traces" | "config">("agent");
   const [code, setCode] = useState("");
   const [workflowFiles, setWorkflowFiles] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState("");
@@ -200,13 +202,15 @@ export default function App() {
         <div className="nav-group">系统</div>
         <button className={`nav-item ${page === "agent" ? "active" : ""}`} onClick={() => setPage("agent")}><Bot size={15} /><span>Agent</span></button>
         <button className={`nav-item ${page === "workflow" ? "active" : ""}`} onClick={() => setPage("workflow")}><GitBranch size={15} /><span>Workflow</span><span className="nav-count">01</span></button>
+        <button className={`nav-item ${page === "memory" ? "active" : ""}`} onClick={() => setPage("memory")}><Brain size={15} /><span>Memory</span></button>
+        <button className={`nav-item ${page === "traces" ? "active" : ""}`} onClick={() => setPage("traces")}><Activity size={15} /><span>运行记录</span></button>
         <button className={`nav-item ${page === "config" ? "active" : ""}`} onClick={() => setPage("config")}><Settings size={15} /><span>配置</span></button>
         <div className="sidebar-note"><span className="signal bg-emerald-500" />本地 Engine 已连接</div>
       </aside>
       {!sidebarOpen && <button className="sidebar-reopen" onClick={() => setSidebarOpen(true)} aria-label="展开侧边栏"><PanelLeftOpen size={17} /></button>}
 
       <main className={`main-content ${page === "agent" ? "agent-main-content" : ""}`}>
-        {page === "agent" ? <AgentPage onOpenConfig={() => setPage("config")} /> : page === "config" ? <ConfigPage /> : <>
+        {page === "agent" ? <AgentPage onOpenConfig={() => setPage("config")} /> : page === "config" ? <ConfigPage /> : page === "memory" ? <MemoryPage /> : page === "traces" ? <TracePage /> : <>
         <header className="page-header">
           <div>
             <div className="eyebrow">工作流 / 可视化执行</div>

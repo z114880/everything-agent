@@ -48,7 +48,7 @@
     "example": "tsx src/engine/examples/basic.ts"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   },
   "license": "MIT",
   "devDependencies": {

@@ -21,7 +21,7 @@
 ## 当前状态
 
 - `src/engine/` 是当前 Node.js 基础引擎，实现了 State、Node、Graph、Describe 和 runGraph。
-- `src/agent-loop/` 已实现基础 Agent Loop，`src/agent-graph/` 提供 Harness 拓扑，`src/tools/` 提供本地 Tool Registry；`src/model/` 已实现真实 LLM 协议适配，Session 和 Memory 尚未完成。
+- `src/agent-loop/` 已实现基础 Agent Loop，`src/agent-graph/` 提供 Harness 拓扑，`src/tools/` 提供本地 Tool Registry；`src/model/` 已实现真实 LLM 协议适配，`src/memory/` 已实现本地 Session、SQLite 长期记忆、FTS5 检索与 consolidation。
 - 文档必须明确区分已经实现的能力和规划能力，不得把路线图描述成现成功能。
 
 ## 架构约束
@@ -64,6 +64,8 @@
 - `src/agent-graph/`：Agent Harness 拓扑；行为测试放在 `src/agent-graph/test/`。
 - `src/tools/`：本地工具注册表；行为测试放在 `src/tools/test/`。
 - `src/model/model-client.ts`：独立于 Agent Runtime 的真实模型协议适配与配置接口；行为测试放在 `src/model/test/`。
+- `src/memory/`：本地 Session、SQLite、FTS5 检索与 consolidation；行为测试放在 `src/memory/test/`。
+- `src/tracing/`：classic Agent Loop 与 Memory 的 JSONL 运行记录；行为测试放在 `src/tracing/test/`。
 - `src/workflows/`：与 Engine、Agent 同级的本地工作流；行为测试放在 `src/workflows/test/`。
 - `web/test/`：Web 模块的行为测试。
 - `src/index.ts`：包的统一公开接口。
@@ -74,7 +76,7 @@
 
 ## 编码规范
 
-- 当前 Engine 使用 Node.js 20+、ESM 和严格模式 TypeScript。
+- 当前 Engine 使用 Node.js 22.13+、ESM 和严格模式 TypeScript。
 - 保持零运行时依赖；测试和开发工具可以作为 `devDependencies`。
 - 公共类和函数需要简洁的中文 JSDoc，解释接口约定和重要错误模式。
 - 注释解释设计原因、执行语义或容易误解的约束，不逐行复述代码。

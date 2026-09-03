@@ -7,6 +7,8 @@ import type { Graph, StateRecord } from "../../src/engine/src/index.js";
 import {
   AgentConfigError,
   loadAgentBootstrap,
+  handleMemoryAction,
+  loadTraceDashboard,
   runLocalAgent,
   saveAgentSettings,
   saveSystemPrompt,
@@ -152,6 +154,21 @@ async function handleAgentRequest(
   if (request.method === "PUT" && pathname === `${agentApiPrefix}/system-prompt`) {
     const body = await readJsonBody(request);
     sendJson(response, 200, { ok: true, systemPrompt: await saveSystemPrompt(body) });
+    return;
+  }
+
+  if (request.method === "GET" && pathname === `${agentApiPrefix}/memory`) {
+    sendJson(response, 200, await handleMemoryAction({ action: "bootstrap" }));
+    return;
+  }
+
+  if (request.method === "POST" && pathname === `${agentApiPrefix}/memory`) {
+    sendJson(response, 200, { ok: true, result: await handleMemoryAction(await readJsonBody(request)) });
+    return;
+  }
+
+  if (request.method === "GET" && pathname === `${agentApiPrefix}/traces`) {
+    sendJson(response, 200, await loadTraceDashboard());
     return;
   }
 

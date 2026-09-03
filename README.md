@@ -4,9 +4,11 @@
 
 仓库已包含一个 React + Tailwind 的本地控制台：
 
-- **Agent**：运行真实 `runAgentLoop`，展示 User Prompt、Client Chat History、System Prompt、Working Memory、LLM、Tools 和 Reply。Loop 拓扑来自专用 Graph 的 `describe()`，节点状态来自 Agent observer 事件；活动边通过独立播放队列保证快速连续事件仍逐条可见，回复逐字显示在右侧会话 Dock。
+- **Agent**：运行真实 `runAgentLoop`，从 SQLite 恢复多轮 Session，展示 Working Memory、LLM、Tools 和 Reply。工具调用过程完整保存在本地 Chat Log，活动边和回复由真实 observer 事件驱动。
 - **Workflow**：枚举 `src/workflows/` 下的 TypeScript 文件，可编辑和执行任一工作流。拓扑来自真实 `Graph.describe()`，执行由本地 Node.js 进程调用 `runGraph()`。
-- **配置**：把模型提供方、Model、Base URL 和密钥写入根目录 `.env`，把 System Prompt 显式保存到 `EVERYTHING.md`。浏览器只能读取密钥是否存在及末四位。
+- **Memory**：通过 Overview、Semantic、Episodic、Procedural、Chat Log 和 Consolidation 查看与管理本地记忆。
+- **运行记录**：只读回放 `.everything/traces/` 中的 classic loop 与 memory 事件。
+- **配置**：把 Provider、主/小模型、历史窗口、Base URL 和密钥写入根目录 `.env`，把 System Prompt 保存到 `.everything/EVERYTHING.md`。浏览器只能读取密钥是否存在及末四位。
 
 ```bash
 npm run dev:web
@@ -17,6 +19,8 @@ npm run dev:web
 ```dotenv
 EVERYTHING_PROVIDER="anthropic"
 EVERYTHING_MODEL="your-model-id"
+EVERYTHING_SMALL_MODEL="your-small-model-id"
+EVERYTHING_HISTORY_TURNS="10"
 EVERYTHING_BASE_URL=""
 ANTHROPIC_API_KEY=""
 OPENAI_API_KEY=""
@@ -26,7 +30,7 @@ OPENAI_API_KEY=""
 
 Everything Agent 的目标是构建一个真正可长期使用的个人助理 Agent：它能够理解用户意图、调用工具完成任务、保留必要的个人记忆，并以可视化方式展示每一次执行过程。
 
-项目当前已完成 Graph Engine、基础 Agent Loop、两类真实模型协议适配、首个只读工具与本地 Agent Harness。持久 Session、长期 Memory、更多受控工具和执行回放仍在后续规划中。
+项目当前已完成 Graph Engine、Agent Loop、两类真实模型协议适配、持久 Session、SQLite 长期 Memory、受控记忆工具、本地 Agent Harness 和 JSONL 运行记录。
 
 ## 项目目标
 
@@ -49,11 +53,11 @@ Everything Agent 的目标是构建一个真正可长期使用的个人助理 Ag
 | 执行事件 | 基础能力完成 | observer 可接收生命周期、真实 wave 及节点自定义事件 |
 | Agent Loop | 基础能力完成 | 支持模型推理、工具调用、结果观察、流式文本、迭代限制、超时和取消 |
 | 模型客户端 | 基础能力完成 | 支持 Anthropic Messages 与 OpenAI Compatible，包含普通响应、SSE 流式响应和降级 |
-| Tool Registry | 基础能力完成 | 首版仅注册安全只读的 `get_current_time`；参数验证、脱敏事件与取消已接通 |
-| Session / Memory | 规划中 | 会话状态、短期记忆与长期个人记忆 |
+| Tool Registry | 基础能力完成 | 注册 `get_current_time` 与受控 `manage_memory`，支持参数验证、删除确认和取消 |
+| Session / Memory | 基础闭环完成 | SQLite Session、结构化 Chat Log、FTS5 + BM25、gated retrieval 与 Session 增量 consolidation |
 | Graph 前端 | 本地闭环完成 | 浏览器读写本地 TypeScript 工作流，消费真实 describe 与 observer 事件，并展示 wave、耗时和结果 |
-| Agent Harness 前端 | 基础闭环完成 | 真实 Agent Loop、动态 SVG、流式 Reply、临时客户端历史、停止与 60 秒超时 |
-| 完整可视化界面 | 进行中 | 状态差异、事件回放、持久 Session、长期 Memory 和更多受控工具仍待补充 |
+| Agent Harness 前端 | 基础闭环完成 | 真实 Agent Loop、动态 SVG、流式 Reply、持久多轮 Session、停止与 60 秒超时 |
+| 完整可视化界面 | 进行中 | 已有 Memory 管理与持久 trace 时间线；状态差异和更丰富的工具仍待补充 |
 
 ## 总体架构
 
@@ -65,7 +69,7 @@ flowchart LR
     R --> G[Graph Engine]
     L --> M[模型客户端]
     L --> T[工具注册表]
-    R --> ME[记忆系统]
+    R --> ME[SQLite Memory]
     L --> E[执行事件流]
     G --> E[执行事件流]
     G --> D[Graph.describe]
@@ -123,7 +127,9 @@ everything-agent/
 │   ├── agent-loop/    # 模型与工具无关的 Agent 回合循环及文档
 │   ├── agent-graph/    # Agent Harness 静态拓扑及文档
 │   │   └── test/      # Harness 与 Runtime 集成行为测试
-│   ├── tools/         # 本地工具注册表
+│   ├── memory/        # SQLite、FTS5、Session、检索和 consolidation
+│   ├── tracing/       # classic loop 与 memory 的 JSONL 运行记录
+│   ├── tools/         # 本地工具注册表与 manage_memory
 │   ├── model/         # 模型协议适配与配置接口
 │   └── workflows/     # 可由本地控制台编辑、执行的真实工作流
 │       └── test/      # 工作流行为测试，不参与控制台文件枚举
@@ -133,7 +139,7 @@ everything-agent/
 
 ## 快速开始
 
-环境要求：Node.js 20 或更高版本。
+环境要求：Node.js 22.13 或更高版本。Memory 使用 Node.js 内置 `node:sqlite`，启动时会验证 FTS5 可用性。
 
 ```bash
 npm install
@@ -170,7 +176,7 @@ console.log(events);
 console.log(result.state.reply);
 ```
 
-完整的引擎接口和执行语义请查看 [Engine 文档](./src/engine/README.md)，Agent 回合接口请查看 [Agent Loop 文档](./src/agent-loop/README.md)，静态 Harness 拓扑请查看 [Agent Graph 文档](./src/agent-graph/README.md)。
+完整的引擎接口和执行语义请查看 [Engine 文档](./src/engine/README.md)，Agent 回合接口请查看 [Agent Loop 文档](./src/agent-loop/README.md)，静态 Harness 拓扑请查看 [Agent Graph 文档](./src/agent-graph/README.md)，持久记忆语义请查看 [Memory 文档](./src/memory/README.md)。
 
 ## 设计原则
 
@@ -212,8 +218,8 @@ console.log(result.state.reply);
 
 ### 阶段四：个人助理能力
 
-- 会话管理和短期记忆
-- 可检索、可删除的长期个人记忆
+- 会话管理和短期记忆（基础闭环已完成）
+- 可检索、可删除的长期个人记忆（基础闭环已完成）
 - 日历、任务、笔记、文件等工具适配器
 - 外部写操作确认、权限边界和审计记录
 
@@ -228,11 +234,11 @@ npm run build
 ```
 
 当前测试通过公开接口验证行为，不依赖私有实现。覆盖率门槛为：行、函数和语句 90%，分支 85%。
-`npm run build` 会把可供 Node.js 20 加载的 ESM 与类型声明输出到忽略提交的 `dist/`。
+`npm run build` 会把可供 Node.js 22.13+ 加载的 ESM 与类型声明输出到忽略提交的 `dist/`。
 
 ## 当前边界
 
-- 当前仓库包含 Graph Engine 和依赖注入式 Agent Loop，但还没有真实模型客户端、Tool Registry 或可直接对话的完整应用。
-- 当前 observer 是进程内回调，还不是网络事件流或持久化追踪系统。
+- 当前 Session 和 Memory 是单用户、本地实现，不包含多租户或云同步。
+- JSONL trace 只覆盖 classic loop 与 memory；Workflow 继续使用实时 observer，不写入该目录。
 - `State.snapshot()` 是顶层复制；节点应把收到的状态视为只读对象。
 - 当前没有内置鉴权、密钥管理或个人数据加密能力。

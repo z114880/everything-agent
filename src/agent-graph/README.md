@@ -15,7 +15,7 @@ Working Memory → LLM ↔ Tools → Reply
 - LLM 根据经过代码验证的路由标签进入 Tools 或 Reply。
 - Tools 执行完成后回到 LLM，并同时受到 Agent Loop 迭代限制保护。
 
-User Prompt、Client Chat History 和 System Prompt 是 Harness 的输入节点，不属于 Graph 静态拓扑。服务端将它们组装进本轮 Working Memory；前端通过 Agent Loop 的 `working_memory` observer 事件更新执行状态。
+User Prompt、SQLite Session History 和 System Prompt 是 Harness 的输入，不属于 Graph 静态拓扑。服务端从持久化 Chat Log 恢复最近的完整回合并组装本轮 Working Memory；前端通过 Agent Loop 的 `working_memory` observer 事件更新执行状态。
 
 ## 使用方式
 
@@ -34,3 +34,4 @@ console.log(description.edges);
 - `../agent-loop/`：执行 `observe → reason → act → repeat` 回合。
 - `../tools/`：提供受控工具注册表。
 - `../model/`：把真实模型协议适配为 Agent Loop 接口。
+- `../memory/`：提供持久 Session、检索上下文与 consolidation。

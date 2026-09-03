@@ -150,8 +150,8 @@ describe("runAgentLoop", () => {
     });
     expect(events.find(({ kind }) => kind === "tool")!.event).toMatchObject({
       tool: "lookup",
-      args: "[已隐藏]",
-      output: "[已隐藏]",
+      args: { city: "上海" },
+      output: '{"weather":"晴"}',
     });
     expect(events.find(({ kind }) => kind === "tool_start")!.event).toMatchObject({
       tool: "lookup",

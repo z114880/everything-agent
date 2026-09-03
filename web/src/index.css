@@ -121,9 +121,9 @@ button { cursor: pointer; }
 .result-icon { display: grid; width: 31px; height: 31px; flex: 0 0 auto; place-items: center; border-radius: 9px; background: var(--good-soft); color: #2b8a5d; }
 .state-output { max-height: 260px; overflow: auto; margin-top: 8px; border: 1px solid var(--line); border-radius: 8px; background: #f8f9fa; padding: 10px; color: #525965; font-family: var(--font-mono); font-size: 10px; line-height: 1.6; white-space: pre-wrap; }
 
-/* Agent Harness：主画布与 Waku 风格右侧会话 Dock。 */
+/* Agent Harness：主画布与右侧持久化会话 Dock。 */
 .agent-main-content { height: 100vh; overflow: hidden; }
-.agent-page-layout { display: grid; height: 100vh; grid-template-columns: minmax(600px, 1fr) 390px; background: var(--bg); }
+.agent-page-layout { display: grid; height: 100vh; grid-template-columns: minmax(520px, 1fr) minmax(520px, 650px); background: var(--bg); }
 .agent-main-column { min-width: 0; overflow-y: auto; padding: 28px clamp(20px, 3vw, 46px); }
 .agent-page-intro { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
 .agent-page-intro h1, .config-page-header h1 { margin: 0; font-size: 23px; font-weight: 680; letter-spacing: -.035em; }
@@ -152,7 +152,18 @@ button { cursor: pointer; }
 .agent-graph-note { border-top: 1px solid var(--line); padding: 10px 14px; color: var(--muted); font-size: 10px; }
 .agent-graph-note code, .config-page code { font-family: var(--font-mono); font-size: 10px; }
 
-.agent-chat-dock { display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; border-left: 1px solid var(--line); background: #fbfbfc; }
+.agent-chat-dock { display: grid; min-width: 0; min-height: 0; grid-template-columns: 172px minmax(0, 1fr); overflow: hidden; border-left: 1px solid var(--line); background: #fbfbfc; }
+.session-rail { display: flex; min-height: 0; flex-direction: column; border-right: 1px solid var(--line); background: #f5f6f8; padding: 10px 8px; }
+.new-session { display: flex; min-height: 34px; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--line-strong); border-radius: 8px; background: white; color: var(--ink); font-size: 10px; font-weight: 650; }
+.session-list { display: flex; min-height: 0; flex-direction: column; gap: 4px; overflow-y: auto; margin-top: 9px; }
+.session-list button { overflow: hidden; border: 1px solid transparent; border-radius: 7px; background: transparent; padding: 8px; color: var(--muted); text-align: left; }
+.session-list button.active { border-color: #cdd1fa; background: white; color: var(--ink); }
+.session-list strong, .session-list span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-list strong { font-size: 10px; }
+.session-list span { margin-top: 3px; font-size: 8px; }
+.chat-pane { display: flex; min-width: 0; min-height: 0; flex-direction: column; }
+.session-icon { display: grid; width: 27px; height: 27px; flex: 0 0 auto; place-items: center; border: 1px solid var(--line); border-radius: 7px; background: white; color: var(--muted); }
+.session-icon.danger { color: #b95047; }
 .agent-dock-header { display: flex; min-height: 67px; align-items: center; gap: 9px; border-bottom: 1px solid var(--line); padding: 12px 14px; }
 .agent-avatar { display: grid; width: 31px; height: 31px; flex: 0 0 auto; place-items: center; border-radius: 9px; background: var(--accent-soft); color: var(--accent); }
 .agent-dock-header strong { display: block; font-size: 13px; }
@@ -179,6 +190,8 @@ button { cursor: pointer; }
 .assistant-meta { display: flex; align-items: center; gap: 4px; margin-top: 9px; color: var(--muted-light); font-family: var(--font-mono); font-size: 8px; }
 .agent-inline-note { margin: 0 0 8px; border-radius: 6px; background: #fff7e7; padding: 6px 8px; color: #98701b; font-size: 9px; }
 .tool-summary { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 6px; margin: 6px 0; border-radius: 7px; background: #f8f9fa; padding: 6px 8px; color: var(--muted); font-size: 9px; }
+.tool-summary summary { cursor: pointer; }
+.tool-summary pre { grid-column: 1 / -1; max-height: 180px; overflow: auto; white-space: pre-wrap; }
 .tool-summary code { color: #4d5561; font-family: var(--font-mono); font-size: 9px; }
 .tool-summary small { font-family: var(--font-mono); }
 .tool-status-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--accent); }
@@ -206,6 +219,7 @@ button { cursor: pointer; }
 .config-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 13px; color: #59606c; font-size: 11px; font-weight: 600; }
 .config-field input, .config-field select { width: 100%; border: 1px solid var(--line-strong); border-radius: 8px; outline: none; background: var(--panel-soft); padding: 9px 11px; color: var(--ink); font-size: 12px; font-weight: 400; }
 .config-field input:focus, .config-field select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.field-help { color: var(--muted); font-size: 9px; font-weight: 400; }
 .secret-label { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-weight: 400; }
 .clear-secret { display: flex; align-items: center; gap: 7px; margin: -3px 0 14px; color: #a1534b; font-size: 10px; }
 .config-actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
@@ -222,6 +236,50 @@ button { cursor: pointer; }
 .loading-panel, .error-panel { margin: 30px; padding: 30px; color: var(--muted); font-size: 12px; }
 .error-panel { color: #be4035; }
 
+/* Memory 与持久化运行记录。 */
+.memory-page, .trace-page { max-width: 1280px; }
+.memory-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: 5px 0 18px; }
+.memory-header h1 { margin: 0; font-size: 23px; }
+.memory-header p { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
+.ghost-action { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 8px; background: white; padding: 7px 10px; color: var(--muted); font-size: 10px; }
+.memory-tabs { display: flex; gap: 4px; overflow-x: auto; margin-bottom: 14px; border-bottom: 1px solid var(--line); }
+.memory-tabs button { border: 0; border-bottom: 2px solid transparent; background: transparent; padding: 9px 12px; color: var(--muted); font-size: 11px; }
+.memory-tabs button.active { border-bottom-color: var(--accent); color: var(--accent); font-weight: 650; }
+.memory-message { margin-bottom: 10px; color: var(--muted); font-size: 10px; }
+.metric-grid { display: grid; grid-template-columns: repeat(4, minmax(130px, 1fr)); gap: 12px; }
+.metric-card { padding: 16px; }
+.metric-card span { color: var(--muted); font-size: 10px; }
+.metric-card strong { display: block; margin-top: 8px; font-size: 26px; }
+.path-card { display: flex; grid-column: 1 / -1; align-items: center; gap: 12px; padding: 16px; }
+.path-card code { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; }
+.memory-search { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.memory-search input { min-width: 0; flex: 1; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.memory-search button { border-radius: 8px; padding: 8px 12px; }
+.memory-list { display: grid; gap: 9px; }
+.memory-card { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 14px; }
+.memory-card strong, .memory-card p, .memory-card small { display: block; }
+.memory-card p { margin: 7px 0; font-size: 12px; line-height: 1.6; white-space: pre-wrap; }
+.memory-card small, .memory-id { color: var(--muted); font-size: 9px; }
+.memory-id { margin-right: 10px; font-family: var(--font-mono); }
+.memory-card > div:last-child { display: flex; gap: 5px; }
+.memory-card button { border: 1px solid var(--line); border-radius: 7px; background: white; padding: 5px 8px; color: var(--muted); font-size: 9px; }
+.memory-card button.danger { color: #b95047; }
+.procedural-editor { overflow: hidden; padding-bottom: 14px; }
+.procedural-editor textarea { width: calc(100% - 28px); min-height: 480px; margin: 14px; resize: vertical; border: 1px solid var(--line); border-radius: 8px; padding: 13px; font-family: var(--font-mono); font-size: 11px; line-height: 1.6; }
+.procedural-editor > button { margin-left: 14px; border-radius: 8px; padding: 8px 11px; }
+.table-scroll { overflow: auto; }
+.table-scroll table { width: 100%; border-collapse: collapse; font-size: 10px; }
+.table-scroll th, .table-scroll td { border-bottom: 1px solid var(--line); padding: 9px 10px; text-align: left; vertical-align: top; }
+.table-scroll th { background: #f7f8fa; color: var(--muted); }
+.table-scroll pre { max-width: 430px; max-height: 160px; overflow: auto; margin: 0; white-space: pre-wrap; }
+.trace-list { display: grid; gap: 8px; }
+.trace-card { display: grid; grid-template-columns: 28px 1fr; gap: 8px; padding: 11px; }
+.trace-dot { display: grid; width: 25px; height: 25px; place-items: center; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.trace-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.trace-title time, .trace-identifiers { color: var(--muted); font-size: 9px; }
+.trace-identifiers { display: flex; gap: 8px; margin-top: 3px; }
+.trace-card pre { overflow: auto; margin: 7px 0 0; color: #555d69; font-size: 9px; white-space: pre-wrap; }
+
 @keyframes flow { to { stroke-dashoffset: -24; } }
 @keyframes nodePulse { 50% { filter: drop-shadow(0 0 7px rgb(91 103 214 / .3)); } }
 @keyframes runningBar { 50% { opacity: .4; } }
@@ -231,7 +289,7 @@ button { cursor: pointer; }
   .workspace-grid { grid-template-columns: 1fr; }
   .analysis-grid { --analysis-height: 518px; grid-template-columns: 1fr; }
   .graph-scroll { height: 500px; }
-  .agent-page-layout { grid-template-columns: minmax(520px, 1fr) 350px; }
+  .agent-page-layout { grid-template-columns: minmax(460px, 1fr) minmax(480px, 560px); }
   .config-grid { grid-template-columns: 1fr; }
 }
 
@@ -251,6 +309,7 @@ button { cursor: pointer; }
   .agent-main-column { overflow: visible; padding: 66px 14px 16px; }
   .agent-page-intro { align-items: flex-start; flex-direction: column; }
   .agent-chat-dock { min-height: 620px; border-top: 1px solid var(--line); border-left: 0; }
+  .metric-grid { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
   .config-page { padding-top: 64px; }
 }
 

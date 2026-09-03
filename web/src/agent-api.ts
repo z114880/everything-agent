@@ -5,6 +5,8 @@ export type AgentProvider = "anthropic" | "openai-compatible";
 export interface AgentSettings {
   provider: AgentProvider;
   model: string;
+  smallModel: string;
+  historyTurns: number;
   baseUrl: string;
   keyConfigured: boolean;
   keyLast4: string;
@@ -14,6 +16,53 @@ export interface AgentBootstrap {
   workflow: Workflow;
   settings: AgentSettings;
   systemPrompt: string;
+  sessions: SessionSummary[];
+}
+
+export interface SessionSummary {
+  id: string;
+  title: string;
+  messageCount: number;
+  createdAt: string;
+  updatedAt: string;
+  pendingMessages: number;
+}
+
+export interface ChatLogEntry {
+  id: number;
+  sessionId: string;
+  runId: string;
+  role: string;
+  kind: string;
+  content: unknown;
+  createdAt: string;
+}
+
+export interface SemanticMemory {
+  id: number; subject: string; content: string; source: string; createdAt: string; updatedAt: string;
+}
+
+export interface EpisodicMemory {
+  id: number; sessionId: string | null; summary: string; happenedAt: string; source: string; createdAt: string; updatedAt: string;
+}
+
+export interface ConsolidationRun {
+  id: number; runId: string; sessionId: string; trigger: string; status: string; throughMessageId: number;
+  factsCreated: number; factsUpdated: number; factsSkipped: number; episodeChanged: boolean;
+  errorType: string | null; startedAt: string; completedAt: string | null;
+}
+
+export interface MemoryDashboard {
+  overview: { semanticCount: number; episodicCount: number; sessionCount: number; pendingSessionCount: number; databasePath: string; latestConsolidation: ConsolidationRun | null };
+  sessions: SessionSummary[];
+  semantic: SemanticMemory[];
+  episodic: EpisodicMemory[];
+  chatLog: ChatLogEntry[];
+  consolidations: ConsolidationRun[];
+}
+
+export interface TraceRecord {
+  version: number; type: string; timestamp: string; runId: string; sessionId?: string; [key: string]: unknown;
 }
 
 export interface ClientHistoryMessage {
@@ -28,6 +77,8 @@ export interface AgentEvent {
   tool?: string;
   toolUseId?: string;
   summary?: string;
+  args?: unknown;
+  output?: unknown;
   isError?: boolean;
   ms?: number;
   stopReason?: string;
@@ -59,6 +110,8 @@ export function saveAgentConfig(value: {
   baseUrl: string;
   apiKey: string;
   clearApiKey: boolean;
+  smallModel: string;
+  historyTurns: number;
   force?: boolean;
 }): Promise<{ ok: true; settings: AgentSettings; models: string[] }> {
   return requestJson(`${endpoint}/config`, {
@@ -68,7 +121,7 @@ export function saveAgentConfig(value: {
   });
 }
 
-/** 显式更新根目录 EVERYTHING.md。 */
+/** 显式更新 `.everything/EVERYTHING.md`。 */
 export function saveSystemPrompt(systemPrompt: string): Promise<{ ok: true; systemPrompt: string }> {
   return requestJson(`${endpoint}/system-prompt`, {
     method: "PUT",
@@ -77,17 +130,34 @@ export function saveSystemPrompt(systemPrompt: string): Promise<{ ok: true; syst
   });
 }
 
+export function loadMemory(): Promise<MemoryDashboard> {
+  return requestJson(`${endpoint}/memory`);
+}
+
+export async function memoryAction<T = unknown>(value: Record<string, unknown>): Promise<T> {
+  const response = await requestJson<{ ok: true; result: T }>(`${endpoint}/memory`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(value),
+  });
+  return response.result;
+}
+
+export function loadTraces(): Promise<{ records: TraceRecord[] }> {
+  return requestJson(`${endpoint}/traces`);
+}
+
 /** 执行一次 Agent 回合并消费服务端 NDJSON observer 事件。 */
 export async function runAgent(
   prompt: string,
-  history: ClientHistoryMessage[],
+  sessionId: string,
   onEvent: (kind: string, event: AgentEvent) => void,
   signal: AbortSignal,
 ): Promise<AgentRunResult> {
   const response = await fetch(`${endpoint}/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, history }),
+    body: JSON.stringify({ prompt, sessionId }),
     signal,
   });
   if (!response.ok || !response.body) throw new Error(await responseError(response));
@@ -141,4 +211,3 @@ async function responseError(response: Response): Promise<string> {
     return text || `请求失败（${response.status}）`;
   }
 }
-

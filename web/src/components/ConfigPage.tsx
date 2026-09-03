@@ -12,6 +12,8 @@ export function ConfigPage() {
   const [settings, setSettings] = useState<AgentSettings | null>(null);
   const [provider, setProvider] = useState<AgentProvider>("anthropic");
   const [model, setModel] = useState("");
+  const [smallModel, setSmallModel] = useState("");
+  const [historyTurns, setHistoryTurns] = useState(10);
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [clearApiKey, setClearApiKey] = useState(false);
@@ -29,6 +31,8 @@ export function ConfigPage() {
       setSettings(value.settings);
       setProvider(value.settings.provider);
       setModel(value.settings.model);
+      setSmallModel(value.settings.smallModel);
+      setHistoryTurns(value.settings.historyTurns);
       setBaseUrl(value.settings.baseUrl);
       setSystemPrompt(value.systemPrompt);
     }).catch((error: unknown) => setModelMessage(error instanceof Error ? error.message : String(error)));
@@ -39,7 +43,7 @@ export function ConfigPage() {
     setModelMessage(force ? "正在强制保存…" : "正在保存并按需测试连接…");
     setForceAvailable(false);
     try {
-      const result = await saveAgentConfig({ provider, model, baseUrl, apiKey, clearApiKey, force });
+      const result = await saveAgentConfig({ provider, model, smallModel, historyTurns, baseUrl, apiKey, clearApiKey, force });
       setSettings(result.settings);
       setModels(result.models);
       setApiKey("");
@@ -73,7 +77,7 @@ export function ConfigPage() {
       <div className="config-page-header">
         <div className="eyebrow">本地运行 / 安全配置</div>
         <h1>配置</h1>
-        <p>模型设置写入项目 <code>.env</code>；System Prompt 写入根目录 <code>EVERYTHING.md</code>。</p>
+        <p>模型设置写入项目 <code>.env</code>；System Prompt 写入 <code>.everything/EVERYTHING.md</code>。</p>
       </div>
       <div className="config-grid">
         <section className="panel config-card">
@@ -92,6 +96,14 @@ export function ConfigPage() {
             <label className="config-field">Model
               <input value={model} onChange={(event) => setModel(event.target.value)} list="agent-model-list" placeholder="输入模型 ID" />
               <datalist id="agent-model-list">{models.map((value) => <option key={value} value={value} />)}</datalist>
+            </label>
+            <label className="config-field">Small Model
+              <input value={smallModel} onChange={(event) => setSmallModel(event.target.value)} list="agent-model-list" placeholder="留空时使用主模型" />
+              <span className="field-help">用于 retrieval gate 与 consolidation，复用当前 Provider 和密钥。</span>
+            </label>
+            <label className="config-field">History Turns
+              <input type="number" min={1} max={50} value={historyTurns} onChange={(event) => setHistoryTurns(Number(event.target.value))} />
+              <span className="field-help">每次发送当前 Session 最近 1–50 个完整回合，默认 10。</span>
             </label>
             {provider === "openai-compatible" && (
               <label className="config-field">Base URL
@@ -115,7 +127,7 @@ export function ConfigPage() {
         </section>
 
         <section className="panel config-card system-prompt-card">
-          <div className="panel-header"><span><FileText size={15} /> System Prompt</span><code>EVERYTHING.md</code></div>
+          <div className="panel-header"><span><FileText size={15} /> System Prompt</span><code>.everything/EVERYTHING.md</code></div>
           <div className="config-card-body">
             <textarea value={systemPrompt} onChange={(event) => setSystemPrompt(event.target.value)} aria-label="System Prompt" />
             <div className="config-actions">

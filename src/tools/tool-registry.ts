@@ -3,13 +3,21 @@ import type {
   ToolExecutionContext,
   ToolRegistry,
 } from "../agent-loop/agent-loop.js";
+import type { MemoryRuntime } from "../memory/index.js";
+import { MANAGE_MEMORY_TOOL, ManageMemoryTool, manageMemorySchema } from "./manage-memory.js";
 
 const TIME_TOOL = "get_current_time";
 
-/** Agent 首版开放的安全只读工具注册表。 */
+/** 注册本地受控工具，并在执行前统一检查取消信号和参数。 */
 export class LocalToolRegistry implements ToolRegistry {
+  private readonly manageMemory: ManageMemoryTool | null;
+
+  constructor(memory?: MemoryRuntime, manageMemory?: ManageMemoryTool) {
+    this.manageMemory = manageMemory ?? (memory ? new ManageMemoryTool(memory) : null);
+  }
+
   schemas(): unknown {
-    return [{
+    const schemas: unknown[] = [{
       name: TIME_TOOL,
       description: "读取 Agent 所在服务器的当前日期、时间和时区。需要回答当前时间时必须调用此工具。",
       input_schema: {
@@ -18,6 +26,8 @@ export class LocalToolRegistry implements ToolRegistry {
         additionalProperties: false,
       },
     }];
+    if (this.manageMemory) schemas.push(manageMemorySchema);
+    return schemas;
   }
 
   execute(
@@ -27,6 +37,7 @@ export class LocalToolRegistry implements ToolRegistry {
     context: ToolExecutionContext,
   ): unknown {
     if (context.signal?.aborted) throw context.signal.reason;
+    if (name === MANAGE_MEMORY_TOOL && this.manageMemory) return this.manageMemory.execute(args);
     if (name !== TIME_TOOL) throw new Error(`工具未注册：${name}`);
     if (!isEmptyObject(args)) throw new TypeError(`${TIME_TOOL} 不接受参数`);
 
