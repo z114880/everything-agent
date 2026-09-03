@@ -1,5 +1,5 @@
-import { END, START, Graph, node } from "../engine/src/index.js";
-import type { AnyState } from "../engine/src/index.js";
+import { END, START, Graph, node } from "../engine/src/index.ts";
+import type { AnyState } from "../engine/src/index.ts";
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 

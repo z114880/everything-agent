@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import * as engine from "../src/index.js";
+import * as engine from "../src/index.ts";
 
 import {
   END,
@@ -8,7 +8,7 @@ import {
   StateCollisionError,
   node,
   runGraph,
-} from "../src/index.js";
+} from "../src/index.ts";
 
 describe("runGraph", () => {
   it("作为唯一的 Graph 执行入口公开", () => {

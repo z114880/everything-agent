@@ -1,10 +1,11 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { AgentMessage, AgentObserver } from "../agent-loop/agent-loop.js";
-import { decideRetrieval } from "./retrieval-gate.js";
-import { MEMORY_SCHEMA, MEMORY_SCHEMA_VERSION } from "./schema.js";
-import { toMatchQuery, toSearchText } from "./search-text.js";
+import type { AgentMessage, AgentObserver } from "../agent-loop/agent-loop.ts";
+import { decideRetrieval } from "./retrieval-gate.ts";
+import { MEMORY_SCHEMA, MEMORY_SCHEMA_VERSION } from "./schema.ts";
+import { toMatchQuery, toSearchText } from "./search-text.ts";
+import { SEMANTIC_MEMORY_CATEGORIES } from "./types.ts";
 import type {
   ChatLogEntry,
   ConsolidationRun,
@@ -14,13 +15,17 @@ import type {
   RetrievalResult,
   SemanticMemory,
   SessionSummary,
-} from "./types.js";
+} from "./types.ts";
 
 const DEFAULT_SEMANTIC_LIMIT = 4;
 const DEFAULT_EPISODIC_LIMIT = 3;
 const MAX_MEMORY_CONTEXT_CHARS = 12_000;
 
 interface Row extends Record<string, unknown> {}
+
+const SEMANTIC_FACT_CATEGORIES = new Set<string>([
+  ...SEMANTIC_MEMORY_CATEGORIES,
+]);
 
 /**
  * 本地记忆的公开入口。
@@ -57,6 +62,11 @@ export class MemoryRuntime {
       "INSERT INTO sessions(id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
     ).run(id, title.trim() || "新对话", timestamp, timestamp);
     return this.getSession(id)!;
+  }
+
+  /** 返回已有的最近 Session；仅在数据库为空时创建默认 Session。 */
+  ensureSession(): SessionSummary {
+    return this.listSessions()[0] ?? this.createSession();
   }
 
   /** 列出最近活跃的 Session。 */
@@ -363,7 +373,9 @@ export class MemoryRuntime {
 
       this.transaction(() => {
         for (const fact of distilled.facts) {
-          if (fact.action === "create" && fact.subject && fact.content) {
+          if (!isDurableSemanticFact(fact)) {
+            factsSkipped += 1;
+          } else if (fact.action === "create" && fact.subject && fact.content) {
             this.createSemantic(fact.subject, fact.content, "consolidation");
             factsCreated += 1;
           } else if (fact.action === "update" && fact.id && fact.subject && fact.content && this.getSemantic(fact.id)) {
@@ -528,13 +540,21 @@ function formatMemoryContext(semantic: SemanticMemory[], episodic: EpisodicMemor
 
 function consolidationSystemPrompt(): string {
   return `你负责把一个个人助理 Session 的新增对话整理为长期记忆。记忆必须保持原对话语言，不得强制翻译。
-事实允许来自 user 或 assistant。对照已有事实，只输出 create、update 或 noop；update 必须引用已有整数 ID，不得删除。
+Semantic memory 只保存跨 Session 仍有用、预计长期成立且与用户直接相关的信息。允许的 category 只有：
+- user_attribute：用户稳定的身份、关系或背景属性；
+- preference：用户相对稳定的偏好；
+- ongoing_project：用户持续项目中未来仍需使用的事实；
+- constraint：用户明确且持续生效的约束；
+- commitment：用户或助理已明确作出、未来仍需履行或跟进的承诺。
+不得保存当前时间或日期、天气、新闻、价格、汇率、一次性查询结果、通用知识、寒暄、临时请求、仅对当前回答有用的助理内容、未经对话支持的推断、密钥或凭证。拿不准时不要保存。
+事实可以参考 user 或 assistant 内容，但 assistant 内容只有在它记录了用户项目的持久变化或明确承诺时才可成为 Semantic；普通问答答案不能成为 Semantic。
+对照已有事实，只输出 create、update 或 noop；每个 create/update 都必须提供允许的 category，并且仅在 stable 和 futureUseful 都为 true 时输出。update 必须引用已有整数 ID，不得删除。不符合条件的内容不要伪装成允许的 category，应省略或输出 noop。
 episode 代表整个 Session 发生的重要事件、决定、承诺或任务结果。闲聊和普通问答可返回 null。已有 episode 存在时，用新增对话更新为覆盖完整 Session 的单句总结。
-只输出 JSON：{"facts":[{"action":"create|update|noop","id":1,"subject":"主题","content":"事实"}],"episode":"单句总结或 null"}`;
+只输出 JSON：{"facts":[{"action":"create|update|noop","id":1,"category":"user_attribute|preference|ongoing_project|constraint|commitment","stable":true,"futureUseful":true,"subject":"主题","content":"事实"}],"episode":"单句总结或 null"}`;
 }
 
 function parseConsolidation(text: string): {
-  facts: Array<{ action: string; id?: number; subject?: string; content?: string }>;
+  facts: DistilledFact[];
   episode: string | null;
 } {
   const start = text.indexOf("{");
@@ -546,11 +566,33 @@ function parseConsolidation(text: string): {
     facts: facts.map((item) => ({
       action: String(item.action ?? "noop"),
       ...(typeof item.id === "number" ? { id: item.id } : {}),
+      ...(typeof item.category === "string" ? { category: item.category } : {}),
+      ...(typeof item.stable === "boolean" ? { stable: item.stable } : {}),
+      ...(typeof item.futureUseful === "boolean" ? { futureUseful: item.futureUseful } : {}),
       ...(typeof item.subject === "string" ? { subject: item.subject } : {}),
       ...(typeof item.content === "string" ? { content: item.content } : {}),
     })),
     episode: typeof value.episode === "string" && value.episode.trim() ? value.episode.trim() : null,
   };
+}
+
+interface DistilledFact {
+  action: string;
+  id?: number;
+  category?: string;
+  stable?: boolean;
+  futureUseful?: boolean;
+  subject?: string;
+  content?: string;
+}
+
+/** 只接受模型明确标记为稳定、未来有用且属于允许范围的 Semantic fact。 */
+function isDurableSemanticFact(fact: DistilledFact): boolean {
+  if (fact.action === "noop") return true;
+  return fact.stable === true
+    && fact.futureUseful === true
+    && typeof fact.category === "string"
+    && SEMANTIC_FACT_CATEGORIES.has(fact.category);
 }
 
 function sessionFromRow(row: Row): SessionSummary {

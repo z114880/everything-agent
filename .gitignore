@@ -4,7 +4,6 @@
 !.env.example
 node_modules/
 coverage/
-dist/
 dist-web/
 *.tgz
 .everything/state.db*

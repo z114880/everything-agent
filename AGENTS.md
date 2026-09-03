@@ -76,7 +76,7 @@
 
 ## 编码规范
 
-- 当前 Engine 使用 Node.js 22.13+、ESM 和严格模式 TypeScript。
+- 当前 Engine 使用 Node.js 24.12+、ESM 和严格模式 TypeScript；后端由 Node.js 原生类型擦除直接运行，不生成 JavaScript 构建目录。
 - 保持零运行时依赖；测试和开发工具可以作为 `devDependencies`。
 - 公共类和函数需要简洁的中文 JSDoc，解释接口约定和重要错误模式。
 - 注释解释设计原因、执行语义或容易误解的约束，不逐行复述代码。

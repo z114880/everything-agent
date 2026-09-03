@@ -1,5 +1,5 @@
-import { END, START, Graph, node, runGraph } from "../../index.js";
-import type { StateRecord } from "../../index.js";
+import { END, START, Graph, node, runGraph } from "../../index.ts";
+import type { StateRecord } from "../../index.ts";
 
 type AssistantState = StateRecord & {
   message: string;

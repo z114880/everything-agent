@@ -5,7 +5,7 @@ import type {
   ModelRequest,
   ModelResponse,
   ModelStream,
-} from "../agent-loop/agent-loop.js";
+} from "../agent-loop/agent-loop.ts";
 
 export type AgentProvider = "anthropic" | "openai-compatible";
 

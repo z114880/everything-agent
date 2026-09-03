@@ -1,5 +1,5 @@
-import { END, Graph, START, node } from "../engine/src/index.js";
-import type { StateRecord } from "../engine/src/index.js";
+import { END, Graph, START, node } from "../engine/src/index.ts";
+import type { StateRecord } from "../engine/src/index.ts";
 
 /** Agent Harness 中由 Graph 描述的动态阶段名称。 */
 export const AGENT_HARNESS_NODES = {

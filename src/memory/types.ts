@@ -1,4 +1,15 @@
-import type { AgentMessage, AgentModelClient, AgentObserver } from "../agent-loop/agent-loop.js";
+import type { AgentMessage, AgentModelClient, AgentObserver } from "../agent-loop/agent-loop.ts";
+
+/** 模型驱动写入 Semantic memory 时允许声明的长期事实类别。 */
+export const SEMANTIC_MEMORY_CATEGORIES = [
+  "user_attribute",
+  "preference",
+  "ongoing_project",
+  "constraint",
+  "commitment",
+] as const;
+
+export type SemanticMemoryCategory = (typeof SEMANTIC_MEMORY_CATEGORIES)[number];
 
 export interface MemoryModelOptions {
   client: AgentModelClient;

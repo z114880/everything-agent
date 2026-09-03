@@ -3,7 +3,7 @@ import {
   agentHarnessGraph,
   createModelClient,
   LocalToolRegistry,
-} from "../../index.js";
+} from "../../index.ts";
 
 describe("Agent Harness", () => {
   it("通过公开接口描述从 Working Memory 开始的工具循环", () => {

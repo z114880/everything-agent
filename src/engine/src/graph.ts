@@ -1,5 +1,5 @@
-import { Node } from "./node.js";
-import type { AnyState, StateRecord } from "./state.js";
+import { Node } from "./node.ts";
+import type { AnyState, StateRecord } from "./state.ts";
 
 type RouteFunction<TState extends StateRecord> = (
   state: Readonly<TState>,

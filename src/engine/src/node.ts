@@ -1,4 +1,4 @@
-import type { AnyState, StateRecord } from "./state.js";
+import type { AnyState, StateRecord } from "./state.ts";
 
 /** 节点的可视化分类，不改变调度行为。 */
 export type NodeKind = "fn" | "tool" | "llm" | "agent";

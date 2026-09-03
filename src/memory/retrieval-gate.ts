@@ -1,4 +1,4 @@
-import type { AgentMessage, AgentModelClient, AgentObserver } from "../agent-loop/agent-loop.js";
+import type { AgentMessage, AgentModelClient, AgentObserver } from "../agent-loop/agent-loop.ts";
 
 const GATE_SYSTEM = `你是个人助理长期记忆的检索判定器。判断当前消息是否需要用户的长期记忆才能更好回答。
 只输出 JSON：{"retrieve":true或false,"query":"检索词","reason":"简短原因"}。

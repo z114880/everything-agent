@@ -7,7 +7,7 @@
 - **Agent**：运行真实 `runAgentLoop`，从 SQLite 恢复多轮 Session，展示 Working Memory、LLM、Tools 和 Reply。工具调用过程完整保存在本地 Chat Log，活动边和回复由真实 observer 事件驱动。
 - **Workflow**：枚举 `src/workflows/` 下的 TypeScript 文件，可编辑和执行任一工作流。拓扑来自真实 `Graph.describe()`，执行由本地 Node.js 进程调用 `runGraph()`。
 - **Memory**：通过 Overview、Semantic、Episodic、Procedural、Chat Log 和 Consolidation 查看与管理本地记忆。
-- **运行记录**：只读回放 `.everything/traces/` 中的 classic loop 与 memory 事件。
+- **运行记录**：只读回放 `.everything/traces/<日期>/<sessionId>.jsonl` 中的 classic loop 与 memory 执行事实，按 Session 和 Agent 回合分组展示输入、回复、模型请求/响应、工具调用、检索、耗时与错误。trace 不记录 Session 创建或选择这类 UI 活动。“配置”页面提供带二次确认的“一键清理”，可删除数据库、Session、Memory 与 trace，只保留 `.everything/EVERYTHING.md`。
 - **配置**：把 Provider、主/小模型、历史窗口、Base URL 和密钥写入根目录 `.env`，把 System Prompt 保存到 `.everything/EVERYTHING.md`。浏览器只能读取密钥是否存在及末四位。
 
 ```bash
@@ -57,7 +57,7 @@ Everything Agent 的目标是构建一个真正可长期使用的个人助理 Ag
 | Session / Memory | 基础闭环完成 | SQLite Session、结构化 Chat Log、FTS5 + BM25、gated retrieval 与 Session 增量 consolidation |
 | Graph 前端 | 本地闭环完成 | 浏览器读写本地 TypeScript 工作流，消费真实 describe 与 observer 事件，并展示 wave、耗时和结果 |
 | Agent Harness 前端 | 基础闭环完成 | 真实 Agent Loop、动态 SVG、流式 Reply、持久多轮 Session、停止与 60 秒超时 |
-| 完整可视化界面 | 进行中 | 已有 Memory 管理与持久 trace 时间线；状态差异和更丰富的工具仍待补充 |
+| 完整可视化界面 | 进行中 | 已有 Memory 管理与按 Session / 回合分组的持久 trace 时间线；状态差异和更丰富的工具仍待补充 |
 
 ## 总体架构
 
@@ -116,7 +116,6 @@ everything-agent/
 ├── README.md          # 项目目标、架构和路线图
 ├── package.json       # 根目录统一管理脚本和开发依赖
 ├── tsconfig.json      # TypeScript 严格类型检查配置
-├── tsconfig.build.json # 生产构建与声明文件配置
 ├── vitest.config.ts   # Engine 测试与覆盖率配置
 ├── src/
 │   ├── index.ts       # 包公开入口
@@ -139,7 +138,7 @@ everything-agent/
 
 ## 快速开始
 
-环境要求：Node.js 22.13 或更高版本。Memory 使用 Node.js 内置 `node:sqlite`，启动时会验证 FTS5 可用性。
+环境要求：Node.js 24.12 或更高版本。后端通过 Node.js 原生 TypeScript 类型擦除直接运行 `src/`，前端仍由 Vite 处理。Memory 使用 Node.js 内置 `node:sqlite`，启动时会验证 FTS5 可用性。
 
 ```bash
 npm install
@@ -234,11 +233,11 @@ npm run build
 ```
 
 当前测试通过公开接口验证行为，不依赖私有实现。覆盖率门槛为：行、函数和语句 90%，分支 85%。
-`npm run build` 会把可供 Node.js 22.13+ 加载的 ESM 与类型声明输出到忽略提交的 `dist/`。
+`npm run build` 会先严格检查后端 TypeScript，再由 Vite 检查并构建前端到 `dist-web/`。后端不生成 `dist/`；Node.js 直接加载 `.ts` 源码。`tsconfig.json` 只服务于静态类型检查，Node.js 运行时不会读取它。
 
 ## 当前边界
 
 - 当前 Session 和 Memory 是单用户、本地实现，不包含多租户或云同步。
-- JSONL trace 只覆盖 classic loop 与 memory；Workflow 继续使用实时 observer，不写入该目录。
+- JSONL trace 只覆盖 classic loop 与 memory；Workflow 继续使用实时 observer，不写入该目录。记录按 `.everything/traces/YYYY-MM-DD/<sessionId>.jsonl` 存放，无 Session 的事件写入同日期的 `system.jsonl`，不读取旧版根目录 JSONL。V2 记录为每个事件生成 `eventId` 和 run 内递增的 `sequence`；`model_request` 保存每次调用实际使用的 System Prompt、messages、工具 schema 和生成参数，`model_response` 保存完整标准化响应，工具事件保存结构化参数与结果，内容不做长度截断。常见凭证字段与 Bearer token 仍会在写入前移除。`context_assembled` 只记录上下文的组装数量与记忆来源，模型请求才是 eval 的权威输入快照。
 - `State.snapshot()` 是顶层复制；节点应把收到的状态视为只读对象。
 - 当前没有内置鉴权、密钥管理或个人数据加密能力。

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseEnv, updateEnvText } from "../server/agent-service.js";
+import { parseEnv, updateEnvText } from "../server/agent-service.ts";
 
 describe("本地 Agent 模型配置", () => {
   it("解析引号、export 与行尾注释", () => {

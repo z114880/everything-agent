@@ -2,14 +2,14 @@ import {
   isControlFlowError,
   runGuarded,
   type GuardOptions,
-} from "./execution-guard.js";
+} from "./execution-guard.ts";
 import type {
   AgentModelClient,
   AgentObserver,
   ModelContentBlock,
   ModelRequest,
   ModelResponse,
-} from "./types.js";
+} from "./types.ts";
 
 /** 从模型内容块提取最终文本回复。 */
 export function textFrom(content: ModelContentBlock[]): string {

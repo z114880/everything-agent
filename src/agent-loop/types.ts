@@ -84,6 +84,8 @@ export interface ToolRegistry {
 export interface ToolCallRecord {
   tool: string;
   args: unknown;
+  /** 工具返回的原始结构化值，供 trace 和 eval 使用。 */
+  result: unknown;
   output: string;
   toolUseId: string;
   iteration: number;

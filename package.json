@@ -4,40 +4,40 @@
   "description": "具有透明执行过程的个人助理 Agent",
   "private": true,
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
     },
     "./engine": {
-      "types": "./dist/engine/src/index.d.ts",
-      "default": "./dist/engine/src/index.js"
+      "types": "./src/engine/src/index.ts",
+      "default": "./src/engine/src/index.ts"
     },
     "./agent": {
-      "types": "./dist/agent-loop/agent-loop.d.ts",
-      "default": "./dist/agent-loop/agent-loop.js"
+      "types": "./src/agent-loop/agent-loop.ts",
+      "default": "./src/agent-loop/agent-loop.ts"
     },
     "./agent-loop": {
-      "types": "./dist/agent-loop/agent-loop.d.ts",
-      "default": "./dist/agent-loop/agent-loop.js"
+      "types": "./src/agent-loop/agent-loop.ts",
+      "default": "./src/agent-loop/agent-loop.ts"
     },
     "./agent-graph": {
-      "types": "./dist/agent-graph/harness-graph.d.ts",
-      "default": "./dist/agent-graph/harness-graph.js"
+      "types": "./src/agent-graph/harness-graph.ts",
+      "default": "./src/agent-graph/harness-graph.ts"
     },
     "./tools": {
-      "types": "./dist/tools/tool-registry.d.ts",
-      "default": "./dist/tools/tool-registry.js"
+      "types": "./src/tools/tool-registry.ts",
+      "default": "./src/tools/tool-registry.ts"
     },
     "./model": {
-      "types": "./dist/model/model-client.d.ts",
-      "default": "./dist/model/model-client.js"
+      "types": "./src/model/model-client.ts",
+      "default": "./src/model/model-client.ts"
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "npm run typecheck && npm run build:web",
     "dev:web": "vite --config web/vite.config.ts",
     "build:web": "tsc -p web/tsconfig.json && vite build --config web/vite.config.ts",
     "preview:web": "vite preview --config web/vite.config.ts",
@@ -45,10 +45,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "example": "tsx src/engine/examples/basic.ts"
+    "example": "node src/engine/examples/basic.ts"
   },
   "engines": {
-    "node": ">=22.13"
+    "node": ">=24.12"
   },
   "license": "MIT",
   "devDependencies": {
@@ -59,7 +59,6 @@
     "@vitejs/plugin-react": "^6.1.0",
     "@vitest/coverage-v8": "^4.1.11",
     "tailwindcss": "^4.3.3",
-    "tsx": "^4.23.12",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
     "vitest": "^4.1.11"

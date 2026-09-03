@@ -2,9 +2,9 @@ import type {
   AgentObserver,
   ToolExecutionContext,
   ToolRegistry,
-} from "../agent-loop/agent-loop.js";
-import type { MemoryRuntime } from "../memory/index.js";
-import { MANAGE_MEMORY_TOOL, ManageMemoryTool, manageMemorySchema } from "./manage-memory.js";
+} from "../agent-loop/agent-loop.ts";
+import type { MemoryRuntime } from "../memory/index.ts";
+import { MANAGE_MEMORY_TOOL, ManageMemoryTool, manageMemorySchema } from "./manage-memory.ts";
 
 const TIME_TOOL = "get_current_time";
 

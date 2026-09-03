@@ -62,7 +62,13 @@ export interface MemoryDashboard {
 }
 
 export interface TraceRecord {
-  version: number; type: string; timestamp: string; runId: string; sessionId?: string; [key: string]: unknown;
+  version: number; eventId?: string; type: string; timestamp: string; sequence?: number; runId: string; sessionId?: string;
+  iteration?: number; modelCallId?: string; toolCallId?: string; payload?: Record<string, unknown>; [key: string]: unknown;
+}
+
+export interface TraceDashboard {
+  records: TraceRecord[];
+  sessions: SessionSummary[];
 }
 
 export interface ClientHistoryMessage {
@@ -76,9 +82,12 @@ export interface AgentEvent {
   delta?: string;
   tool?: string;
   toolUseId?: string;
+  toolCallId?: string;
   summary?: string;
   args?: unknown;
   output?: unknown;
+  arguments?: unknown;
+  result?: unknown;
   isError?: boolean;
   ms?: number;
   stopReason?: string;
@@ -143,8 +152,17 @@ export async function memoryAction<T = unknown>(value: Record<string, unknown>):
   return response.result;
 }
 
-export function loadTraces(): Promise<{ records: TraceRecord[] }> {
+export function loadTraces(): Promise<TraceDashboard> {
   return requestJson(`${endpoint}/traces`);
+}
+
+/** 清除所有本地 Agent 数据；服务端只保留 EVERYTHING.md。 */
+export function clearAllAgentData(): Promise<{ ok: true; cleared: true }> {
+  return requestJson(`${endpoint}/clear-data`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ confirmation: "DELETE_ALL_LOCAL_DATA" }),
+  });
 }
 
 /** 执行一次 Agent 回合并消费服务端 NDJSON observer 事件。 */

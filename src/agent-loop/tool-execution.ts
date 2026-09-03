@@ -2,14 +2,14 @@ import {
   isControlFlowError,
   runGuarded,
   type GuardOptions,
-} from "./execution-guard.js";
+} from "./execution-guard.ts";
 import type {
   AgentObserver,
   EventData,
   ModelContentBlock,
   ToolCallRecord,
   ToolRegistry,
-} from "./types.js";
+} from "./types.ts";
 
 interface ExecuteToolCallsOptions {
   calls: ModelContentBlock[];
@@ -49,7 +49,7 @@ export async function executeToolCalls({
     let isError = false;
     const startedAt = performance.now();
 
-    await notify("tool_start", { tool: toolName, toolUseId, iteration });
+    await notify("tool_started", { tool: toolName, toolCallId: toolUseId, iteration });
     try {
       rawOutput = await runGuarded(
         () => tools.execute(toolName, args, notify, {
@@ -71,6 +71,7 @@ export async function executeToolCalls({
     const record: ToolCallRecord = {
       tool: toolName,
       args,
+      result: rawOutput,
       output,
       toolUseId,
       iteration,
@@ -79,7 +80,7 @@ export async function executeToolCalls({
     records.push(record);
 
     const publicToolEvent = serializeToolEvent(record);
-    await notify("tool_end", {
+    await notify(isError ? "tool_failed" : "tool_completed", {
       ...publicToolEvent,
       ms: Math.round(performance.now() - startedAt),
     });

@@ -9,18 +9,19 @@
  * 执行分别由同目录内部模块负责。
  */
 
-import type { GuardOptions } from "./execution-guard.js";
-import { requestModelResponse, textFrom, usageFrom } from "./model-response.js";
-import { executeToolCalls } from "./tool-execution.js";
+import type { GuardOptions } from "./execution-guard.ts";
+import { requestModelResponse, textFrom, usageFrom } from "./model-response.ts";
+import { executeToolCalls } from "./tool-execution.ts";
 import type {
   AgentLoopOptions,
   AgentLoopResult,
   AgentObserver,
   EventData,
+  ModelResponse,
   ToolCallRecord,
-} from "./types.js";
+} from "./types.ts";
 
-export { AgentLoopAbortError, AgentLoopTimeoutError } from "./errors.js";
+export { AgentLoopAbortError, AgentLoopTimeoutError } from "./errors.ts";
 export type {
   AgentLoopOptions,
   AgentLoopResult,
@@ -34,7 +35,7 @@ export type {
   ToolCallRecord,
   ToolExecutionContext,
   ToolRegistry,
-} from "./types.js";
+} from "./types.ts";
 
 const DEFAULT_MAX_ITERATIONS = 10;
 const DEFAULT_MAX_TOKENS = 2048;
@@ -77,10 +78,10 @@ function validateOptions(options: AgentLoopOptions): void {
 function defaultToolEvent(call: ToolCallRecord): EventData {
   return {
     tool: call.tool,
-    toolUseId: call.toolUseId,
+    toolCallId: call.toolUseId,
     iteration: call.iteration,
-    args: call.args,
-    output: call.output,
+    arguments: call.args,
+    result: call.result,
     isError: call.isError,
   };
 }
@@ -116,7 +117,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
   const notify: AgentObserver = async (kind, event = {}) => observer(kind, { ...event, runId });
   let iterations = 0;
 
-  await notify("working_memory", {
+  await notify("context_assembled", {
     messageCount: messages.length,
     hasSystemPrompt: Boolean(system.trim()),
   });
@@ -125,28 +126,60 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
   try {
     for (let iteration = 1; iteration <= maxIterations; iteration += 1) {
       iterations = iteration;
+      const toolSchemas = tools.schemas();
       const request = {
         model,
         system,
         messages,
-        tools: tools.schemas(),
+        tools: toolSchemas,
         max_tokens: maxTokens,
         signal,
       };
 
-      await notify("llm_start", { iteration });
-      const llmStartedAt = performance.now();
-      const response = await requestModelResponse(
-        client,
-        request,
-        notify,
-        guard,
-        stream,
+      const modelCallId = crypto.randomUUID();
+      await notify("model_request", {
         iteration,
-      );
+        modelCallId,
+        request: {
+          model,
+          system,
+          messages: structuredClone(messages),
+          tools: structuredClone(toolSchemas),
+          maxTokens,
+          stream,
+        },
+      });
+      const llmStartedAt = performance.now();
+      let response: ModelResponse;
+      try {
+        response = await requestModelResponse(
+          client,
+          request,
+          notify,
+          guard,
+          stream,
+          iteration,
+        );
+      } catch (error) {
+        await notify("model_failed", {
+          iteration,
+          modelCallId,
+          errorType: error instanceof Error ? error.name : "UnknownError",
+          errorMessage: error instanceof Error ? error.message : String(error),
+          ms: Math.round(performance.now() - llmStartedAt),
+        });
+        throw error;
+      }
       const usage = usageFrom(response);
       const stopReason = response.stop_reason ?? response.stopReason ?? null;
-      await notify("llm_end", { iteration, stopReason, usage, ms: Math.round(performance.now() - llmStartedAt) });
+      await notify("model_response", {
+        iteration,
+        modelCallId,
+        response: structuredClone(response),
+        stopReason,
+        usage,
+        ms: Math.round(performance.now() - llmStartedAt),
+      });
       await notify("llm", { iteration, stopReason, usage });
       messages.push({ role: "assistant", content: response.content });
 

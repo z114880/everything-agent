@@ -2,8 +2,8 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { AgentModelClient, ModelResponse } from "../../agent-loop/agent-loop.js";
-import { MemoryRuntime, toSearchText } from "../index.js";
+import type { AgentModelClient, ModelResponse } from "../../agent-loop/agent-loop.ts";
+import { MemoryRuntime, toSearchText } from "../index.ts";
 
 const runtimes: MemoryRuntime[] = [];
 
@@ -53,8 +53,8 @@ describe("Memory Runtime", () => {
     const session = memory.createSession();
     addCompletedRun(memory, session.id, "r1", "我喜欢红茶", "我记住了。");
     const client = scriptedClient([
-      response('{"facts":[{"action":"create","subject":"用户","content":"用户喜欢红茶"}],"episode":"用户说明了饮品偏好。"}'),
-      response('{"facts":[{"action":"update","id":1,"subject":"用户","content":"用户现在喜欢绿茶"}],"episode":"用户先说明喜欢红茶，后来把偏好改为绿茶。"}'),
+      response('{"facts":[{"action":"create","category":"preference","stable":true,"futureUseful":true,"subject":"用户","content":"用户喜欢红茶"}],"episode":"用户说明了饮品偏好。"}'),
+      response('{"facts":[{"action":"update","id":1,"category":"preference","stable":true,"futureUseful":true,"subject":"用户","content":"用户现在喜欢绿茶"}],"episode":"用户先说明喜欢红茶，后来把偏好改为绿茶。"}'),
     ]);
 
     memory.scheduleConsolidation(session.id, "new_session", { client, model: "small" });
@@ -71,6 +71,31 @@ describe("Memory Runtime", () => {
       expect.objectContaining({ summary: "用户先说明喜欢红茶，后来把偏好改为绿茶。" }),
     ]);
     expect(memory.overview().pendingSessionCount).toBe(0);
+  });
+
+  it("拒绝把普通时间问答写入 semantic memory", async () => {
+    const memory = await createMemory();
+    const session = memory.createSession();
+    addCompletedRun(
+      memory,
+      session.id,
+      "r1",
+      "现在的时间是几点？顺便告诉我现在的时间点对应美国几点",
+      "北京时间十九点，美国东部时间七点。",
+    );
+    memory.scheduleConsolidation(session.id, "new_session", {
+      model: "small",
+      client: scriptedClient([
+        response('{"facts":[{"action":"create","subject":"当前时间与美国时区换算","content":"北京时间十九点，美国东部时间七点"}],"episode":null}'),
+      ]),
+    });
+
+    await memory.waitForConsolidation();
+
+    expect(memory.listSemantic()).toEqual([]);
+    expect(memory.listConsolidations()).toEqual([
+      expect.objectContaining({ factsCreated: 0, factsSkipped: 1 }),
+    ]);
   });
 
   it("consolidation 失败时不推进高水位", async () => {
@@ -124,6 +149,16 @@ describe("Memory Runtime", () => {
 
     memory.deleteSession(second.id);
     expect(() => memory.deleteSession(second.id)).toThrow("Session 不存在");
+  });
+
+  it("重复初始化空聊天页时只创建一个默认 Session", async () => {
+    const memory = await createMemory();
+
+    const first = memory.ensureSession();
+    const second = memory.ensureSession();
+
+    expect(second.id).toBe(first.id);
+    expect(memory.listSessions()).toEqual([expect.objectContaining({ id: first.id })]);
   });
 
   it("支持 UI 管理 episodic memory 并同步 FTS 索引", async () => {

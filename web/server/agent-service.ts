@@ -9,13 +9,14 @@ import {
   JsonlTracer,
   readTraceRecords,
   runAgentLoop,
-} from "../../src/index.js";
+} from "../../src/index.ts";
 import type {
   AgentMessage,
   AgentObserver,
   AgentProvider,
   ToolCallRecord,
-} from "../../src/index.js";
+} from "../../src/index.ts";
+import { clearEverythingData } from "./local-data.ts";
 
 const envPath = fileURLToPath(new URL("../../.env", import.meta.url));
 const everythingHome = fileURLToPath(new URL("../../.everything/", import.meta.url));
@@ -58,6 +59,7 @@ let memoryRuntime: MemoryRuntime | null = null;
 let tracer: JsonlTracer | null = null;
 let manageMemoryTool: ManageMemoryTool | null = null;
 let recoveryScheduled = false;
+let dataClearing = false;
 const sessionLocks = new Map<string, Promise<void>>();
 
 /** 配置保存失败时携带是否允许强制保存。 */
@@ -142,6 +144,7 @@ export async function runLocalAgent(
   observer: AgentObserver,
   signal: AbortSignal,
 ): Promise<Record<string, unknown>> {
+  if (dataClearing) throw new Error("本地数据正在清理，请稍后重试");
   const prompt = requiredText(body.prompt, "User Prompt", 40_000);
   const sessionId = requiredText(body.sessionId, "Session ID", 200);
   const settings = await loadRuntimeSettings();
@@ -155,12 +158,27 @@ export async function runLocalAgent(
     const runId = crypto.randomUUID();
     const startedAt = performance.now();
     memory.startRun(sessionId, runId, prompt);
-    await trace.record("turn_start", { runId, sessionId });
+    await trace.record("run_started", {
+      runId,
+      sessionId,
+      userInput: prompt,
+      provider: settings.provider,
+      model: settings.model,
+      settings: {
+        historyTurns: settings.historyTurns,
+        maxIterations: 10,
+        maxTokens: 2_048,
+        timeoutMs: DEFAULT_TIMEOUT_MS,
+        stream: true,
+      },
+      runtime: { nodeVersion: process.version, traceSchemaVersion: 2 },
+    });
+    let contextMetadata: Record<string, unknown> = {};
     const emit: AgentObserver = async (kind, event) => {
-      const enriched = { ...event, runId, sessionId };
+      const enriched = { ...event, ...(kind === "context_assembled" ? contextMetadata : {}), runId, sessionId };
       await observer(kind, enriched);
-      if (["working_memory", "gate_start", "gate_end", "retrieval", "llm_start", "llm_end", "tool_start", "tool_end"].includes(kind)) {
-        const modelFields = kind.startsWith("llm") ? { provider: settings.provider, model: settings.model } : {};
+      if (["context_assembled", "gate_start", "gate_end", "retrieval", "model_request", "model_response", "model_failed", "stream_fallback", "tool_started", "tool_completed", "tool_failed"].includes(kind)) {
+        const modelFields = kind.startsWith("model_") ? { provider: settings.provider, model: settings.model } : {};
         await trace.record(kind, { ...enriched, ...modelFields });
       }
     };
@@ -175,6 +193,12 @@ export async function runLocalAgent(
       const messages: AgentMessage[] = [...history, { role: "user", content: prompt }];
       const appendedFrom = messages.length;
       const baseSystem = await readSystemPrompt();
+      contextMetadata = {
+        historyTurnLimit: settings.historyTurns,
+        historyMessageCount: history.length,
+        semanticMemoryIds: retrieval.semantic.map((item) => item.id),
+        episodicMemoryIds: retrieval.episodic.map((item) => item.id),
+      };
       const result = await runAgentLoop({
         client,
         model: settings.model,
@@ -195,7 +219,15 @@ export async function runLocalAgent(
       }
       memory.completeRun(sessionId, runId, appended);
       const ms = Math.round(performance.now() - startedAt);
-      await trace.record("turn_end", { runId, sessionId, iterations: result.iterations, stopReason: result.stopReason, ms });
+      await trace.record("run_completed", {
+        runId,
+        sessionId,
+        reply: result.reply,
+        iterations: result.iterations,
+        stopReason: result.stopReason,
+        toolCallCount: result.toolCalls.length,
+        ms,
+      });
       return {
         reply: result.reply,
         iterations: result.iterations,
@@ -207,10 +239,11 @@ export async function runLocalAgent(
         runId,
       };
     } catch (error) {
-      await trace.record("turn_error", {
+      await trace.record("run_failed", {
         runId,
         sessionId,
         errorType: error instanceof Error ? error.name : "UnknownError",
+        errorMessage: error instanceof Error ? error.message : String(error),
         ms: Math.round(performance.now() - startedAt),
       });
       throw error;
@@ -226,13 +259,15 @@ export async function handleMemoryAction(body: Record<string, unknown>): Promise
   if (action === "create_session") {
     const previousSessionId = optionalText(body.previousSessionId, "Previous Session ID", 200);
     const session = memory.createSession();
-    await getTracer().record("session_created", { runId: crypto.randomUUID(), sessionId: session.id });
     if (previousSessionId) scheduleSessionConsolidation(memory, previousSessionId, "new_session");
+    return { session, sessions: memory.listSessions() };
+  }
+  if (action === "ensure_session") {
+    const session = memory.ensureSession();
     return { session, sessions: memory.listSessions() };
   }
   if (action === "select_session") {
     const sessionId = requiredText(body.sessionId, "Session ID", 200);
-    await getTracer().record("session_selected", { runId: crypto.randomUUID(), sessionId });
     return { messages: memory.getChatLog(sessionId), sessions: memory.listSessions() };
   }
   if (action === "rename_session") return memory.renameSession(requiredText(body.sessionId, "Session ID", 200), requiredText(body.title, "标题", 120));
@@ -252,7 +287,31 @@ export async function handleMemoryAction(body: Record<string, unknown>): Promise
 }
 
 export async function loadTraceDashboard(): Promise<unknown> {
-  return { records: await readTraceRecords(everythingHome, 2_000) };
+  return {
+    records: await readTraceRecords(everythingHome, 2_000),
+    sessions: getMemoryRuntime().listSessions(),
+  };
+}
+
+/** 清除数据库、Session、Memory 与 trace，仅保留 EVERYTHING.md。 */
+export async function clearLocalAgentData(body: Record<string, unknown>): Promise<{ cleared: true }> {
+  if (body.confirmation !== "DELETE_ALL_LOCAL_DATA") throw new TypeError("缺少清理确认");
+  if (dataClearing) throw new Error("本地数据正在清理");
+  if (sessionLocks.size > 0) throw new Error("仍有 Agent 回合正在运行，请结束后再清理");
+  dataClearing = true;
+  try {
+    if (memoryRuntime) await memoryRuntime.waitForConsolidation();
+    if (tracer) await tracer.flush();
+    memoryRuntime?.close();
+    memoryRuntime = null;
+    tracer = null;
+    manageMemoryTool = null;
+    recoveryScheduled = false;
+    await clearEverythingData(everythingHome);
+    return { cleared: true };
+  } finally {
+    dataClearing = false;
+  }
 }
 
 /** 解析 dotenv 的常见 KEY=VALUE 语法，不向进程全局注入未知字段。 */
@@ -374,11 +433,11 @@ async function probeModels(
 function publicToolEvent(call: ToolCallRecord): Record<string, unknown> {
   return {
     tool: call.tool,
-    toolUseId: call.toolUseId,
+    toolCallId: call.toolUseId,
     iteration: call.iteration,
     isError: call.isError,
-    args: removeCredentials(call.args),
-    output: removeCredentials(call.output),
+    arguments: removeCredentials(call.args),
+    result: removeCredentials(call.result),
     outputLength: call.output.length,
     summary: call.isError ? "工具执行失败" : "工具执行完成",
   };
@@ -463,7 +522,7 @@ function scheduleStartupRecovery(memory: MemoryRuntime, settings: RuntimeSetting
 
 function scheduleSessionConsolidation(memory: MemoryRuntime, sessionId: string, trigger: "new_session" | "startup"): void {
   void loadRuntimeSettings().then((settings) => {
-    if (settings.apiKey && (settings.smallModel || settings.model)) {
+    if (!dataClearing && memoryRuntime === memory && settings.apiKey && (settings.smallModel || settings.model)) {
       memory.scheduleConsolidation(sessionId, trigger, consolidationOptions(settings));
     }
   });
@@ -498,7 +557,10 @@ function isFinalAssistantMessage(message: AgentMessage | undefined): boolean {
 }
 
 function removeCredentials(value: unknown, key = ""): unknown {
-  if (/api[-_]?key|authorization|cookie|token|secret|password/i.test(key)) return "[凭证已移除]";
+  const normalizedKey = key.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
+  if (/(?:^|_)(?:api_key|authorization|cookie|token|access_token|refresh_token|auth_token|secret|client_secret|password)(?:$|_)/.test(normalizedKey)) {
+    return "[凭证已移除]";
+  }
   if (Array.isArray(value)) return value.map((item) => removeCredentials(item));
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(Object.entries(value).map(([itemKey, itemValue]) => [itemKey, removeCredentials(itemValue, itemKey)]));

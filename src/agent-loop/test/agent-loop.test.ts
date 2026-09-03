@@ -3,14 +3,14 @@ import {
   AgentLoopAbortError,
   AgentLoopTimeoutError,
   runAgentLoop,
-} from "../../index.js";
+} from "../../index.ts";
 import type {
   AgentLoopOptions,
   AgentMessage,
   AgentModelClient,
   ModelResponse,
   ToolRegistry,
-} from "../agent-loop.js";
+} from "../agent-loop.ts";
 
 type ObservedEvent = { kind: string; event: Record<string, any> };
 
@@ -85,16 +85,30 @@ describe("runAgentLoop", () => {
       max_tokens: 2048,
     }));
     expect(events.map(({ kind }) => kind)).toEqual([
-      "working_memory",
+      "context_assembled",
       "loop_start",
-      "llm_start",
-      "llm_end",
+      "model_request",
+      "model_response",
       "llm",
       "reply",
       "loop_end",
     ]);
-    expect(events[4]!.event).toMatchObject({
+    expect(events[2]!.event).toMatchObject({
       iteration: 1,
+      modelCallId: expect.any(String),
+      request: {
+        model: "test-model",
+        system: "你是助理",
+        messages: [{ role: "user", content: "打招呼" }],
+        tools: [{ name: "lookup", input_schema: { type: "object" } }],
+        maxTokens: 2048,
+        stream: false,
+      },
+    });
+    expect(events[3]!.event).toMatchObject({
+      iteration: 1,
+      modelCallId: events[2]!.event.modelCallId,
+      response: { content: [{ type: "text", text: "你好" }] },
       stopReason: "end_turn",
       usage: { in: 3, out: 2 },
     });
@@ -150,18 +164,23 @@ describe("runAgentLoop", () => {
     });
     expect(events.find(({ kind }) => kind === "tool")!.event).toMatchObject({
       tool: "lookup",
-      args: { city: "上海" },
-      output: '{"weather":"晴"}',
+      arguments: { city: "上海" },
+      result: { weather: "晴" },
     });
-    expect(events.find(({ kind }) => kind === "tool_start")!.event).toMatchObject({
+    expect(events.find(({ kind }) => kind === "tool_started")!.event).toMatchObject({
       tool: "lookup",
       iteration: 1,
+      toolCallId: "tool-1",
     });
-    expect(events.find(({ kind }) => kind === "tool_end")!.event).toMatchObject({
+    expect(events.find(({ kind }) => kind === "tool_completed")!.event).toMatchObject({
       tool: "lookup",
+      result: { weather: "晴" },
       isError: false,
       ms: expect.any(Number),
     });
+    const modelRequests = events.filter(({ kind }) => kind === "model_request");
+    expect(modelRequests[0]?.event.request.messages).toHaveLength(1);
+    expect(modelRequests[1]?.event.request.messages).toHaveLength(3);
   });
 
   it("允许调用方只向 observer 暴露经过脱敏的工具摘要", async () => {
@@ -194,18 +213,51 @@ describe("runAgentLoop", () => {
       textResponse("工具失败，我无法查询。"),
     ]);
     const messages: AgentMessage[] = [];
+    const events: ObservedEvent[] = [];
 
     const result = await runAgentLoop({
       client,
       model: "test-model",
       messages,
       tools: fakeTools(vi.fn(() => { throw new Error("网络不可用"); })),
+      observer(kind, event) {
+        events.push({ kind, event });
+      },
     });
 
     expect(result.reply).toContain("工具失败");
     expect(result.toolCalls[0]).toMatchObject({ isError: true });
     expect(result.toolCalls[0]!.output).toContain("网络不可用");
     expect(messages[1]!.content[0]).toMatchObject({ is_error: true });
+    expect(events.find(({ kind }) => kind === "tool_failed")?.event).toMatchObject({
+      toolCallId: "tool-1",
+      isError: true,
+      result: expect.stringContaining("网络不可用"),
+    });
+  });
+
+  it("模型调用失败时使用同一 modelCallId 记录请求与失败", async () => {
+    const events: ObservedEvent[] = [];
+    const client: AgentModelClient = {
+      messages: { create: vi.fn(() => { throw new Error("模型不可用"); }) },
+    };
+
+    await expect(runAgentLoop({
+      client,
+      model: "test-model",
+      messages: [{ role: "user", content: "你好" }],
+      tools: fakeTools(),
+      observer(kind, event) {
+        events.push({ kind, event });
+      },
+    })).rejects.toThrow("模型不可用");
+
+    const request = events.find(({ kind }) => kind === "model_request")!.event;
+    expect(events.find(({ kind }) => kind === "model_failed")?.event).toMatchObject({
+      modelCallId: request.modelCallId,
+      errorType: "Error",
+      errorMessage: "模型不可用",
+    });
   });
 
   it("达到最大迭代次数后有界停止", async () => {

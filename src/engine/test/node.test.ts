@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Node, node } from "../src/index.js";
+import { Node, node } from "../src/index.ts";
 
 describe("Node", () => {
   it("通过 node 工厂创建带默认选项的节点", async () => {

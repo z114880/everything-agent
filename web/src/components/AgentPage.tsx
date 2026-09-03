@@ -1,6 +1,7 @@
 import { Bot, CircleStop, Clock3, MessageSquarePlus, Pencil, Send, Settings2, Trash2, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { loadAgent, memoryAction, runAgent, type AgentBootstrap, type AgentEvent, type AgentRunResult, type ChatLogEntry, type SessionSummary } from "../agent-api";
+import { shouldSubmitAgentComposer } from "../agent-composer";
 import { createEdgePlayback } from "../edge-playback";
 import type { VisualNodeState } from "./GraphCanvas";
 import { AgentHarnessCanvas } from "./AgentHarnessCanvas";
@@ -42,7 +43,7 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
       const loaded = await loadAgent();
       setBootstrap(loaded);
       let available = loaded.sessions;
-      if (available.length === 0) available = (await memoryAction<{ session: SessionSummary; sessions: SessionSummary[] }>({ action: "create_session" })).sessions;
+      if (available.length === 0) available = (await memoryAction<{ session: SessionSummary; sessions: SessionSummary[] }>({ action: "ensure_session" })).sessions;
       setSessions(available);
       const remembered = window.localStorage.getItem("everything.activeSessionId");
       const selected = available.find((item) => item.id === remembered)?.id ?? available[0]!.id;
@@ -113,7 +114,7 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
     <aside className="agent-chat-dock"><div className="session-rail"><button className="new-session" onClick={() => void createSession()}><MessageSquarePlus size={14} /> 新建对话</button><div className="session-list">{sessions.map((session) => <button key={session.id} className={session.id === activeSessionId ? "active" : ""} onClick={() => void selectSession(session.id)}><strong>{session.title}</strong><span>{session.messageCount} 条记录</span></button>)}</div></div>
       <div className="chat-pane"><div className="agent-dock-header"><div className="agent-avatar"><Bot size={16} /></div><div><strong>{sessions.find((item) => item.id === activeSessionId)?.title ?? "当前会话"}</strong><span>最近 {bootstrap.settings.historyTurns} 个回合进入上下文</span></div><button className="session-icon" onClick={() => void renameActiveSession()} title="重命名"><Pencil size={13} /></button><button className="session-icon danger" onClick={() => void deleteActiveSession()} title="删除 Session"><Trash2 size={13} /></button><button className="model-chip" onClick={onOpenConfig} title="打开模型配置"><span className={bootstrap.settings.keyConfigured ? "model-dot ready" : "model-dot"} />{bootstrap.settings.model || bootstrap.settings.provider}</button></div>
         <div className="agent-chat-log" ref={chatLogRef}>{messages.length === 0 && <div className="agent-chat-empty"><Bot size={24} /><strong>开始这段对话</strong><span>消息会保存在本地 Session 中。</span></div>}{messages.map((message) => message.role === "user" ? <div key={message.id} className="user-bubble">{message.content}</div> : <AssistantCard key={message.id} message={message} tick={tick} />)}</div>
-        <div className="agent-composer"><textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder={bootstrap.settings.keyConfigured ? "给 Everything Agent 发消息…" : "请先配置模型 API Key"} disabled={running || !bootstrap.settings.keyConfigured} rows={2} /><div className="agent-composer-actions">{running ? <button className="stop-agent" onClick={() => abortRef.current?.abort()}><CircleStop size={15} /> 停止</button> : <button className="send-agent" onClick={() => void send()} disabled={!input.trim() || !bootstrap.settings.keyConfigured}><Send size={15} /> 发送</button>}</div></div>
+        <div className="agent-composer"><textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (shouldSubmitAgentComposer(event)) { event.preventDefault(); void send(); } }} placeholder={bootstrap.settings.keyConfigured ? "给 Everything Agent 发消息…" : "请先配置模型 API Key"} disabled={running || !bootstrap.settings.keyConfigured} rows={2} /><div className="agent-composer-actions">{running ? <button className="stop-agent" onClick={() => abortRef.current?.abort()}><CircleStop size={15} /> 停止</button> : <button className="send-agent" onClick={() => void send()} disabled={!input.trim() || !bootstrap.settings.keyConfigured}><Send size={15} /> 发送</button>}</div></div>
       </div></aside>
   </div>;
 }
@@ -124,11 +125,12 @@ function AssistantCard({ message, tick: _tick }: { message: AssistantChatMessage
 }
 
 function applyAgentEvent(kind: string, event: AgentEvent, assistantId: string, setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>, setNodeStates: React.Dispatch<React.SetStateAction<Record<string, VisualNodeState>>>, showActiveEdges: (edges: Iterable<string>) => void) {
-  if (kind === "working_memory") { setNodeStates((states) => ({ ...states, user_prompt: "done", client_chat_history: "done", system_prompt: "done", working_memory: "done" })); showActiveEdges(["working_memory->llm"]); }
-  if (kind === "llm_start") { setNodeStates((states) => ({ ...states, llm: "running", tools: states.tools === "running" ? "done" : states.tools })); showActiveEdges((event.iteration ?? 1) > 1 ? ["tools->llm"] : ["working_memory->llm"]); }
-  if (kind === "llm_end") setNodeStates((states) => ({ ...states, llm: "done" }));
-  if (kind === "tool_start") { const toolId = event.toolUseId ?? `${event.tool}-${event.iteration}`; setNodeStates((states) => ({ ...states, tools: "running" })); showActiveEdges(["llm->tools"]); setMessages((current) => updateAssistant(current, assistantId, (message) => ({ ...message, content: "", tools: [...message.tools, { id: toolId, name: event.tool ?? "tool", status: "running", summary: "" }] }))); }
-  if (kind === "tool_end") { const toolId = event.toolUseId ?? `${event.tool}-${event.iteration}`; setNodeStates((states) => ({ ...states, tools: event.isError ? "error" : "done" })); setMessages((current) => updateAssistant(current, assistantId, (message) => ({ ...message, tools: message.tools.map((tool) => tool.id === toolId ? { ...tool, status: event.isError ? "error" : "done", summary: event.summary ?? "", args: event.args, output: event.output, ...(event.ms !== undefined ? { ms: event.ms } : {}) } : tool) }))); }
+  if (kind === "context_assembled") { setNodeStates((states) => ({ ...states, user_prompt: "done", client_chat_history: "done", system_prompt: "done", working_memory: "done" })); showActiveEdges(["working_memory->llm"]); }
+  if (kind === "model_request") { setNodeStates((states) => ({ ...states, llm: "running", tools: states.tools === "running" ? "done" : states.tools })); showActiveEdges((event.iteration ?? 1) > 1 ? ["tools->llm"] : ["working_memory->llm"]); }
+  if (kind === "model_response") setNodeStates((states) => ({ ...states, llm: "done" }));
+  if (kind === "model_failed") setNodeStates((states) => ({ ...states, llm: "error" }));
+  if (kind === "tool_started") { const toolId = event.toolCallId ?? `${event.tool}-${event.iteration}`; setNodeStates((states) => ({ ...states, tools: "running" })); showActiveEdges(["llm->tools"]); setMessages((current) => updateAssistant(current, assistantId, (message) => ({ ...message, content: "", tools: [...message.tools, { id: toolId, name: event.tool ?? "tool", status: "running", summary: "" }] }))); }
+  if (kind === "tool_completed" || kind === "tool_failed") { const toolId = event.toolCallId ?? `${event.tool}-${event.iteration}`; setNodeStates((states) => ({ ...states, tools: event.isError ? "error" : "done" })); setMessages((current) => updateAssistant(current, assistantId, (message) => ({ ...message, tools: message.tools.map((tool) => tool.id === toolId ? { ...tool, status: event.isError ? "error" : "done", summary: event.summary ?? "", args: event.arguments, output: event.result, ...(event.ms !== undefined ? { ms: event.ms } : {}) } : tool) }))); }
   if (kind === "text") { setNodeStates((states) => ({ ...states, reply: "running" })); showActiveEdges(["llm->reply"]); setMessages((current) => updateAssistant(current, assistantId, (message) => ({ ...message, content: message.content + (event.delta ?? "") }))); }
   if (kind === "stream_fallback") setMessages((current) => updateAssistant(current, assistantId, (message) => ({ ...message, content: "", streamFallback: true })));
   if (kind === "reply") { setNodeStates((states) => ({ ...states, llm: "done", reply: "done" })); showActiveEdges(["llm->reply"]); }

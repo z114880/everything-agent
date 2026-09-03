@@ -1,4 +1,4 @@
-import type { MemoryRuntime } from "../memory/index.js";
+import { SEMANTIC_MEMORY_CATEGORIES, type MemoryRuntime } from "../memory/index.ts";
 
 const CONFIRMATION_TTL_MS = 10 * 60 * 1_000;
 
@@ -6,7 +6,7 @@ export const MANAGE_MEMORY_TOOL = "manage_memory";
 
 export const manageMemorySchema = {
   name: MANAGE_MEMORY_TOOL,
-  description: "搜索、创建、修正或删除长期记忆。Episodic memory 不能由此工具创建或修改；删除必须先取得确认令牌。",
+  description: "搜索、创建、修正或删除长期记忆。创建或修正 Semantic 时，只能保存稳定用户属性、长期偏好、持续项目事实、明确约束或未来承诺；不得保存当前时间、天气、新闻、价格、汇率、一次性查询结果或普通问答答案。Episodic memory 不能由此工具创建或修改；删除必须先取得确认令牌。",
   input_schema: {
     type: "object",
     properties: {
@@ -16,6 +16,9 @@ export const manageMemorySchema = {
       id: { type: "integer" },
       subject: { type: "string" },
       content: { type: "string" },
+      category: { type: "string", enum: [...SEMANTIC_MEMORY_CATEGORIES] },
+      stable: { type: "boolean" },
+      futureUseful: { type: "boolean" },
       confirmationId: { type: "string" },
     },
     required: ["action", "kind"],
@@ -30,9 +33,12 @@ interface PendingDelete {
 }
 /** 管理聊天侧记忆操作，并在工具内部强制 episodic 与删除权限。 */
 export class ManageMemoryTool {
+  private readonly memory: MemoryRuntime;
   private readonly pendingDeletes = new Map<string, PendingDelete>();
 
-  constructor(private readonly memory: MemoryRuntime) {}
+  constructor(memory: MemoryRuntime) {
+    this.memory = memory;
+  }
 
   execute(value: unknown): unknown {
     const input = objectInput(value);
@@ -47,11 +53,14 @@ export class ManageMemoryTool {
     }
     if (action === "create") {
       if (kind !== "semantic") throw new Error("Episodic memory 只能由 Session consolidation 或用户界面创建");
+      assertSemanticWriteDeclaration(input);
       return this.memory.createSemantic(text(input.subject, "subject"), text(input.content, "content"), "user");
     }
     if (action === "update") {
       if (kind !== "semantic") throw new Error("Episodic memory 不能由普通工具调用修改");
-      return this.memory.updateSemantic(integer(input.id, "id"), text(input.subject, "subject"), text(input.content, "content"), "user");
+      const id = integer(input.id, "id");
+      assertSemanticWriteDeclaration(input);
+      return this.memory.updateSemantic(id, text(input.subject, "subject"), text(input.content, "content"), "user");
     }
     if (action === "delete") return this.delete(kind, integer(input.id, "id"), input.confirmationId);
     throw new TypeError("manage_memory action 无效");
@@ -100,4 +109,13 @@ function integer(value: unknown, field: string): number {
 function memoryKind(value: unknown): "semantic" | "episodic" {
   if (value !== "semantic" && value !== "episodic") throw new TypeError("kind 必须是 semantic 或 episodic");
   return value;
+}
+
+/** 强制模型为 Semantic 写入声明允许类别、稳定性和未来用途。 */
+function assertSemanticWriteDeclaration(input: Record<string, unknown>): void {
+  if (typeof input.category !== "string" || !SEMANTIC_MEMORY_CATEGORIES.some((category) => category === input.category)) {
+    throw new TypeError(`category 必须是 ${SEMANTIC_MEMORY_CATEGORIES.join("、")} 之一`);
+  }
+  if (input.stable !== true) throw new TypeError("stable 必须为 true");
+  if (input.futureUseful !== true) throw new TypeError("futureUseful 必须为 true");
 }

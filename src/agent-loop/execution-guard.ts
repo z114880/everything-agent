@@ -1,4 +1,4 @@
-import { AgentLoopAbortError, AgentLoopTimeoutError } from "./errors.js";
+import { AgentLoopAbortError, AgentLoopTimeoutError } from "./errors.ts";
 
 export interface GuardOptions {
   signal: AbortSignal | undefined;

@@ -71,7 +71,7 @@ console.log(result.reply);
 - 工具异常会转换成带 `is_error` 的 `tool_result` 交回模型。
 - 模型、observer 或响应结构错误会在发送 `loop_error` 后继续向调用方抛出。
 
-observer 会收到 `working_memory`、`loop_start`、`llm_start`、`llm_end`、`text`、`stream_fallback`、`tool_start`、`tool_end`、`reply`、`loop_end` 和 `loop_error` 等事件。所有事件带同一 `runId`，迭代相关事件带 `iteration`。调用方可传入 `runId` 与持久 Session 对齐；省略时由 Loop 生成 UUID。
+observer 会收到 `context_assembled`、`loop_start`、`model_request`、`model_response`、`model_failed`、`text`、`stream_fallback`、`tool_started`、`tool_completed`、`tool_failed`、`reply`、`loop_end` 和 `loop_error` 等事件。`model_request` 保存该迭代实际使用的 System Prompt、messages、工具 schema 和生成参数快照；`model_response` 保存完整的标准化响应。所有事件带同一 `runId`，迭代相关事件带 `iteration`，模型与工具事件分别通过 `modelCallId` 与 `toolCallId` 关联。调用方可传入 `runId` 与持久 Session 对齐；省略时由 Loop 生成 UUID。
 
 工具事件默认包含完整参数和输出；涉及凭证的调用方必须通过 `serializeToolEvent` 移除 API Key、令牌、Cookie 等字段。启用 `stream: true` 且客户端实现 `messages.stream()` 时，流式调用失败会降级到普通调用；取消和超时不会触发降级。
 

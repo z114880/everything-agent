@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { State, StateCollisionError } from "../src/index.js";
+import { State, StateCollisionError } from "../src/index.ts";
 
 describe("State", () => {
   it("保存初始状态，并通过副本隔离顶层属性赋值", () => {

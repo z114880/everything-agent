@@ -1,5 +1,6 @@
-export { MemoryRuntime } from "./memory-runtime.js";
-export { toMatchQuery, toSearchText } from "./search-text.js";
+export { MemoryRuntime } from "./memory-runtime.ts";
+export { toMatchQuery, toSearchText } from "./search-text.ts";
+export { SEMANTIC_MEMORY_CATEGORIES } from "./types.ts";
 export type {
   ChatLogEntry,
   ConsolidationRun,
@@ -8,6 +9,7 @@ export type {
   MemoryOverview,
   RetrievalResult,
   SemanticMemory,
+  SemanticMemoryCategory,
   SessionSummary,
   StoredRun,
-} from "./types.js";
+} from "./types.ts";

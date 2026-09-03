@@ -1,12 +1,18 @@
-import { appendFile, mkdir, readFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
 export interface TraceRecord {
-  version: 1;
+  version: 1 | 2;
+  eventId?: string;
   type: string;
   timestamp: string;
+  sequence?: number;
   runId: string;
   sessionId?: string;
+  iteration?: number;
+  modelCallId?: string;
+  toolCallId?: string;
+  payload?: Record<string, unknown>;
   [key: string]: unknown;
 }
 
@@ -15,14 +21,15 @@ export interface JsonlTracerOptions {
   now?: () => Date;
 }
 
-/** 以每天一个 JSONL 文件持久化 classic loop 与 memory 事件。 */
+/** 按本地日期目录与 Session JSONL 文件持久化 classic loop 和 memory 事件。 */
 export class JsonlTracer {
   private readonly traceDirectory: string;
   private readonly onWarning: (message: string) => void;
   private readonly now: () => Date;
   private writeQueue: Promise<void> = Promise.resolve();
   private checkedPaths = new Set<string>();
-  private recoveryPath: string | null = null;
+  private recoveryPaths = new Map<string, string>();
+  private sequences = new Map<string, number>();
 
   constructor(home: string, options: JsonlTracerOptions = {}) {
     this.traceDirectory = join(home, "traces");
@@ -45,26 +52,33 @@ export class JsonlTracer {
 
   private makeRecord(type: string, event: Record<string, unknown>): TraceRecord {
     const runId = typeof event.runId === "string" ? event.runId : crypto.randomUUID();
-    const sanitized = sanitizeTraceEvent(type, event);
+    const sequence = (this.sequences.get(runId) ?? 0) + 1;
+    this.sequences.set(runId, sequence);
+    const sanitized = traceEventFields(type, event);
     return {
-      version: 1,
+      version: 2,
+      eventId: crypto.randomUUID(),
       type,
-      timestamp: localIsoSeconds(this.now()),
+      timestamp: localIsoMilliseconds(this.now()),
+      sequence,
       runId,
       ...sanitized,
     };
   }
 
   private async write(record: TraceRecord): Promise<void> {
-    await mkdir(this.traceDirectory, { recursive: true });
-    let path = this.recoveryPath ?? join(this.traceDirectory, `${record.timestamp.slice(0, 10)}.jsonl`);
+    const dateDirectory = join(this.traceDirectory, record.timestamp.slice(0, 10));
+    await mkdir(dateDirectory, { recursive: true });
+    const sessionFile = traceFileName(record.sessionId);
+    const primaryPath = join(dateDirectory, sessionFile);
+    let path = this.recoveryPaths.get(primaryPath) ?? primaryPath;
     if (!this.checkedPaths.has(path)) {
       try {
         await validateJsonl(path);
       } catch {
-        path = join(this.traceDirectory, `${record.timestamp.slice(0, 10)}.recovered-${record.timestamp.slice(11, 19).replaceAll(":", "")}.jsonl`);
-        this.recoveryPath = path;
-        this.onWarning("当天运行记录文件无法安全追加，已切换到恢复文件。");
+        path = join(dateDirectory, `${sessionFile.slice(0, -6)}.recovered-${record.timestamp.slice(11, 19).replaceAll(":", "")}.jsonl`);
+        this.recoveryPaths.set(primaryPath, path);
+        this.onWarning("当前 Session 的运行记录文件无法安全追加，已切换到恢复文件。");
       }
       this.checkedPaths.add(path);
     }
@@ -74,34 +88,52 @@ export class JsonlTracer {
 
 /** 读取 trace 目录中的事件；损坏行作为错误记录返回，不猜测修复。 */
 export async function readTraceRecords(home: string, limit = 1_000): Promise<TraceRecord[]> {
-  const { readdir } = await import("node:fs/promises");
   const directory = join(home, "traces");
-  let files: string[];
+  let dateDirectories: string[];
   try {
-    files = (await readdir(directory)).filter((file) => file.endsWith(".jsonl")).sort();
+    dateDirectories = (await readdir(directory, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory() && /^\d{4}-\d{2}-\d{2}$/.test(entry.name))
+      .map((entry) => entry.name)
+      .sort();
   } catch (error) {
     if (isMissing(error)) return [];
     throw error;
   }
   const records: TraceRecord[] = [];
-  for (const file of files) {
-    const text = await readFile(join(directory, file), "utf8");
-    for (const line of text.split(/\r?\n/)) {
-      if (!line.trim()) continue;
-      try {
-        records.push(JSON.parse(line) as TraceRecord);
-      } catch {
-        records.push({
-          version: 1,
-          type: "trace_read_error",
-          timestamp: "",
-          runId: crypto.randomUUID(),
-          file,
-        });
+  for (const dateDirectory of dateDirectories) {
+    const files = (await readdir(join(directory, dateDirectory)))
+      .filter((file) => file.endsWith(".jsonl"))
+      .sort();
+    for (const file of files) {
+      const text = await readFile(join(directory, dateDirectory, file), "utf8");
+      for (const line of text.split(/\r?\n/)) {
+        if (!line.trim()) continue;
+        try {
+          records.push(JSON.parse(line) as TraceRecord);
+        } catch {
+          records.push({
+            version: 2,
+            eventId: crypto.randomUUID(),
+            type: "trace_read_error",
+            timestamp: `${dateDirectory}T23:59:59`,
+            sequence: 0,
+            runId: crypto.randomUUID(),
+            payload: { file: `${dateDirectory}/${file}` },
+          });
+        }
       }
     }
   }
+  records.sort((left, right) => left.timestamp.localeCompare(right.timestamp)
+    || (left.sequence ?? 0) - (right.sequence ?? 0));
   return records.slice(-Math.max(1, Math.min(10_000, Math.trunc(limit))));
+}
+
+function traceFileName(sessionId: string | undefined): string {
+  if (!sessionId) return "system.jsonl";
+  if (/^[A-Za-z0-9_-]{1,200}$/.test(sessionId)) return `${sessionId}.jsonl`;
+  const safe = encodeURIComponent(sessionId).replace(/%/g, "_").slice(0, 200);
+  return `session-${safe || "unknown"}.jsonl`;
 }
 
 async function validateJsonl(path: string): Promise<void> {
@@ -115,47 +147,70 @@ async function validateJsonl(path: string): Promise<void> {
   for (const line of text.split(/\r?\n/)) if (line.trim()) JSON.parse(line);
 }
 
-function sanitizeTraceEvent(type: string, event: Record<string, unknown>): Record<string, unknown> {
-  const allowedByType: Record<string, string[]> = {
-    session_created: ["runId", "sessionId"],
-    session_selected: ["runId", "sessionId"],
-    turn_start: ["runId", "sessionId"],
-    working_memory: ["runId", "sessionId", "messageCount", "hasSystemPrompt"],
-    gate_start: ["runId", "sessionId"],
-    gate_end: ["runId", "sessionId", "decision", "reason", "fallback", "errorType"],
-    retrieval: ["runId", "sessionId", "query", "semantic", "episodic"],
-    llm_start: ["runId", "sessionId", "iteration", "provider", "model"],
-    llm_end: ["runId", "sessionId", "iteration", "provider", "model", "stopReason", "usage", "ms"],
-    tool_start: ["runId", "sessionId", "iteration", "tool", "toolUseId"],
-    tool_end: ["runId", "sessionId", "iteration", "tool", "toolUseId", "isError", "ms", "outputLength"],
-    turn_end: ["runId", "sessionId", "iterations", "stopReason", "ms"],
-    turn_error: ["runId", "sessionId", "errorType", "ms"],
-    consolidation_start: ["runId", "sessionId", "trigger", "throughMessageId"],
-    consolidation_end: ["runId", "sessionId", "throughMessageId", "factsCreated", "factsUpdated", "factsSkipped", "episodeChanged"],
-    consolidation_error: ["runId", "sessionId", "throughMessageId", "errorType"],
+function traceEventFields(type: string, event: Record<string, unknown>): Record<string, unknown> {
+  const payloadFields: Record<string, string[]> = {
+    run_started: ["userInput", "provider", "model", "settings", "runtime"],
+    context_assembled: ["messageCount", "historyTurnLimit", "historyMessageCount", "hasSystemPrompt", "semanticMemoryIds", "episodicMemoryIds"],
+    gate_start: [],
+    gate_end: ["decision", "reason", "fallback", "errorType"],
+    retrieval: ["query", "semantic", "episodic"],
+    model_request: ["provider", "model", "request"],
+    model_response: ["provider", "model", "response", "stopReason", "usage", "ms"],
+    model_failed: ["provider", "model", "errorType", "errorMessage", "ms"],
+    stream_fallback: ["error"],
+    tool_started: ["tool"],
+    tool_completed: ["tool", "arguments", "result", "summary", "isError", "ms", "outputLength"],
+    tool_failed: ["tool", "arguments", "result", "summary", "isError", "ms", "outputLength"],
+    run_completed: ["reply", "iterations", "stopReason", "toolCallCount", "ms"],
+    run_failed: ["errorType", "errorMessage", "iterations", "ms"],
+    consolidation_start: ["trigger", "throughMessageId"],
+    consolidation_end: ["throughMessageId", "factsCreated", "factsUpdated", "factsSkipped", "episodeChanged"],
+    consolidation_error: ["throughMessageId", "errorType"],
+    user_feedback: ["rating", "correction"],
+    eval_judgment: ["evaluator", "evaluatorVersion", "scores", "reason"],
+    trace_read_error: ["file"],
   };
   const output: Record<string, unknown> = {};
-  for (const key of allowedByType[type] ?? ["runId", "sessionId"]) {
-    if (event[key] !== undefined) output[key] = key === "query" && typeof event[key] === "string"
-      ? sanitizeQuery(event[key])
-      : event[key];
-  }
+  if (typeof event.sessionId === "string") output.sessionId = event.sessionId;
+  if (typeof event.iteration === "number") output.iteration = event.iteration;
+  if (typeof event.modelCallId === "string") output.modelCallId = event.modelCallId;
+  if (typeof event.toolCallId === "string") output.toolCallId = event.toolCallId;
+  const payload = Object.fromEntries((payloadFields[type] ?? []).flatMap((key) => event[key] === undefined
+    ? []
+    : [[key, sanitizeTraceValue(event[key], key)]]));
+  if (Object.keys(payload).length > 0) output.payload = payload;
   return output;
 }
 
-function sanitizeQuery(value: string): string {
-  return value
-    .replace(/\b(?:sk|key|token)-[A-Za-z0-9_-]{8,}\b/gi, "[凭证已移除]")
-    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [凭证已移除]")
-    .slice(0, 240);
+function sanitizeTraceValue(value: unknown, key: string): unknown {
+  if (isCredentialField(key)) return "[凭证已移除]";
+  if (typeof value === "string") return removeCredentialText(value);
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeTraceValue(item, ""));
+  }
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value)
+    .map(([itemKey, itemValue]) => [itemKey, sanitizeTraceValue(itemValue, itemKey)]));
 }
 
-function localIsoSeconds(date: Date): string {
+function isCredentialField(key: string): boolean {
+  const normalized = key.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
+  return /(?:^|_)(?:api_key|authorization|cookie|token|access_token|refresh_token|auth_token|secret|client_secret|password)(?:$|_)/.test(normalized);
+}
+
+function removeCredentialText(value: string): string {
+  return value
+    .replace(/\b(?:sk|key|token)-[A-Za-z0-9_-]{8,}\b/gi, "[凭证已移除]")
+    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [凭证已移除]");
+}
+
+function localIsoMilliseconds(date: Date): string {
   const pad = (value: number) => String(value).padStart(2, "0");
+  const milliseconds = String(date.getMilliseconds()).padStart(3, "0");
   const offset = -date.getTimezoneOffset();
   const sign = offset >= 0 ? "+" : "-";
   const absolute = Math.abs(offset);
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}${sign}${pad(Math.floor(absolute / 60))}:${pad(absolute % 60)}`;
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${milliseconds}${sign}${pad(Math.floor(absolute / 60))}:${pad(absolute % 60)}`;
 }
 
 function isMissing(error: unknown): boolean {

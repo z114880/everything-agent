@@ -1,7 +1,7 @@
-import { END, START } from "./graph.js";
-import type { Graph } from "./graph.js";
-import { isRecord, State } from "./state.js";
-import type { AnyState, StateRecord, StateWrite } from "./state.js";
+import { END, START } from "./graph.ts";
+import type { Graph } from "./graph.ts";
+import { isRecord, State } from "./state.ts";
+import type { AnyState, StateRecord, StateWrite } from "./state.ts";
 
 type InputDecision = "pending" | "fired" | "skipped" | "failed";
 

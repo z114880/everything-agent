@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { END, START, Graph, describe as describeGraph, node } from "../src/index.js";
+import { END, START, Graph, describe as describeGraph, node } from "../src/index.ts";
 
 describe("Graph", () => {
   it("通过链式接口声明节点和边", () => {

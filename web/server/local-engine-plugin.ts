@@ -2,17 +2,18 @@ import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, URL } from "node:url";
 import type { Plugin, ViteDevServer } from "vite";
-import { runGraph } from "../../src/engine/src/index.js";
-import type { Graph, StateRecord } from "../../src/engine/src/index.js";
+import { runGraph } from "../../src/engine/src/index.ts";
+import type { Graph, StateRecord } from "../../src/engine/src/index.ts";
 import {
   AgentConfigError,
+  clearLocalAgentData,
   loadAgentBootstrap,
   handleMemoryAction,
   loadTraceDashboard,
   runLocalAgent,
   saveAgentSettings,
   saveSystemPrompt,
-} from "./agent-service.js";
+} from "./agent-service.ts";
 
 const workflowDirectory = fileURLToPath(new URL("../../src/workflows/", import.meta.url));
 const workflowApiPrefix = "/api/local-workflow";
@@ -169,6 +170,11 @@ async function handleAgentRequest(
 
   if (request.method === "GET" && pathname === `${agentApiPrefix}/traces`) {
     sendJson(response, 200, await loadTraceDashboard());
+    return;
+  }
+
+  if (request.method === "POST" && pathname === `${agentApiPrefix}/clear-data`) {
+    sendJson(response, 200, { ok: true, ...await clearLocalAgentData(await readJsonBody(request)) });
     return;
   }
 

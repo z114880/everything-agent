@@ -2,17 +2,36 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { MemoryRuntime } from "../../memory/index.js";
-import { ManageMemoryTool } from "../manage-memory.js";
-import { LocalToolRegistry } from "../tool-registry.js";
+import { MemoryRuntime } from "../../memory/index.ts";
+import { ManageMemoryTool } from "../manage-memory.ts";
+import { LocalToolRegistry } from "../tool-registry.ts";
 
 const memories: MemoryRuntime[] = [];
 afterEach(() => memories.splice(0).forEach((memory) => memory.close()));
 
 describe("manage_memory", () => {
+  it("拒绝缺少长期价值声明的 semantic 写入", async () => {
+    const tool = new ManageMemoryTool(await memory());
+
+    expect(() => tool.execute({
+      action: "create",
+      kind: "semantic",
+      subject: "当前时间",
+      content: "美国东部时间七点",
+    })).toThrow("category");
+  });
+
   it("允许创建 semantic，但拒绝创建 episodic", async () => {
     const tool = new ManageMemoryTool(await memory());
-    expect(tool.execute({ action: "create", kind: "semantic", subject: "用户", content: "喜欢茶" }))
+    expect(tool.execute({
+      action: "create",
+      kind: "semantic",
+      category: "preference",
+      stable: true,
+      futureUseful: true,
+      subject: "用户",
+      content: "喜欢茶",
+    }))
       .toMatchObject({ subject: "用户", content: "喜欢茶" });
     expect(() => tool.execute({ action: "create", kind: "episodic", content: "事件" }))
       .toThrow("只能由 Session consolidation");
@@ -37,7 +56,16 @@ describe("manage_memory", () => {
 
     expect(tool.execute({ action: "search", kind: "semantic", query: "喜欢茶" })).toHaveLength(1);
     expect(tool.execute({ action: "search", kind: "episodic", query: "讨论喝茶" })).toHaveLength(1);
-    expect(tool.execute({ action: "update", kind: "semantic", id: semantic.id, subject: "用户", content: "喜欢绿茶" }))
+    expect(tool.execute({
+      action: "update",
+      kind: "semantic",
+      id: semantic.id,
+      category: "preference",
+      stable: true,
+      futureUseful: true,
+      subject: "用户",
+      content: "喜欢绿茶",
+    }))
       .toMatchObject({ content: "喜欢绿茶" });
     expect(() => tool.execute({ action: "update", kind: "episodic", id: 1, content: "修改" }))
       .toThrow("不能由普通工具调用修改");

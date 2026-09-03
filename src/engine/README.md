@@ -70,7 +70,7 @@ npm test             # 单次运行全部 Vitest 测试
 npm run test:watch   # 开发时监听文件变化
 npm run test:coverage
 npm run typecheck    # 严格检查源码、测试和示例
-npm run build        # 生成 ESM 和 .d.ts 到 dist/
+npm run build        # 检查后端类型并由 Vite 构建前端；后端不生成 dist/
 npm run example
 ```
 

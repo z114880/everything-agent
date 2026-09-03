@@ -1,7 +1,8 @@
-import { FileText, KeyRound, Save, Server, ShieldCheck } from "lucide-react";
+import { AlertTriangle, FileText, KeyRound, Save, Server, ShieldCheck, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   loadAgent,
+  clearAllAgentData,
   saveAgentConfig,
   saveSystemPrompt,
   type AgentProvider,
@@ -24,6 +25,8 @@ export function ConfigPage() {
   const [modelMessage, setModelMessage] = useState("");
   const [promptMessage, setPromptMessage] = useState("");
   const [forceAvailable, setForceAvailable] = useState(false);
+  const [clearingData, setClearingData] = useState(false);
+  const [clearMessage, setClearMessage] = useState("");
   const selectedKeyKnown = settings?.provider === provider;
 
   useEffect(() => {
@@ -69,6 +72,20 @@ export function ConfigPage() {
       setPromptMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setSavingPrompt(false);
+    }
+  }
+
+  async function clearAllData() {
+    if (!window.confirm("确认清除全部记忆、会话、运行记录和数据库数据？此操作不可撤销，仅保留 EVERYTHING.md。")) return;
+    setClearingData(true);
+    setClearMessage("正在清理本地数据…");
+    try {
+      await clearAllAgentData();
+      setClearMessage("清理完成。数据库、会话、记忆和运行记录已删除，EVERYTHING.md 已保留。");
+    } catch (error) {
+      setClearMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setClearingData(false);
     }
   }
 
@@ -134,6 +151,14 @@ export function ConfigPage() {
               <button className="primary-action" onClick={() => void savePrompt()} disabled={savingPrompt || !systemPrompt.trim()}><Save size={14} /> 保存 System Prompt</button>
               <span>{promptMessage}</span>
             </div>
+          </div>
+        </section>
+
+        <section className="panel config-card config-danger-card">
+          <div className="panel-header"><span><AlertTriangle size={15} /> 数据清理</span><span className="status-pill">不可撤销</span></div>
+          <div className="config-card-body config-danger-body">
+            <div><strong>清除全部本地数据</strong><p>删除数据库、Session、Chat Log、Semantic / Episodic Memory 和全部运行记录，仅保留 <code>.everything/EVERYTHING.md</code>。</p></div>
+            <div className="config-danger-actions"><button className="danger-ghost" disabled={clearingData} onClick={() => void clearAllData()}><Trash2 size={14} /> {clearingData ? "正在清理…" : "一键清理"}</button>{clearMessage && <span>{clearMessage}</span>}</div>
           </div>
         </section>
       </div>
