@@ -31,5 +31,5 @@ export {
 export { createModelClient } from "./model/model-client.ts";
 export type { AgentProvider, ModelClientConfig } from "./model/model-client.ts";
 export * from "./memory/index.ts";
-export { JsonlTracer, readTraceRecords } from "./tracing/jsonl-tracer.ts";
-export type { JsonlTracerOptions, TraceRecord } from "./tracing/jsonl-tracer.ts";
+export { JsonlTracer, readTraceFiles, readTraceRecords } from "./tracing/jsonl-tracer.ts";
+export type { JsonlTracerOptions, TraceFile, TraceRecord } from "./tracing/jsonl-tracer.ts";

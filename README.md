@@ -26,7 +26,7 @@ npm run example
 - **Agent**：运行真实 `runAgentLoop`，从 SQLite 恢复多轮 Session，展示 Working Memory、LLM、Tools 和 Reply。工具调用过程完整保存在本地 Chat Log，活动边和回复由真实 observer 事件驱动。
 - **Workflow**：枚举 `src/workflows/` 下的 TypeScript 文件，可编辑和执行任一工作流。拓扑来自真实 `Graph.describe()`，执行由本地 Node.js 进程调用 `runGraph()`。
 - **Memory**：通过 Overview、Semantic、Episodic (Session Recall)、Procedural、Chat Log 和 Consolidation 查看本地记忆与真实历史检索窗口。
-- **运行记录**：只读回放 `.everything/traces/<日期>/<sessionId>.jsonl` 中的 classic loop 与 memory 执行事实，按 Session 和 Agent 回合分组展示输入、回复、模型请求/响应、工具调用、检索、耗时与错误。trace 不记录 Session 创建或选择这类 UI 活动。“配置”页面提供带二次确认的“一键清理”，可删除数据库、Session、Memory 与 trace，只保留 `.everything/EVERYTHING.md`。
+- **运行记录**：只读列出 `.everything/traces/<日期>/<序号>-<sessionId>.jsonl` 中的 classic loop 与 memory 执行事实，页面按 JSONL 文件直接展示已脱敏事件，不额外推导 Session 或 Agent 回合结构。trace 不记录 Session 创建或选择这类 UI 活动。“配置”页面提供带二次确认的“一键清理”，可删除数据库、Session、Memory 与 trace，只保留 `.everything/EVERYTHING.md`。
 - **配置**：把 Provider、主/小模型、Session Recall 预算、Context Limit、Base URL 和密钥写入根目录 `.env`，把 System Prompt 保存到 `.everything/EVERYTHING.md`。浏览器只能读取密钥是否存在及末四位。
 
 首次运行后打开“配置”菜单，选择 Anthropic 或 OpenAI Compatible。对应环境变量为：
@@ -76,7 +76,7 @@ Everything Agent 的目标是构建一个真正可长期使用的个人助理 Ag
 | Session / Memory | 基础闭环完成 | SQLite Session、结构化 Chat Log、消息级 FTS5 + BM25 Session Recall、基于 RetrievalIntent 的 gated retrieval 与 Semantic consolidation |
 | Graph 前端 | 本地闭环完成 | 浏览器读写本地 TypeScript 工作流，消费真实 describe 与 observer 事件，并展示 wave、耗时和结果 |
 | Agent Harness 前端 | 基础闭环完成 | 真实 Agent Loop、动态 SVG、流式 Reply、持久多轮 Session、停止与 60 秒超时 |
-| 完整可视化界面 | 进行中 | 已有 Memory 管理与按 Session / 回合分组的持久 trace 时间线；状态差异和更丰富的工具仍待补充 |
+| 完整可视化界面 | 进行中 | 已有 Memory 管理与按 JSONL 文件列出的持久 trace 查看页；状态差异和更丰富的工具仍待补充 |
 
 ## 总体架构
 
@@ -248,6 +248,6 @@ npm run build
 - 当前 Session 和 Memory 是单用户、本地实现，不包含多租户或云同步。
 - 当前 Session 的全部完整回合进入 Working Memory，并完全排除在 Session Recall 之外。完整模型输入使用可配置字符上限；零运行时依赖和多模型支持使项目无法可靠使用单一 tokenizer，因此 Context Limit 不以 token 为单位。
 - Session Recall 当前只有 FTS5 + BM25 词法召回；Embedding 和多路融合尚未实现。工具结果不参与索引，但恢复命中窗口时会随完整 run 返回。
-- JSONL trace 只覆盖 classic loop 与 memory；Workflow 继续使用实时 observer，不写入该目录。记录按 `.everything/traces/YYYY-MM-DD/<sessionId>.jsonl` 存放，无 Session 的事件写入同日期的 `system.jsonl`，不读取旧版根目录 JSONL。V2 记录为每个事件生成 `eventId` 和 run 内递增的 `sequence`；`model_request` 保存每次调用实际使用的 System Prompt、messages、工具 schema 和生成参数，`model_response` 保存完整标准化响应，工具事件保存结构化参数与结果，内容不做长度截断。常见凭证字段与 Bearer token 仍会在写入前移除。`context_assembled` 只记录上下文的组装数量与记忆来源，模型请求才是 eval 的权威输入快照。
+- JSONL trace 只覆盖 classic loop 与 memory；Workflow 继续使用实时 observer，不写入该目录。记录按 `.everything/traces/YYYY-MM-DD/<序号>-<sessionId>.jsonl` 存放，序号按当日文件创建顺序递增；无 Session 的事件写入带序号的 `system.jsonl`，不读取旧版根目录 JSONL。V2 记录为每个事件生成 `eventId` 和 run 内递增的 `sequence`；`model_request` 保存每次调用实际使用的 System Prompt、messages、工具 schema 和生成参数，`model_response` 保存完整标准化响应，工具事件保存结构化参数与结果，内容不做长度截断。常见凭证字段与 Bearer token 仍会在写入前移除。`context_assembled` 只记录上下文的组装数量与记忆来源，模型请求才是 eval 的权威输入快照。
 - `State.snapshot()` 是顶层复制；节点应把收到的状态视为只读对象。
 - 当前没有内置鉴权、密钥管理或个人数据加密能力。

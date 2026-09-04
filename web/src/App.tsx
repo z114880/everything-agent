@@ -199,11 +199,11 @@ export default function App() {
           <div><strong>Everything Agent</strong><span>可视化Agent控制台</span></div>
           <button className="sidebar-toggle" onClick={() => setSidebarOpen(false)} aria-label="收起侧边栏"><PanelLeftClose size={16} /></button>
         </div>
-        <div className="nav-group">系统</div>
+        <button className={`nav-item ${page === "workflow" ? "active" : ""}`} onClick={() => setPage("workflow")}><GitBranch size={15} /><span>Workflow</span></button>
+        <div className="nav-divider" aria-hidden="true" />
         <button className={`nav-item ${page === "agent" ? "active" : ""}`} onClick={() => setPage("agent")}><Bot size={15} /><span>Agent</span></button>
-        <button className={`nav-item ${page === "workflow" ? "active" : ""}`} onClick={() => setPage("workflow")}><GitBranch size={15} /><span>Workflow</span><span className="nav-count">01</span></button>
         <button className={`nav-item ${page === "memory" ? "active" : ""}`} onClick={() => setPage("memory")}><Brain size={15} /><span>Memory</span></button>
-        <button className={`nav-item ${page === "traces" ? "active" : ""}`} onClick={() => setPage("traces")}><Activity size={15} /><span>运行记录</span></button>
+        <button className={`nav-item ${page === "traces" ? "active" : ""}`} onClick={() => setPage("traces")}><Activity size={15} /><span>Trace</span></button>
         <button className={`nav-item ${page === "config" ? "active" : ""}`} onClick={() => setPage("config")}><Settings size={15} /><span>配置</span></button>
         <div className="sidebar-note"><span className="signal bg-emerald-500" />本地 Engine 已连接</div>
       </aside>

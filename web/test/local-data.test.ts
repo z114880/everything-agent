@@ -8,8 +8,9 @@ describe("本地 Agent 数据清理", () => {
   it("删除数据库、会话附件和全部 trace，仅保留 EVERYTHING.md", async () => {
     const home = await mkdtemp(join(tmpdir(), "everything-clear-"));
     await writeFile(join(home, "EVERYTHING.md"), "保留的规则", "utf8");
-    await writeFile(join(home, "state.db"), "database", "utf8");
-    await writeFile(join(home, "state.db-wal"), "wal", "utf8");
+    await mkdir(join(home, "database"));
+    await writeFile(join(home, "database", "state.db"), "database", "utf8");
+    await writeFile(join(home, "database", "state.db-wal"), "wal", "utf8");
     await mkdir(join(home, "traces", "2026-09-03"), { recursive: true });
     await writeFile(join(home, "traces", "2026-09-03", "s1.jsonl"), "{}\n", "utf8");
 

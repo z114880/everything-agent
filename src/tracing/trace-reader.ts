@@ -1,2 +1,2 @@
-export { readTraceRecords } from "./jsonl-tracer.ts";
-export type { TraceRecord } from "./jsonl-tracer.ts";
+export { readTraceFiles, readTraceRecords } from "./jsonl-tracer.ts";
+export type { TraceFile, TraceRecord } from "./jsonl-tracer.ts";

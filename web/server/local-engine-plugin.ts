@@ -6,6 +6,7 @@ import { runGraph } from "../../src/engine/src/index.ts";
 import type { Graph, StateRecord } from "../../src/engine/src/index.ts";
 import {
   AgentConfigError,
+  clearProviderApiKey,
   clearLocalAgentData,
   loadAgentBootstrap,
   handleMemoryAction,
@@ -155,6 +156,11 @@ async function handleAgentRequest(
 
   if (request.method === "POST" && pathname === `${agentApiPrefix}/config/reset-runtime`) {
     sendJson(response, 200, { ok: true, ...await resetRuntimeSettings() });
+    return;
+  }
+
+  if (request.method === "POST" && pathname === `${agentApiPrefix}/config/clear-api-key`) {
+    sendJson(response, 200, { ok: true, ...await clearProviderApiKey(await readJsonBody(request)) });
     return;
   }
 

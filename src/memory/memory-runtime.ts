@@ -31,8 +31,9 @@ export class MemoryRuntime {
   private consolidationQueue: Promise<void> = Promise.resolve();
 
   constructor(home: string) {
-    mkdirSync(home, { recursive: true });
-    this.databasePath = join(home, "state.db");
+    const databaseDirectory = join(home, "database");
+    mkdirSync(databaseDirectory, { recursive: true });
+    this.databasePath = join(databaseDirectory, "state.db");
     this.database = new DatabaseSync(this.databasePath);
     this.initializeSchema();
     this.assertFts5();

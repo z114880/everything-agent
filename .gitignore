@@ -7,4 +7,5 @@ coverage/
 dist-web/
 *.tgz
 .everything/state.db*
+.everything/database/
 .everything/traces/

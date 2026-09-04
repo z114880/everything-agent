@@ -109,9 +109,13 @@ export interface TraceRecord {
   iteration?: number; modelCallId?: string; toolCallId?: string; payload?: Record<string, unknown>; [key: string]: unknown;
 }
 
-export interface TraceDashboard {
+export interface TraceFile {
+  path: string;
   records: TraceRecord[];
-  sessions: SessionSummary[];
+}
+
+export interface TraceDashboard {
+  files: TraceFile[];
 }
 
 export interface ClientHistoryMessage {
@@ -180,6 +184,15 @@ export function saveAgentConfig(value: {
 /** 恢复非模型运行参数默认值。 */
 export function resetRuntimeConfig(): Promise<{ ok: true; settings: AgentSettings }> {
   return requestJson(`${endpoint}/config/reset-runtime`, { method: "POST" });
+}
+
+/** 立即清除指定 Provider 的本地 API Key。 */
+export function clearProviderApiKey(provider: AgentProvider): Promise<{ ok: true; settings: AgentSettings }> {
+  return requestJson(`${endpoint}/config/clear-api-key`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider }),
+  });
 }
 
 /** 显式更新 `.everything/EVERYTHING.md`。 */

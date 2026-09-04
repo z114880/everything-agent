@@ -4,7 +4,7 @@ Memory 模块为 classic Agent Loop 提供单用户、本地优先的持久记�
 
 ## 存储与事实来源
 
-- .everything/state.db 是 Session、Chat Log 和 Semantic Memory 的事实来源。
+- .everything/database/state.db 是 Session、Chat Log 和 Semantic Memory 的事实来源；SQLite 生成的 WAL 和 SHM 文件也位于该目录。
 - .everything/EVERYTHING.md 是始终进入 System Prompt 的 Procedural Memory。
 - Episodic Memory 不再保存模型生成的 Session 摘要。Episodic Recall 的唯一事实来源是原始 chat_log。
 - chat_log_fts 只索引 user_message 与最终 assistant_message 的检索投影。中文使用 bigram，其他文字按 Unicode 单词规范化。

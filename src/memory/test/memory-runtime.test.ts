@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -10,6 +10,15 @@ const recall: SessionRecallSettings = { searchWindow: 5, scrollStep: 10, message
 afterEach(() => { for (const runtime of runtimes.splice(0)) runtime.close() });
 
 describe("Memory Runtime", () => {
+  it("把 SQLite 数据库放在独立的 database 目录", async () => {
+    const home = await mkdtemp(join(tmpdir(), "everything-memory-path-"));
+    const memory = new MemoryRuntime(home);
+    runtimes.push(memory);
+
+    expect(memory.databasePath).toBe(join(home, "database", "state.db"));
+    expect((await stat(join(home, "database"))).isDirectory()).toBe(true);
+  });
+
   it("使用中文 bigram 投影和 BM25 检索 Semantic Memory", async () => {
     const memory = await createMemory();
     const created = memory.createSemantic("用户", "用户喜欢下午喝咖啡");

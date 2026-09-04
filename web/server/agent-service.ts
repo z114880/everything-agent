@@ -7,7 +7,7 @@ import {
   MemoryRuntime,
   ManageMemoryTool,
   JsonlTracer,
-  readTraceRecords,
+  readTraceFiles,
   runAgentLoop,
 } from "../../src/index.ts";
 import type {
@@ -163,6 +163,15 @@ export async function saveAgentSettings(body: Record<string, unknown>): Promise<
   await updateEnvFile(updates, clearApiKey ? [keyName] : []);
   const settings = await loadRuntimeSettings();
   return { settings: publicSettings(settings), models };
+}
+
+/** 清除指定模型提供方的本地 API Key，不修改其他尚未保存的配置。 */
+export async function clearProviderApiKey(body: Record<string, unknown>): Promise<{
+  settings: PublicAgentSettings;
+}> {
+  const provider = parseProvider(body.provider);
+  await updateEnvFile({}, [keyNameFor(provider)]);
+  return { settings: publicSettings(await loadRuntimeSettings()) };
 }
 
 /** 恢复全部运行参数默认值，保留模型连接和 EVERYTHING.md。 */
@@ -357,10 +366,7 @@ export async function handleMemoryAction(body: Record<string, unknown>): Promise
 }
 
 export async function loadTraceDashboard(): Promise<unknown> {
-  return {
-    records: await readTraceRecords(everythingHome, 2_000),
-    sessions: getMemoryRuntime().listSessions(),
-  };
+  return { files: await readTraceFiles(everythingHome, 2_000) };
 }
 
 /** 清除数据库、Session、Memory 与 trace，仅保留 EVERYTHING.md。 */
