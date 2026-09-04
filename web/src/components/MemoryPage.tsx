@@ -67,7 +67,7 @@ export function MemoryPage() {
   if (!data) return <div className="content-wrap"><div className="panel loading-panel">正在加载 Memory… {message}</div></div>;
   const semantic = semanticResults ?? data.semantic;
   return <div className="content-wrap memory-page">
-    <div className="memory-header"><div><div className="eyebrow">本地 SQLite / FTS5 + BM25</div><h1>Memory</h1><p>Semantic Memory、Session Recall、会话日志与整理状态。</p></div><button className="ghost-action" onClick={() => void reload()}><RefreshCw size={14} /> 刷新</button></div>
+    <div className="memory-header"><div><div className="eyebrow">SQLite / Lexical + Dense</div><h1>Memory</h1><p>Semantic Memory、Session Recall、会话日志与整理状态。</p></div><button className="ghost-action" onClick={() => void reload()}><RefreshCw size={14} /> 刷新</button></div>
     <div className="memory-tabs">{tabs.map((item) => <button key={item.id} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)}>{item.label}</button>)}</div>
     {message && <div className="memory-message">{message}</div>}
     {tab === "overview" && <div className="metric-grid">
@@ -78,7 +78,7 @@ export function MemoryPage() {
       <Metric label="待整理 Session" value={data.overview.pendingSessionCount} />
       <div className="panel path-card"><Database size={18} /><div><strong>Database</strong><code>{data.overview.databasePath}</code></div></div>
     </div>}
-    {(tab === "semantic" || tab === "episodic") && <div className="memory-search"><Search size={14} /><input value={query} onChange={(event) => { setQuery(event.target.value); if (!event.target.value) setSemanticResults(null); }} onKeyDown={(event) => { if (event.key === "Enter") void search(); }} placeholder={tab === "episodic" ? "留空返回最近 Session，或输入 FTS5 查询" : "使用 FTS5 + BM25 搜索"} /><button className="ghost-action" onClick={() => void search()}>{tab === "episodic" && !query.trim() ? "最近 Session" : "搜索"}</button>{tab === "semantic" && <button className="primary-action" onClick={() => createSemantic(mutate)}>新建</button>}</div>}
+    {(tab === "semantic" || tab === "episodic") && <div className="memory-search"><Search size={14} /><input value={query} onChange={(event) => { setQuery(event.target.value); if (!event.target.value) setSemanticResults(null); }} onKeyDown={(event) => { if (event.key === "Enter") void search(); }} placeholder={tab === "episodic" ? "留空返回最近 Session，或按当前模式检索" : "按当前检索模式搜索"} /><button className="ghost-action" onClick={() => void search()}>{tab === "episodic" && !query.trim() ? "最近 Session" : "搜索"}</button>{tab === "semantic" && <button className="primary-action" onClick={() => createSemantic(mutate)}>新建</button>}</div>}
     {tab === "semantic" && <div className="memory-list">{semantic.map((item) => <SemanticCard key={item.id} item={item} mutate={mutate} />)}</div>}
     {tab === "episodic" && <div className="memory-list">
       {!recall && <div className="panel loading-panel">输入查询验证真实 Session Recall；留空可查看最近活跃 Session。</div>}
@@ -93,7 +93,7 @@ export function MemoryPage() {
 
 function RecallCard({ result, read }: { result: SessionRecallResult; read(result: SessionRecallResult, fromStart?: boolean): Promise<void> }) {
   return <article className="panel memory-card"><div>
-    <span className="memory-id">#{result.rank} · {result.match ? "BM25 " + result.match.bm25.toFixed(3) : "recent"}</span>
+    <span className="memory-id">#{result.rank} · {retrievalScoreLabel(result)}</span>
     <strong>{result.session.title}</strong>
     <small>{local(result.session.updatedAt)} · 返回 {result.returnedMessageCount}/{result.totalMessageCount} · {result.isComplete ? "完整 Session" : "部分范围"}</small>
     {result.expandLimitReached && <small>完整扩窗已达到预算，请从头分页读取。</small>}
@@ -102,6 +102,14 @@ function RecallCard({ result, read }: { result: SessionRecallResult; read(result
     {result.nextCursor && !result.isComplete && <button onClick={() => void read(result)}>扩大 / 继续</button>}
     {!result.isComplete && <button onClick={() => void read(result, true)}>从头读取</button>}
   </div></article>;
+}
+function retrievalScoreLabel(result: SessionRecallResult): string {
+  const signals = result.retrievalSignals;
+  if (signals.mmr !== undefined) return `MMR ${signals.mmr.toFixed(3)}`;
+  if (signals.fused !== undefined) return `RRF ${signals.fused.toFixed(3)}`;
+  if (signals.dense !== undefined) return `Dense ${signals.dense.toFixed(3)}`;
+  if (signals.bm25 !== undefined) return `BM25 ${signals.bm25.toFixed(3)}`;
+  return "recent";
 }
 function Metric({ label, value }: { label: string; value: number }) { return <div className="panel metric-card"><span>{label}</span><strong>{value}</strong></div> }
 function SemanticCard({ item, mutate }: { item: SemanticMemory; mutate(action: Record<string, unknown>): Promise<void> }) {

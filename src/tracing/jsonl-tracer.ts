@@ -193,12 +193,12 @@ async function validateJsonl(path: string): Promise<void> {
 function traceEventFields(type: string, event: Record<string, unknown>): Record<string, unknown> {
   const payloadFields: Record<string, string[]> = {
     run_started: ["userInput", "provider", "model", "settings", "runtime"],
-    context_assembled: ["messageCount", "historyMessageCount", "hasSystemPrompt", "semanticMemoryIds", "sessionRecallSessionIds", "sessionRecallRanges", "sessionRecallEntryCount", "sessionRecallCharacterCount", "sessionRecallTruncated"],
+    context_assembled: ["messageCount", "historyMessageCount", "hasSystemPrompt", "semanticMemoryIds", "sessionRecallSessionIds", "sessionRecallRanges", "sessionRecallEntryCount", "sessionRecallEstimatedTokens", "sessionRecallTruncated"],
     gate_start: [],
     gate_end: ["intent", "semantic", "sessionRecallMode", "reason", "fallback", "errorType"],
     retrieval: ["semantic", "sessionRecall"],
     model_request: ["provider", "model", "request"],
-    model_response: ["provider", "model", "response", "stopReason", "usage", "ms"],
+    model_response: ["provider", "model", "response", "stopReason", "tokenUsage", "ms"],
     model_failed: ["provider", "model", "errorType", "errorMessage", "ms"],
     stream_fallback: ["error"],
     tool_started: ["tool"],
@@ -209,6 +209,20 @@ function traceEventFields(type: string, event: Record<string, unknown>): Record<
     consolidation_start: ["trigger", "throughMessageId"],
     consolidation_end: ["throughMessageId", "factsCreated", "factsUpdated", "factsSkipped"],
     consolidation_error: ["throughMessageId", "errorType"],
+    embedding_started: ["purpose", "batchIndex", "itemCount", "estimatedTokens", "rebuildId"],
+    embedding_completed: ["purpose", "batchIndex", "itemCount", "estimatedTokens", "tokenUsage", "dimensions", "ms", "rebuildId"],
+    embedding_failed: ["purpose", "batchIndex", "itemCount", "estimatedTokens", "errorType", "errorMessage", "ms", "rebuildId"],
+    embedding_rebuild_started: ["generationId", "rebuildId"],
+    embedding_rebuild_progress: ["generationId", "rebuildId", "processedChunks"],
+    embedding_generation_activated: ["generationId", "rebuildId", "chunkCount"],
+    embedding_rebuild_completed: ["generationId", "rebuildId", "chunkCount"],
+    embedding_rebuild_failed: ["generationId", "rebuildId", "errorType"],
+    embedding_rebuild_cancelled: ["generationId", "rebuildId"],
+    dense_retrieval_completed: ["corpus", "candidateCount"],
+    lexical_retrieval_completed: ["corpus", "candidateCount"],
+    rrf_completed: ["corpus", "candidateCount"],
+    mmr_completed: ["corpus", "selected", "excludedAsDuplicate"],
+    retrieval_completed: ["semanticCount", "sessionCount", "mode"],
     user_feedback: ["rating", "correction"],
     eval_judgment: ["evaluator", "evaluatorVersion", "scores", "reason"],
     trace_read_error: ["file"],
@@ -238,6 +252,7 @@ function sanitizeTraceValue(value: unknown, key: string): unknown {
 
 function isCredentialField(key: string): boolean {
   const normalized = key.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
+  if (/(?:^|_)token_(?:count|limit|budget|usage)$/.test(normalized)) return false;
   return /(?:^|_)(?:api_key|authorization|cookie|token|access_token|refresh_token|auth_token|secret|client_secret|password)(?:$|_)/.test(normalized);
 }
 

@@ -9,6 +9,7 @@ import type {
   ModelContentBlock,
   ModelRequest,
   ModelResponse,
+  TokenUsage,
 } from "./types.ts";
 
 /** 从模型内容块提取最终文本回复。 */
@@ -19,13 +20,17 @@ export function textFrom(content: ModelContentBlock[]): string {
     .join("");
 }
 
-/** 兼容模型客户端的两种 token 字段命名。 */
-export function usageFrom(response: ModelResponse): { in: number; out: number } {
-  const usage = response.usage ?? {};
-  return {
-    in: usage.input_tokens ?? usage.inputTokens ?? 0,
-    out: usage.output_tokens ?? usage.outputTokens ?? 0,
-  };
+/** 返回协议适配器提供的真实 token 消耗，不使用估算值补齐。 */
+export function tokenUsageFrom(response: ModelResponse): TokenUsage | null {
+  const usage = response.tokenUsage;
+  if (!usage || !isNonNegativeInteger(usage.inputTokens)
+    || !isNonNegativeInteger(usage.outputTokens)
+    || !isNonNegativeInteger(usage.totalTokens)) return null;
+  return usage;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return Number.isInteger(value) && Number(value) >= 0;
 }
 
 async function streamResponse(

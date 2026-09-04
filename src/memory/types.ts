@@ -1,4 +1,5 @@
-import type { AgentMessage, AgentModelClient, AgentObserver } from "../agent-loop/agent-loop.ts";
+import type { AgentMessage, AgentModelClient, AgentObserver, TokenEstimator } from "../agent-loop/agent-loop.ts";
+import type { EmbeddingPort, EmbeddingProfile, RetrievalMode } from "./retrieve/index.ts";
 
 export const SEMANTIC_MEMORY_CATEGORIES = [
   "user_attribute", "preference", "ongoing_project", "constraint", "commitment",
@@ -15,7 +16,8 @@ export interface SessionRecallSettings {
   searchWindow: number;
   scrollStep: number;
   messageLimit: number;
-  characterLimit: number;
+  tokenLimit: number;
+  tokenEstimator: Pick<TokenEstimator, "estimateText">;
 }
 export interface MemoryModelOptions {
   client: AgentModelClient;
@@ -23,6 +25,19 @@ export interface MemoryModelOptions {
   currentSessionId: string;
   recall: SessionRecallSettings;
   observer?: AgentObserver;
+  runId?: string;
+}
+
+/** 注入 MemoryRuntime 的 Dense 检索依赖；未提供时仅允许 lexical-only。 */
+export interface MemoryRetrievalConfiguration {
+  mode: RetrievalMode;
+  embedding?: {
+    profile: EmbeddingProfile;
+    client: EmbeddingPort;
+  };
+  observer?: AgentObserver;
+  /** 仅供影子索引构建入口使用；普通查询和写入不得绕过 active profile 校验。 */
+  allowIncompleteIndex?: boolean;
 }
 export interface SessionSummary {
   id: string; title: string; messageCount: number; completedRunCount: number; incompleteRunCount: number;
@@ -37,8 +52,8 @@ export interface SemanticMemory {
 }
 export interface RecallRange { fromMessageId: number; toMessageId: number }
 export interface SessionRecallResult {
-  session: SessionSummary; rank: number; retrievalSignals: { bm25?: number };
-  match: null | { messageId: number; bm25: number; totalMatches: number };
+  session: SessionSummary; rank: number; retrievalSignals: { bm25?: number; dense?: number; fused?: number; mmr?: number };
+  match: null | { messageId: number; bm25?: number; dense?: number; totalMatches: number };
   entries: ChatLogEntry[]; totalMessageCount: number; returnedMessageCount: number; indexedMessageCount: number;
   returnedRanges: RecallRange[]; isComplete: boolean; truncated: boolean; expandLimitReached: boolean; nextCursor: string | null;
 }

@@ -14,6 +14,8 @@ export type {
   ModelRequest,
   ModelResponse,
   ModelStream,
+  TokenEstimator,
+  TokenUsage,
   ToolCallRecord,
   ToolExecutionContext,
   ToolRegistry,
@@ -29,6 +31,7 @@ export {
   sessionSearchSchema,
 } from "./tools/session-recall.ts";
 export { createModelClient } from "./model/model-client.ts";
+export { estimateRequestTokens, estimateTextTokens, RoughTokenEstimator } from "./model/token-estimator.ts";
 export type { AgentProvider, ModelClientConfig } from "./model/model-client.ts";
 export * from "./memory/index.ts";
 export { JsonlTracer, readTraceFiles, readTraceRecords } from "./tracing/jsonl-tracer.ts";

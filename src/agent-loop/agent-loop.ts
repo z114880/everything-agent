@@ -10,7 +10,7 @@
  */
 
 import type { GuardOptions } from "./execution-guard.ts";
-import { requestModelResponse, textFrom, usageFrom } from "./model-response.ts";
+import { requestModelResponse, textFrom, tokenUsageFrom } from "./model-response.ts";
 import { executeToolCalls } from "./tool-execution.ts";
 import type {
   AgentLoopOptions,
@@ -18,6 +18,7 @@ import type {
   AgentObserver,
   EventData,
   ModelResponse,
+  TokenEstimator,
   ToolCallRecord,
 } from "./types.ts";
 
@@ -32,6 +33,8 @@ export type {
   ModelRequest,
   ModelResponse,
   ModelStream,
+  TokenEstimator,
+  TokenUsage,
   ToolCallRecord,
   ToolExecutionContext,
   ToolRegistry,
@@ -39,6 +42,7 @@ export type {
 
 const DEFAULT_MAX_ITERATIONS = 10;
 const DEFAULT_MAX_TOKENS = 2048;
+const CONTEXT_SAFETY_TOKENS = 512;
 const ITERATION_LIMIT_REPLY = "已达到本轮最大迭代次数，请把任务拆小后重试。";
 
 function assertPositiveInteger(value: number, name: string): void {
@@ -54,7 +58,8 @@ function validateOptions(options: AgentLoopOptions): void {
     tools,
     maxIterations = DEFAULT_MAX_ITERATIONS,
     maxTokens = DEFAULT_MAX_TOKENS,
-    contextCharacterLimit,
+    modelContextWindow,
+    tokenEstimator,
     observer = () => {},
     timeoutMs,
     serializeToolEvent = defaultToolEvent,
@@ -62,7 +67,8 @@ function validateOptions(options: AgentLoopOptions): void {
 
   assertPositiveInteger(maxIterations, "maxIterations");
   assertPositiveInteger(maxTokens, "maxTokens");
-  if (contextCharacterLimit !== undefined) assertPositiveInteger(contextCharacterLimit, "contextCharacterLimit");
+  if (modelContextWindow !== undefined) assertPositiveInteger(modelContextWindow, "modelContextWindow");
+  if (modelContextWindow !== undefined && !tokenEstimator) throw new TypeError("配置 modelContextWindow 时必须提供 tokenEstimator");
   if (timeoutMs !== undefined) assertPositiveInteger(timeoutMs, "timeoutMs");
   if (!client?.messages || typeof client.messages.create !== "function") {
     throw new TypeError("client.messages.create 必须是函数");
@@ -104,7 +110,8 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
     tools,
     maxIterations = DEFAULT_MAX_ITERATIONS,
     maxTokens = DEFAULT_MAX_TOKENS,
-    contextCharacterLimit,
+    modelContextWindow,
+    tokenEstimator,
     observer = () => {},
     stream = false,
     signal,
@@ -138,13 +145,11 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
         max_tokens: maxTokens,
         signal,
       };
-      const contextCharacters = JSON.stringify({
-        system: request.system,
-        messages: request.messages,
-        tools: request.tools,
-      }).length;
-      if (contextCharacterLimit !== undefined && contextCharacters > contextCharacterLimit) {
-        throw new Error(`模型输入上下文为 ${contextCharacters} 字符，超过配置上限 ${contextCharacterLimit}；请新建 Session 或调高 Context Limit`);
+      if (modelContextWindow !== undefined && tokenEstimator) {
+        const estimatedInputTokens = tokenEstimator.estimateRequest(request);
+        if (estimatedInputTokens + maxTokens + CONTEXT_SAFETY_TOKENS > modelContextWindow) {
+          throw new Error(`模型输入估算、输出预留与安全余量共 ${estimatedInputTokens + maxTokens + CONTEXT_SAFETY_TOKENS} tokens，超过 Context Window ${modelContextWindow}；请新建 Session 或调高 Context Window`);
+        }
       }
 
       const modelCallId = crypto.randomUUID();
@@ -181,17 +186,17 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
         });
         throw error;
       }
-      const usage = usageFrom(response);
+      const tokenUsage = tokenUsageFrom(response);
       const stopReason = response.stop_reason ?? response.stopReason ?? null;
       await notify("model_response", {
         iteration,
         modelCallId,
         response: structuredClone(response),
         stopReason,
-        usage,
+        tokenUsage,
         ms: Math.round(performance.now() - llmStartedAt),
       });
-      await notify("llm", { iteration, stopReason, usage });
+      await notify("llm", { iteration, stopReason, tokenUsage });
       messages.push({ role: "assistant", content: response.content });
 
       const requestedTools = response.content.filter((block) => block?.type === "tool_use");

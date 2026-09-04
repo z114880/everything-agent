@@ -13,7 +13,7 @@ const client = {
       return {
         content: [{ type: "text", text: "完成" }],
         stop_reason: "end_turn",
-        usage: { input_tokens: 10, output_tokens: 2 },
+        tokenUsage: { inputTokens: 10, outputTokens: 2, totalTokens: 12 },
       };
     },
   },
@@ -63,7 +63,7 @@ console.log(result.reply);
 
 传入的 `messages` 会原地追加模型响应和工具结果，使下一次推理可以观察本轮已执行的动作。
 
-可选的 `contextCharacterLimit` 会在每次模型调用前统计 System Prompt、messages 与工具 schema 的完整 JSON 字符数。超过限制时 Loop 明确失败，不会静默裁剪历史或工具结果。该限制使用字符而不是 token，因为核心 Loop 保持 Provider 与 tokenizer 无关。
+可选的 `modelContextWindow` 与同步 `TokenEstimator` 会在每次模型调用前估算 System Prompt、完整 messages 和工具 schema。估算输入、`maxTokens` 与固定 512-token 安全余量之和超过窗口时，Loop 明确失败，不会静默裁剪历史或工具结果。估算不承诺与任一供应商的分词结果完全一致，也不会调用远程计数接口。
 
 ## 结束条件与事件
 
@@ -73,7 +73,7 @@ console.log(result.reply);
 - 工具异常会转换成带 `is_error` 的 `tool_result` 交回模型。
 - 模型、observer 或响应结构错误会在发送 `loop_error` 后继续向调用方抛出。
 
-observer 会收到 `context_assembled`、`loop_start`、`model_request`、`model_response`、`model_failed`、`text`、`stream_fallback`、`tool_started`、`tool_completed`、`tool_failed`、`reply`、`loop_end` 和 `loop_error` 等事件。`model_request` 保存该迭代实际使用的 System Prompt、messages、工具 schema 和生成参数快照；`model_response` 保存完整的标准化响应。所有事件带同一 `runId`，迭代相关事件带 `iteration`，模型与工具事件分别通过 `modelCallId` 与 `toolCallId` 关联。调用方可传入 `runId` 与持久 Session 对齐；省略时由 Loop 生成 UUID。
+observer 会收到 `context_assembled`、`loop_start`、`model_request`、`model_response`、`model_failed`、`text`、`stream_fallback`、`tool_started`、`tool_completed`、`tool_failed`、`reply`、`loop_end` 和 `loop_error` 等事件。`model_request` 保存该迭代实际使用的 System Prompt、messages、工具 schema 和生成参数快照；`model_response` 保存完整的标准化响应，并通过 `tokenUsage` 记录供应商返回的真实输入、输出与总 token 数。供应商缺失或返回不完整 usage 时该字段为 `null`，不会用估算值补齐。所有事件带同一 `runId`，迭代相关事件带 `iteration`，模型与工具事件分别通过 `modelCallId` 与 `toolCallId` 关联。调用方可传入 `runId` 与持久 Session 对齐；省略时由 Loop 生成 UUID。
 
 工具事件默认包含完整参数和输出；涉及凭证的调用方必须通过 `serializeToolEvent` 移除 API Key、令牌、Cookie 等字段。启用 `stream: true` 且客户端实现 `messages.stream()` 时，流式调用失败会降级到普通调用；取消和超时不会触发降级。
 

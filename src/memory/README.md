@@ -9,18 +9,16 @@ Memory 模块为 classic Agent Loop 提供单用户、本地优先的持久记�
 - Episodic Memory 不再保存模型生成的 Session 摘要。Episodic Recall 的唯一事实来源是原始 chat_log。
 - chat_log_fts 只索引 user_message 与最终 assistant_message 的检索投影。中文使用 bigram，其他文字按 Unicode 单词规范化。
 - 工具调用和工具结果不进入 FTS，但命中范围恢复时会按完整 run 一并返回。
-- FTS5 目前是词法召回的一路，使用原始 BM25 信号；尚未实现 Embedding 与多路融合。
+- FTS5 + BM25 与 Dense 是相互独立的召回路线；Hybrid 使用固定等权 RRF，再用 MMR 去除近似重复结果。
 - API Key、令牌、Authorization 和 Cookie 等凭证字段在写入 Chat Log 前移除。
 
-Schema v2 直接删除旧 Episodic 表以及旧 Session/Chat Log 数据，不提供开发阶段兼容迁移。Semantic Memory 保留。
+Schema v4 增加向量 generation、chunk 与 rebuild 状态，并使用 `chunkingVersion` 标识估算切块规则。向量使用标准化 Float32 little-endian BLOB 保存；旧索引可由原始事实和 Chat Log 重建。
 
 ## Session 与 Working Memory
 
-sessionId 标识一段聊天，runId 标识一次用户提交触发的 Agent Loop。完整 run 的用户输入、Assistant 工具请求、工具结果和最终回复以结构化消息写入 chat_log。失败 run 可以只有用户输入，Session Recall 会标记 runComplete: false。
+sessionId 标识一段聊天，runId 标识一次用户提交触发的 Agent Loop。完整 run 的用户输入、Assistant 工具请求、工具结果和最终回复以结构化消息写入 chat_log。失败 run 可以只有用户输入，但只保留在 Chat Log，不进入 FTS5、Dense、Session Recall 或 consolidation。
 
-当前 Session 的全部已完成回合进入 Working Memory，不再按最近回合数裁剪。当前 Session 完全排除在 Session Recall 之外。完整模型输入受到 contextCharacterLimit 限制；超过限制时明确失败，不静默删除旧消息。
-
-配置使用字符而非 token：项目保持零运行时依赖并同时支持不同模型，无法可靠复用某一家模型的 tokenizer。字符限制是确定、跨 Provider 的输入安全边界，并不等同于模型的精确 token 上限。
+当前 Session 的全部已完成回合进入 Working Memory，不再按最近回合数裁剪。当前 Session 完全排除在 Session Recall 之外。完整模型输入受到 `modelContextWindow` token 限制；输入量使用统一启发式规则估算，超过预算时明确失败，不静默删除旧消息。真实消耗只采用供应商响应中的 usage。
 
 ## Gate
 
@@ -36,14 +34,14 @@ Gate 采用召回率优先策略：宁可多执行一次 Session Recall，也不
 
 ## Session Search
 
-session_search 是只读的发现工具，有两种互斥模式：按 query 执行 FTS5 + BM25 搜索，或以 recent: true 返回最近活跃 Session。
+session_search 是只读的发现工具，有两种互斥模式：按 query 依据全局配置执行 Dense、FTS5 + BM25 或 Hybrid 搜索，或以 recent: true 返回最近活跃 Session。
 
 - limit 限制 Session 数，默认 4。
-- search 每个 Session 选择 BM25 最佳消息作为命中点，返回首 3 条、命中点前后各 window 条、尾 3 条。
+- search 每个 Session 选择当前检索路线的最佳消息或 chunk 锚点，返回首 3 条、命中点前后各 window 条、尾 3 条。
 - recent 按 updated_at 降序返回非空 Session，返回首 6 条和尾 6 条，结果使用 retrievalMode: recent 与 match: null。
 - 窗口按可检索对话消息计数，随后展开这些消息所属的完整 run。
 - 首、事件、尾区段重叠时按 chat_log.id 去重。
-- Session 使用最佳 BM25 升序排名；同分按活跃时间和 Session ID 稳定排序。原始信号位于 retrievalSignals.bm25，不伪造统一 score。
+- lexical-only 按最佳 BM25 升序，dense-only 按 cosine 降序，hybrid 按 RRF 后的 MMR 顺序排名；同分再按稳定规则决胜。原始信号分别保存在 `retrievalSignals.bm25/dense/fused/mmr`，不伪造统一 score。
 - Agent 调用完全排除当前 Session；Memory 页面手动检索没有当前 Session，因此搜索全部历史。
 
 ## Session Read
@@ -61,8 +59,8 @@ session_read 使用 search 返回的 cursor 扩大命中窗口，或使用 sessi
 | sessionSearchWindow | 5 | 1–20 |
 | sessionScrollStep | 10 | 1–50 |
 | sessionRecallMessageLimit | 100 | 1–200 |
-| sessionRecallCharacterLimit | 50,000 | 1,000–100,000 |
-| contextCharacterLimit | 200,000 | 10,000–1,000,000 |
+| sessionRecallTokenLimit | 8,192 | 256–131,072 |
+| modelContextWindow | 32,768 | 4,096–2,000,000 |
 
 多 Session 搜索按排名依次组装。预算不足时省略末尾低排名 Session；第一名自身超限时允许显式截断。单条超长消息可通过 cursor 从截断位置继续读取。
 
@@ -82,9 +80,9 @@ manage_memory 只管理 Semantic Memory。session_search 与 session_read 始终
 
 ## 当前取舍
 
-- FTS5 + BM25 无法可靠判断语义相关，后续需要 Embedding 召回与独立融合层。
+- Dense 目前使用 SQLite 中的精确 cosine 全扫描；个人助理数据规模增大后可评估 ANN，但首版不做。
 - 不索引工具结果可能漏掉仅存在于工具输出、且邻近对话没有关键词的事实。
 - 当前 Session 全量 Working Memory 会持续增加费用与延迟，最终可能触发 Context Limit。
 - 扩窗返回完整累计窗口，会重复消耗上下文。
 - 固定首尾锚点会占用返回预算；不足时低排名候选被省略。
-- 字符数不是 token 数，只是零依赖、多模型条件下的确定性近似边界。
+- 当前不做时间衰减或 recency boost；它可能在未来作为明确的排序信号加入。

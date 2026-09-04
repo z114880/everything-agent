@@ -88,7 +88,7 @@ describe("模型客户端", () => {
     expect(result).toMatchObject({
       content: [{ type: "tool_use", id: "call-1", name: "get_current_time", input: {} }],
       stop_reason: "tool_calls",
-      usage: { input_tokens: 4, output_tokens: 2 },
+      tokenUsage: { inputTokens: 4, outputTokens: 2, totalTokens: 6 },
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "https://example.test/v1/chat/completions",
@@ -121,14 +121,14 @@ describe("模型客户端", () => {
     expect(await stream.getFinalMessage()).toMatchObject({
       content: [{ type: "text", text: "你好" }],
       stop_reason: "stop",
-      usage: { input_tokens: 2, output_tokens: 1 },
+      tokenUsage: { inputTokens: 2, outputTokens: 1, totalTokens: 3 },
     });
     vi.restoreAllMocks();
   });
 
   it("消费 Anthropic SSE 的文本与分段工具参数", async () => {
     const payload = [
-      'data: {"type":"message_start","message":{"usage":{"input_tokens":3}}}',
+      'data: {"type":"message_start","message":{"usage":{"input_tokens":3,"cache_read_input_tokens":2,"cache_creation_input_tokens":1}}}',
       'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
       'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"先查时间。"}}',
       'data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"tool-1","name":"get_current_time","input":{}}}',
@@ -156,12 +156,25 @@ describe("模型客户端", () => {
         { type: "tool_use", id: "tool-1", name: "get_current_time", input: {} },
       ],
       stop_reason: "tool_use",
-      usage: { input_tokens: 3, output_tokens: 4 },
+      tokenUsage: { inputTokens: 6, outputTokens: 4, totalTokens: 10 },
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.anthropic.com/v1/messages",
       expect.objectContaining({ headers: expect.objectContaining({ "x-api-key": "secret" }) }),
     );
+    vi.restoreAllMocks();
+  });
+
+  it("供应商缺少完整 usage 时明确返回 null", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ finish_reason: "stop", message: { content: "完成" } }],
+      usage: { prompt_tokens: 4 },
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    const client = createModelClient({ provider: "openai-compatible", apiKey: "secret" });
+    const response = await client.messages.create({
+      model: "test-model", system: "", messages: [], tools: [], max_tokens: 100, signal: undefined,
+    });
+    expect(response.tokenUsage).toBeNull();
     vi.restoreAllMocks();
   });
 });

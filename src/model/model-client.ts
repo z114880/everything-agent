@@ -5,6 +5,7 @@ import type {
   ModelRequest,
   ModelResponse,
   ModelStream,
+  TokenUsage,
 } from "../agent-loop/agent-loop.ts";
 
 export type AgentProvider = "anthropic" | "openai-compatible";
@@ -32,8 +33,9 @@ function createAnthropicClient(config: ModelClientConfig): AgentModelClient {
         const response = await postJson(endpoint, anthropicHeaders(config.apiKey), {
           ...anthropicBody(request),
           stream: false,
-        }, request.signal);
-        return response as ModelResponse;
+        }, request.signal) as ModelResponse & { usage?: Record<string, unknown> };
+        const { usage, ...message } = response;
+        return { ...message, tokenUsage: normalizeAnthropicUsage(usage) };
       },
       async stream(request) {
         const response = await postStream(endpoint, anthropicHeaders(config.apiKey), {
@@ -164,7 +166,7 @@ interface OpenAIResponse {
     finish_reason?: string | null;
     message?: { content?: string | null; tool_calls?: OpenAIToolCall[] };
   }>;
-  usage?: { prompt_tokens?: number; completion_tokens?: number };
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 }
 
 function fromOpenAIResponse(response: OpenAIResponse): ModelResponse {
@@ -186,10 +188,7 @@ function fromOpenAIResponse(response: OpenAIResponse): ModelResponse {
   return {
     content,
     stop_reason: choice.finish_reason ?? null,
-    usage: {
-      input_tokens: response.usage?.prompt_tokens ?? 0,
-      output_tokens: response.usage?.completion_tokens ?? 0,
-    },
+    tokenUsage: normalizeOpenAIUsage(response.usage),
   };
 }
 
@@ -198,11 +197,12 @@ function anthropicStream(response: Response): ModelStream {
   async function* textStream(): AsyncGenerator<string> {
     const blocks = new Map<number, ModelContentBlock & { inputJson?: string }>();
     let stopReason: string | null = null;
-    let inputTokens = 0;
-    let outputTokens = 0;
+    let usage: Record<string, unknown> | undefined;
     for await (const event of iterateSse(response)) {
       if (event.type === "error") throw providerError(event.error);
-      if (event.type === "message_start") inputTokens = numberAt(event, "message", "usage", "input_tokens");
+      if (event.type === "message_start") {
+        usage = (event.message as Record<string, unknown> | undefined)?.usage as Record<string, unknown> | undefined;
+      }
       if (event.type === "content_block_start") {
         const index = Number(event.index);
         const block = event.content_block as ModelContentBlock | undefined;
@@ -225,7 +225,7 @@ function anthropicStream(response: Response): ModelStream {
       if (event.type === "message_delta") {
         const delta = event.delta as Record<string, unknown> | undefined;
         stopReason = String(delta?.stop_reason ?? stopReason ?? "") || null;
-        outputTokens = numberAt(event, "usage", "output_tokens");
+        usage = { ...(usage ?? {}), ...((event.usage as Record<string, unknown> | undefined) ?? {}) };
       }
     }
     const content = [...blocks.entries()].sort(([left], [right]) => left - right).map(([, block]) => {
@@ -239,7 +239,7 @@ function anthropicStream(response: Response): ModelStream {
     finalMessage = {
       content,
       stop_reason: stopReason,
-      usage: { input_tokens: inputTokens, output_tokens: outputTokens },
+      tokenUsage: normalizeAnthropicUsage(usage),
     };
   }
   return {
@@ -257,15 +257,11 @@ function openAIStream(response: Response): ModelStream {
     const toolCalls = new Map<number, { id: string; name: string; arguments: string }>();
     let replyText = "";
     let stopReason: string | null = null;
-    let inputTokens = 0;
-    let outputTokens = 0;
+    let usage: Record<string, unknown> | undefined;
     for await (const event of iterateSse(response)) {
       if (event.error) throw providerError(event.error);
-      const usage = event.usage as Record<string, unknown> | undefined;
-      if (usage) {
-        inputTokens = Number(usage.prompt_tokens ?? 0);
-        outputTokens = Number(usage.completion_tokens ?? 0);
-      }
+      const eventUsage = event.usage as Record<string, unknown> | undefined;
+      if (eventUsage) usage = eventUsage;
       const choice = (event.choices as Array<Record<string, unknown>> | undefined)?.[0];
       if (!choice) continue;
       stopReason = String(choice.finish_reason ?? stopReason ?? "") || null;
@@ -297,7 +293,7 @@ function openAIStream(response: Response): ModelStream {
     finalMessage = {
       content,
       stop_reason: stopReason,
-      usage: { input_tokens: inputTokens, output_tokens: outputTokens },
+      tokenUsage: normalizeOpenAIUsage(usage),
     };
   }
   return {
@@ -307,6 +303,35 @@ function openAIStream(response: Response): ModelStream {
       return finalMessage;
     },
   };
+}
+
+function normalizeOpenAIUsage(usage: Record<string, unknown> | undefined): TokenUsage | null {
+  if (!usage) return null;
+  const inputTokens = nonNegativeInteger(usage.prompt_tokens);
+  const outputTokens = nonNegativeInteger(usage.completion_tokens);
+  if (inputTokens === null || outputTokens === null) return null;
+  const reportedTotal = nonNegativeInteger(usage.total_tokens);
+  return { inputTokens, outputTokens, totalTokens: reportedTotal ?? inputTokens + outputTokens };
+}
+
+function normalizeAnthropicUsage(usage: Record<string, unknown> | undefined): TokenUsage | null {
+  if (!usage) return null;
+  const ordinaryInput = nonNegativeInteger(usage.input_tokens);
+  const outputTokens = nonNegativeInteger(usage.output_tokens);
+  if (ordinaryInput === null || outputTokens === null) return null;
+  const cacheRead = optionalNonNegativeInteger(usage.cache_read_input_tokens);
+  const cacheWrite = optionalNonNegativeInteger(usage.cache_creation_input_tokens);
+  if (cacheRead === null || cacheWrite === null) return null;
+  const inputTokens = ordinaryInput + cacheRead + cacheWrite;
+  return { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens };
+}
+
+function nonNegativeInteger(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+function optionalNonNegativeInteger(value: unknown): number | null {
+  return value === undefined ? 0 : nonNegativeInteger(value);
 }
 
 async function* iterateSse(response: Response): AsyncGenerator<Record<string, any>> {
@@ -388,12 +413,6 @@ function parseToolArguments(value: unknown): unknown {
   } catch {
     throw new TypeError("模型返回了无效的工具参数 JSON");
   }
-}
-
-function numberAt(value: Record<string, any>, ...path: string[]): number {
-  let current: any = value;
-  for (const key of path) current = current?.[key];
-  return Number(current ?? 0);
 }
 
 function anthropicHeaders(apiKey: string): Record<string, string> {

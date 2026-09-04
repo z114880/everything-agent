@@ -3,11 +3,15 @@ import { useEffect, useState } from "react";
 import {
   loadAgent,
   clearProviderApiKey,
+  clearEmbeddingApiKey,
   clearAllAgentData,
   saveAgentConfig,
   resetRuntimeConfig,
+  rebuildEmbeddingIndex,
+  cancelEmbeddingIndexRebuild,
   type AgentProvider,
   type AgentSettings,
+  type RetrievalMode,
 } from "../agent-api";
 
 export function ConfigPage() {
@@ -18,8 +22,16 @@ export function ConfigPage() {
   const [sessionSearchWindow, setSessionSearchWindow] = useState(5);
   const [sessionScrollStep, setSessionScrollStep] = useState(10);
   const [sessionRecallMessageLimit, setSessionRecallMessageLimit] = useState(100);
-  const [sessionRecallCharacterLimit, setSessionRecallCharacterLimit] = useState(50_000);
-  const [contextCharacterLimit, setContextCharacterLimit] = useState(200_000);
+  const [sessionRecallTokenLimit, setSessionRecallTokenLimit] = useState(8_192);
+  const [modelContextWindow, setModelContextWindow] = useState(32_768);
+  const [retrievalMode, setRetrievalMode] = useState<RetrievalMode>("lexical_only");
+  const [embeddingBaseUrl, setEmbeddingBaseUrl] = useState("");
+  const [embeddingModel, setEmbeddingModel] = useState("");
+  const [embeddingQueryTemplate, setEmbeddingQueryTemplate] = useState("{text}");
+  const [embeddingDocumentTemplate, setEmbeddingDocumentTemplate] = useState("{text}");
+  const [embeddingMinimumSimilarity, setEmbeddingMinimumSimilarity] = useState(0.30);
+  const [embeddingApiKey, setEmbeddingApiKey] = useState("");
+  const [rebuildingEmbedding, setRebuildingEmbedding] = useState(false);
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [clearingApiKey, setClearingApiKey] = useState(false);
@@ -50,11 +62,15 @@ export function ConfigPage() {
       const result = await saveAgentConfig({
         provider, model, smallModel, baseUrl, apiKey, clearApiKey: false, force,
         sessionSearchWindow, sessionScrollStep, sessionRecallMessageLimit,
-        sessionRecallCharacterLimit, contextCharacterLimit,
+        sessionRecallTokenLimit, modelContextWindow,
+        retrievalMode, embeddingBaseUrl, embeddingModel,
+        embeddingQueryTemplate, embeddingDocumentTemplate, embeddingMinimumSimilarity,
+        embeddingApiKey, clearEmbeddingApiKey: false,
       });
       setSettings(result.settings);
       setModels(result.models);
       setApiKey("");
+      setEmbeddingApiKey("");
       setModelMessage(result.models.length ? `保存成功，连接测试返回 ${result.models.length} 个模型。` : "保存成功，下一回合立即生效。");
     } catch (error) {
       const value = error as Error & { canForce?: boolean };
@@ -85,8 +101,14 @@ export function ConfigPage() {
     setSessionSearchWindow(value.sessionSearchWindow);
     setSessionScrollStep(value.sessionScrollStep);
     setSessionRecallMessageLimit(value.sessionRecallMessageLimit);
-    setSessionRecallCharacterLimit(value.sessionRecallCharacterLimit);
-    setContextCharacterLimit(value.contextCharacterLimit);
+    setSessionRecallTokenLimit(value.sessionRecallTokenLimit);
+    setModelContextWindow(value.modelContextWindow);
+    setRetrievalMode(value.retrievalMode);
+    setEmbeddingBaseUrl(value.embeddingBaseUrl);
+    setEmbeddingModel(value.embeddingModel);
+    setEmbeddingQueryTemplate(value.embeddingQueryTemplate);
+    setEmbeddingDocumentTemplate(value.embeddingDocumentTemplate);
+    setEmbeddingMinimumSimilarity(value.embeddingMinimumSimilarity);
   }
 
   async function resetRuntime() {
@@ -112,6 +134,34 @@ export function ConfigPage() {
     } finally {
       setClearingData(false);
     }
+  }
+
+  async function rebuildEmbeddings() {
+    setRebuildingEmbedding(true);
+    setModelMessage("正在串行建立影子向量索引…");
+    try {
+      const result = await rebuildEmbeddingIndex();
+      setSettings(result.settings);
+      setModelMessage(`索引已原子激活，共 ${result.result.chunkCount} 个 chunks。`);
+    } catch (error) {
+      setModelMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRebuildingEmbedding(false);
+    }
+  }
+
+  async function cancelRebuild() {
+    const result = await cancelEmbeddingIndexRebuild();
+    setModelMessage(result.cancelled ? "已请求取消，旧 active generation 保持可用。" : "当前没有正在运行的重建任务。");
+  }
+
+  async function clearSavedEmbeddingKey() {
+    if (!window.confirm("确认清除独立 Embedding API Key？检索模式将回到 FTS5 + BM25。")) return;
+    const result = await clearEmbeddingApiKey();
+    setSettings(result.settings);
+    applyRuntimeSettings(result.settings);
+    setEmbeddingApiKey("");
+    setModelMessage("Embedding API Key 已清除，检索模式已切回 lexical-only。");
   }
 
   return (
@@ -156,6 +206,47 @@ export function ConfigPage() {
               <div className="security-note"><ShieldCheck size={15} /><span>API Key 仅写入本地 `.env`，不会由本项目上传或同步至云端；本地服务仅在调用所选模型提供商时使用，读取接口只返回配置状态与末四位。</span></div>
             </div>
 
+            <div className="config-section">
+              <div className="config-section-heading"><Gauge size={16} /><div><strong>Memory Retrieval</strong><p>Semantic Memory 与 Session Recall 共用检索模式，Dense 仅调用远程 OpenAI-compatible API。</p></div></div>
+              <label className="config-field">Retrieval Mode
+                <select value={retrievalMode} onChange={(event) => setRetrievalMode(event.target.value as RetrievalMode)}>
+                  <option value="lexical_only">FTS5 + BM25</option>
+                  <option value="dense_only">Dense</option>
+                  <option value="hybrid">Hybrid（RRF + MMR）</option>
+                </select>
+              </label>
+              <label className="config-field">Embedding Base URL
+                <input value={embeddingBaseUrl} onChange={(event) => setEmbeddingBaseUrl(event.target.value)} placeholder="https://api.openai.com/v1" />
+              </label>
+              <label className="config-field">Embedding Model
+                <input value={embeddingModel} onChange={(event) => setEmbeddingModel(event.target.value)} placeholder="text-embedding-3-large" />
+                <span className="field-help">请求固定 dimensions=1024；模型不支持或返回其他维度时直接失败。</span>
+              </label>
+              <label className="config-field">Embedding API Key
+                <span className="secret-label"><KeyRound size={13} /> {settings?.embeddingKeyConfigured ? `已配置 ····${settings.embeddingKeyLast4}` : "尚未配置"}</span>
+                <input type="password" value={embeddingApiKey} onChange={(event) => setEmbeddingApiKey(event.target.value)} placeholder={settings?.embeddingKeyConfigured ? "留空保留已保存的独立密钥" : "输入独立 Embedding API Key"} />
+              </label>
+              <div className="security-note"><AlertTriangle size={15} /><span>配置 Embedding 后，Semantic Memory 与历史成功 run 的正文会发送到该远程服务；失败 run、工具调用和工具结果不会发送。</span></div>
+              <label className="config-field">Query Template
+                <input value={embeddingQueryTemplate} onChange={(event) => setEmbeddingQueryTemplate(event.target.value)} />
+              </label>
+              <label className="config-field">Document Template
+                <input value={embeddingDocumentTemplate} onChange={(event) => setEmbeddingDocumentTemplate(event.target.value)} />
+              </label>
+              <label className="config-field">Minimum Similarity <span title="建议起点：OpenAI 0.30、BGE 0.45、Qwen3 0.50、GTE/Nomic 0.40、Multilingual-E5 0.80；需按数据校准。">?</span>
+                <input type="number" min={-1} max={1} step={0.05} value={embeddingMinimumSimilarity} onChange={(event) => setEmbeddingMinimumSimilarity(Number(event.target.value))} />
+              </label>
+              <div className="security-note"><ShieldCheck size={15} /><span>向量索引状态：{settings?.embeddingIndex.ready
+                ? `当前配置已就绪 · ${settings.embeddingIndex.generationId?.slice(0, 8)}`
+                : settings?.embeddingIndex.generationId
+                  ? `当前配置待重建 · 旧索引 ${settings.embeddingIndex.generationId.slice(0, 8)} 仍可用`
+                  : "未建立"}。保存 profile 后需重建；失败不会替换旧索引。</span></div>
+              {rebuildingEmbedding
+                ? <button className="danger-ghost" onClick={() => void cancelRebuild()}><Trash2 size={14} /> 取消重建</button>
+                : <button className="ghost-action" onClick={() => void rebuildEmbeddings()} disabled={!settings?.embeddingKeyConfigured || !embeddingModel}><RotateCcw size={14} /> 重建 Embedding 索引</button>}
+              {settings?.embeddingKeyConfigured && <button className="danger-ghost" onClick={() => void clearSavedEmbeddingKey()}><Trash2 size={14} /> 清除 Embedding Key</button>}
+            </div>
+
             <div className="config-section config-runtime-section">
               <div className="config-section-heading"><Gauge size={16} /><div><strong>运行参数</strong><p>控制记忆召回范围和模型上下文上限。</p></div></div>
               <label className="config-field">Session Search Window
@@ -170,13 +261,13 @@ export function ConfigPage() {
                 <input type="number" min={settings?.limits.sessionRecallMessageLimit?.min ?? 1} max={settings?.limits.sessionRecallMessageLimit?.max ?? 200} value={sessionRecallMessageLimit} onChange={(event) => setSessionRecallMessageLimit(Number(event.target.value))} />
                 <span className="field-help">单次 Session Recall 最多返回条目数，默认 100。</span>
               </label>
-              <label className="config-field">Session Recall Character Limit
-                <input type="number" min={settings?.limits.sessionRecallCharacterLimit?.min ?? 1000} max={settings?.limits.sessionRecallCharacterLimit?.max ?? 100000} value={sessionRecallCharacterLimit} onChange={(event) => setSessionRecallCharacterLimit(Number(event.target.value))} />
-                <span className="field-help">单次 Session Recall 最多返回字符数，默认 50,000。</span>
+              <label className="config-field">Session Recall Token Limit
+                <input type="number" min={settings?.limits.sessionRecallTokenLimit?.min ?? 256} max={settings?.limits.sessionRecallTokenLimit?.max ?? 131072} value={sessionRecallTokenLimit} onChange={(event) => setSessionRecallTokenLimit(Number(event.target.value))} />
+                <span className="field-help">单次 Session Recall 的估算 token 预算，默认 8,192。</span>
               </label>
-              <label className="config-field">Context Limit（字符）
-                <input type="number" min={settings?.limits.contextCharacterLimit?.min ?? 10000} max={settings?.limits.contextCharacterLimit?.max ?? 1000000} value={contextCharacterLimit} onChange={(event) => setContextCharacterLimit(Number(event.target.value))} />
-                <span className="field-help">限制每次模型请求的完整输入；不同模型的 tokenizer 不通用，因此按字符计数。</span>
+              <label className="config-field">Model Context Window（tokens）
+                <input type="number" min={settings?.limits.modelContextWindow?.min ?? 4096} max={settings?.limits.modelContextWindow?.max ?? 2000000} value={modelContextWindow} onChange={(event) => setModelContextWindow(Number(event.target.value))} />
+                <span className="field-help">输入按统一启发式规则估算；默认 32,768，并预留 2,048 output tokens 与 512-token 安全余量。</span>
               </label>
             </div>
           </div>

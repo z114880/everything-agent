@@ -1,6 +1,6 @@
 # Memory Retrieval 设计
 
-> 状态：规划中，尚未实现。本文记录 Dense、Lexical、RRF、MMR、Tokenizer 和向量索引的已确认设计，不代表当前代码已经具备这些能力。当前实现仍以 `src/memory/README.md` 描述为准。
+> 状态：首版已实现。本文同时记录实现约定与 MMR 原理，作为阅读代码和后续调参的依据；明确标注的未来项尚未实现。
 
 ## 目标与范围
 
@@ -15,35 +15,33 @@ Session Recall 的 `recent` 模式只按时间读取；`session_read` 只按 Ses
 
 ## 目录与模块
 
-计划目录如下：
+当前目录如下：
 
 ```text
 src/memory/retrieve/
 ├── index.ts
-├── retrieval-engine.ts
 ├── types.ts
 ├── lexical/
-│   ├── lexical-retriever.ts
 │   ├── search-text.ts
 │   ├── semantic-search.ts
 │   └── session-search.ts
 ├── dense/
 │   ├── embedding-client.ts
-│   ├── tokenizer.ts
 │   ├── chunker.ts
 │   ├── vector-store.ts
-│   ├── semantic-search.ts
-│   └── session-search.ts
+│   ├── dense-retriever.ts
+│   └── vector.ts
 ├── fusion/
 │   ├── rrf.ts
 │   └── mmr.ts
 └── test/
-    └── retrieval-engine.test.ts
+    ├── retrieval-algorithms.test.ts
+    └── memory-retrieval-integration.test.ts
 ```
 
-`MemoryRuntime` 保持主要公开门面。调用方不需要了解远程 Embedding 协议、Tokenizer 文件、向量存储、候选聚合、RRF 或 MMR。
+`MemoryRuntime` 保持主要公开门面。调用方不需要了解远程 Embedding 协议、token 估算、向量存储、候选聚合、RRF 或 MMR。
 
-`RetrievalEngine` 是深模块，负责隐藏模式选择、两路召回、融合、多样化和错误语义。远程 Embedding 是内部 seam：生产使用 HTTP adapter，测试使用内存 adapter。`fusion/` 只包含确定性的纯计算，不访问网络或 SQLite。
+`MemoryRuntime` 负责隐藏模式选择、两路召回、融合、多样化和错误语义。远程 Embedding 是内部 seam：生产使用 HTTP adapter，测试使用内存 adapter。`fusion/` 只包含确定性的纯计算，不访问网络或 SQLite。
 
 `lexical/` 不导入 Dense 实现，保证没有 Embedding 配置时 lexical-only 仍可独立工作。公共类和函数需要中文 JSDoc；内部注释解释排序不变量、事务语义、隐私约束和错误模式，不逐行复述代码。
 
@@ -77,12 +75,11 @@ type RetrievalMode = "dense_only" | "lexical_only" | "hybrid";
 | API Key | 使用独立凭证，不回退到 `OPENAI_API_KEY` |
 | Model | 远程 Embedding 模型名 |
 | Dimensions | 固定发送 `1024` |
-| Embedding Tokenizer ID | 公开 Hugging Face `repository@40位commit` |
 | Query Template | 默认 `{text}` |
 | Document Template | 默认 `{text}` |
 | Minimum Similarity | 默认 `0.30` |
 
-Query Template 与 Document Template 只能包含一个 `{text}` 占位符，不支持任意代码或复杂模板。建索引只使用 Document Template，查询只使用 Query Template。模板增加的 token 计入输入限制。
+Query Template 与 Document Template 只能包含一个 `{text}` 占位符，不支持任意代码或复杂模板。建索引只使用 Document Template，查询只使用 Query Template。模板增加的内容计入估算输入预算。
 
 所有请求固定发送 `dimensions: 1024`。服务不支持该参数、忽略参数、返回非 1024 维向量，或者同一 generation 内维度发生变化时，直接抛出异常。
 
@@ -91,7 +88,7 @@ Query Template 与 Document Template 只能包含一个 `{text}` 占位符，不
 ### 批处理
 
 - 每批最多 16 个 chunk。
-- 每批最多 8,192 embedding tokens。
+- 每批最多 8,192 estimated tokens。
 - 两个限制取先达到者。
 - 批次严格串行，并发数为 1。
 - 单次 HTTP 超时 60 秒。
@@ -100,34 +97,45 @@ Query Template 与 Document Template 只能包含一个 `{text}` 占位符，不
 
 同一次 `retrieve()` 内，如果 Semantic Query 与 Session Query 在应用 Query Template 后完全相同，则复用一次查询向量。查询向量和查询文本不写入 SQLite，不做跨 run 持久缓存。
 
-## Tokenizer 与 token 预算
+## Token 估算与预算
 
-### Tokenizer 来源
+系统不加载模型 tokenizer，也不调用远程 token 计数接口。请求前预算、Session Recall、Dense 切块与 Embedding 批处理共用以下确定性估算规则：
 
-计划使用 `@huggingface/tokenizers`，加载 Embedding 模型或聊天模型对应的 `tokenizer.json` 与 `tokenizer_config.json`。Tokenizer 是本地分词规则，不包含或运行本地 Embedding 模型。
+1. 纯 ASCII 文本按 `ceil(字符数 / 4)` 估算。
+2. 中日韩表意文字、假名相关全角区间、韩文音节及全角字符按每个字符 1 token 估算。
+3. 其他非 ASCII 文本先编码为 UTF-8，再按 `ceil(字节数 / 4)` 估算。
+4. 混合文本中，密集字符按 1:1 计入，其余文本按 UTF-8 字节数除以 4 后向上取整，两部分相加。
+5. messages 和工具 schema 等结构化值先按稳定 JSON 形状序列化，再使用同一文本规则。
 
-首版只允许公开 Hugging Face repository，并要求固定 40 位 commit SHA：
+公式可写为：
 
 ```text
-owner/repository@0123456789abcdef0123456789abcdef01234567
+estimatedTokens(text)
+  = denseCharacterCount(text)
+  + ceil(utf8Bytes(text without dense characters) / 4)
+
+estimatedRequest
+  = estimatedTokens(systemPrompt)
+  + estimatedTokens(JSON.stringify(messages))
+  + estimatedTokens(JSON.stringify(toolSchemas))
 ```
 
-不接受任意 URL，不支持私有或 gated repository，也不管理 HF Token。下载需要限制响应体积、校验 Content-Type、解析 JSON 并记录 SHA-256。缓存放入 `.everything/tokenizers/`，不得提交 Git。
+估算只用于预防性预算，不保证与供应商实际分词完全相同。供应商仍可能拒绝被低估的请求；系统不会把估算值记录为真实消耗，也不会用响应 usage 校准下一次估算。
 
 ### Dense 切块
 
-Dense 使用 Embedding 模型自己的 tokenizer，天然兼容中文、英文和混合文本，不使用 `Intl.Segmenter` 或 Jieba。
+Dense 按 Unicode 字符扫描原文并累计上述估算量，不使用分词词典、`Intl.Segmenter` 或 Jieba。
 
 | 参数 | 默认值 |
 | --- | ---: |
-| 目标 chunk | 400 tokens |
-| chunk 硬上限 | 512 tokens |
-| 相邻重叠 | 64 tokens |
-| 最小尾块 | 80 tokens |
+| 目标 chunk | 约 400 estimated tokens |
+| chunk 预算上限 | 512 estimated tokens |
+| 相邻重叠 | 约 64 estimated tokens |
+| 最小尾块 | 约 80 estimated tokens |
 
-不设置字符上限。切块优先靠近段落和中英文句末标点；单个句子超过 512 tokens 时，才按 tokenizer offset 硬切。Tokenizer offset 用于把 token 范围准确映射回原始文本。尾块少于 80 tokens 时，在不超过 512 tokens 的前提下合并或扩大前一块。
+不设置字符上限。切块优先靠近段落和中英文句末标点；单个句子的估算量超过 512 时按估算边界硬切。字符扫描同时保留 JavaScript UTF-16 `startOffset` 与 `endOffset`。尾块估算量少于 80 时向前移动上一块边界，同时保持单块估算量不超过 512。
 
-应用 Query Template 后的查询超过 512 tokens 时直接失败，不截断，也不拆成多个查询向量。
+应用 Query Template 后的查询估算量超过 512 tokens 时直接失败，不截断，也不拆成多个查询向量。
 
 ### Chat Context
 
@@ -135,37 +143,37 @@ Dense 使用 Embedding 模型自己的 tokenizer，天然兼容中文、英文�
 
 | 配置 | 默认值 |
 | --- | ---: |
-| Session Recall Token Limit | 8,192 |
+| Session Recall 估算 token 预算 | 8,192 |
 | Model Context Window | 32,768 |
 | Max Output Tokens | 2,048 |
 | 安全余量 | 512 |
 
-实际输入预算为：
+可用输入预算为：
 
 ```text
 inputBudget = modelContextWindow - maxOutputTokens - 512
 ```
 
-完整计数需要覆盖 System Prompt、Working Memory、Semantic Memory、Session Recall、当前消息、工具 schema、工具调用、工具结果和协议包装。
+完整估算覆盖 System Prompt、Working Memory、Semantic Memory、Session Recall、当前消息、工具 schema、工具调用和工具结果，不模拟供应商 HTTP 包装或聊天模板。
 
-Agent Loop 接受异步 `TokenCounter` 依赖，而不在核心调度中判断 Provider：
+Agent Loop 接受同步 `TokenEstimator` 依赖，而不在核心调度中判断 Provider：
 
 ```ts
-interface TokenCounter {
-  countRequest(request: ModelRequest): Promise<number>;
-  countText(text: string): Promise<number>;
+interface TokenEstimator {
+  estimateRequest(request: ModelRequest): number;
+  estimateText(text: string): number;
 }
 ```
 
-Anthropic adapter 使用官方 `/v1/messages/count_tokens` 计算完整请求。OpenAI-compatible adapter 使用配置的 Chat Tokenizer；任意兼容服务没有统一的精确计数端点，因此保留 512-token安全余量。Session Recall 使用 Chat Tokenizer/TokenCounter，因为召回内容最终进入聊天模型；Dense chunk 使用 Embedding Tokenizer。
+所有聊天与 Embedding 预算使用同一估算器，并保留 512-token 聊天安全余量。超过预算直接抛出异常，不静默裁剪 Working Memory 或工具结果。
 
-超过预算直接抛出异常，不静默裁剪 Working Memory 或工具结果。
+真实 token 消耗只来自成功响应。`model_response` 与 `embedding_completed` 的 `tokenUsage` 均为 `{ inputTokens, outputTokens, totalTokens }`；供应商缺失或返回不完整 usage 时为 `null`。Embedding 没有生成式输出，因此有真实 usage 时 `outputTokens` 为 `0`。系统逐次记录 API 调用，不汇总整个 run。
 
 ## 索引语义
 
 ### Semantic Memory
 
-一条事实是一个语义单元，只有超过 512 tokens 时才分块。Embedding 文档格式固定并版本化：
+一条事实是一个语义单元，只有估算量超过 512 tokens 时才分块。Embedding 文档格式固定并版本化：
 
 ```text
 主题：{subject}
@@ -174,7 +182,7 @@ Anthropic adapter 使用官方 `/v1/messages/count_tokens` 计算完整请求。
 
 ### Session Recall
 
-一个成功完成的 run 是一个语义单元，正文超过 512 tokens 时再切块。Embedding 文档格式固定并版本化：
+一个成功完成的 run 是一个语义单元，正文估算量超过 512 tokens 时再切块。Embedding 文档格式固定并版本化：
 
 ```text
 用户：{userText}
@@ -192,7 +200,7 @@ Session ID、run ID、message ID、时间、Session 标题、工具请求、工�
 
 所有模式都继续向用户流式展示模型回复。模型回复已经展示后，完整 run 的 Embedding 仍可能失败；此时 trace 同时保留“模型已生成回复”和“run 持久化失败”的事实，最终回复不保存为完成 run，也不进入任何检索索引。
 
-成功 run 的流程是：模型生成最终回复，拼接固定文档格式，执行 Tokenizer 切块和远程 Embedding，最后在同一 SQLite 事务中保存最终回复、FTS5 投影和 active generation 向量。
+成功 run 的流程是：模型生成最终回复，拼接固定文档格式，执行估算切块和远程 Embedding，最后在同一 SQLite 事务中保存最终回复、FTS5 投影和 active generation 向量。
 
 ## Lexical 检索
 
@@ -202,7 +210,7 @@ FTS5 继续使用现有中英文检索投影：
 - 拉丁字母和数字保留连续 Unicode 单词。
 - 使用 NFKC 与小写规范化。
 
-Embedding Tokenizer 不参与 FTS5。模型 tokenizer 的 subword、词表 ID 和字节标记不适合作为通用 lexical 检索词。
+Token 估算不参与 FTS5；Lexical 检索继续使用独立的中英文规范化规则。
 
 Semantic Memory 使用 subject 与 content 的加权 BM25。Session Recall 仍在消息级 FTS5 上搜索，但在进入 RRF 前将命中映射为 `run_id`。
 
@@ -233,7 +241,7 @@ Dense 候选在 RRF 或 MMR 之前应用 `minimumSimilarity`，默认值为 `0.3
 
 召回无关内容时可每次提高 0.05，经常漏掉同义表达时可每次降低 0.05。Query/Document Template 变化后需要重新校准。
 
-配置页应提供测试查询，展示 Top 10 相似度和可供用户判断的文本摘要。低于阈值的候选被过滤后结果可以为空。
+首版配置页不提供测试查询面板；未来可以增加只读测试入口，展示 Top 10 相似度和可供用户判断的文本摘要。当前低于阈值的候选被过滤后结果可以为空。
 
 ## RRF 融合
 
@@ -249,6 +257,8 @@ rrfScore(candidate) = Σ 1 / (60 + rankInRoute)
 - 分数相同时依次按 Dense rank、BM25 rank 和稳定 ID 决胜。
 
 Semantic Memory 以 memory ID 为候选身份。Session Recall 以 `run_id` 为候选身份，避免同一 run 的多个消息或 chunk 挤占候选位。
+
+Session Recall 在最终截断前还会按 `session_id` 保留每个 Session 排名最高的 run。该约束统一应用于 `dense_only`、`lexical_only` 和 `hybrid`，因此只要存在足够多的合格候选，最终 4 条一定来自 4 个不同 Session；同一 Session 的次优 run 不占返回名额。
 
 ## MMR 原理与代码语义
 
@@ -343,7 +353,7 @@ Trace 不记录候选正文、查询正文或向量。
 
 MMR 的目标数量取调用方 limit。相似度阈值和完全重复排除都可能使实际数量少于 limit，系统不会用低质量或重复内容补足。
 
-Session Recall 按排名顺序组装上下文。高排名 Session 尽可能使用完整窗口并优先消耗 8,192-token预算；剩余预算再分给后续 Session。预算不足时，后续 Session 按 Chat Tokenizer 的 token offset 截断或省略，不采用平均或轮转分配。
+Session Recall 按排名顺序组装上下文。高排名 Session 尽可能使用完整窗口并优先消耗 8,192 estimated-token 预算；剩余预算再分给后续 Session。预算不足时，后续 Session 按原文字符边界截断或省略，不采用平均或轮转分配。
 
 ## 时间排序的明确取舍
 
@@ -355,20 +365,20 @@ Session Recall 按排名顺序组装上下文。高排名 Session 尽可能使�
 
 ## Generation 与影子重建
 
-Embedding Model、固定维度、Embedding Tokenizer revision、Tokenizer 文件哈希、Document Template、文档格式版本、切块参数、规范化版本中任一变化，都产生新的索引 generation。Query Template 和最低相似度变化不要求重建，但需要重新校准检索质量。
+Embedding Model、固定维度、Document Template、文档格式版本、`chunkingVersion`、规范化版本中任一变化，都产生新的索引 generation。估算公式或切块规则变化时必须提升 `chunkingVersion`。Query Template 和最低相似度变化不要求重建，但需要重新校准检索质量。
 
-配置页使用“保存并重建”创建单一后台作业：
+配置页先保存 profile，再由“重建 Embedding 索引”创建单一作业：
 
-1. 返回 `rebuildId`，页面轮询状态。
+1. 重建请求保持等待并关联 `rebuildId`，页面显示运行状态且可另行发送取消请求。
 2. 暂停新的 Agent run 和所有会改变检索语料的 Memory 写操作。
 3. 保留当前配置与 active generation。
 4. 使用新配置串行构建影子 generation。
 5. 全部 chunk 成功、维度一致且数量校验通过后，在一个 SQLite 事务中切换 active generation。
 6. 激活成功后删除旧 generation，再解除写入阻止。
 
-任一批失败会立即停止作业、写 trace、删除影子 generation，并继续保留旧配置与旧索引，不自动重试。进程退出后，启动时把未完成作业标记为 `interrupted`、清理影子 generation，用户需要手动重试。
+任一批失败会立即停止作业、写 trace、清空影子 generation 的局部 chunks，并保留失败状态；旧配置与旧索引继续可用，系统不自动重试。进程退出后，启动时把未完成作业标记为 `interrupted`，用户需要手动重试。
 
-配置页提供取消按钮。取消中止当前 HTTP 请求，将作业标记为 `cancelled`，清理影子 generation，保留旧索引并解除写入阻止。页面关闭不等于取消。
+配置页提供取消按钮。取消中止当前 HTTP 请求，将作业标记为 `cancelled`，清空局部 chunks、保留旧索引并解除写入阻止。页面关闭不等于取消。
 
 没有旧 generation 的首次启用若失败，Dense/Hybrid 继续不可用。升级数据库不会自动上传历史数据或生成向量；首次 Dense/Hybrid 必须由用户显式配置并触发完整重建。
 
@@ -383,13 +393,13 @@ Embedding trace 不记录：
 - 向量
 - API Key、Authorization 或其他凭证
 
-Trace 只记录 corpus、稳定候选 ID、generation、模型、Tokenizer revision、token 数、批大小、维度、排名、分数、耗时、HTTP 状态和脱敏错误摘要。
+Trace 只记录 corpus、稳定候选 ID、generation、模型、估算预算、供应商返回的真实 `tokenUsage`、批大小、维度、排名、分数、耗时、HTTP 状态和脱敏错误摘要。
 
-SQLite 不重复保存不必要的私人正文；chunk 优先保存原始事实/run 的引用和 offset。删除原始记忆时在同一事务中删除派生向量。配置页提供“删除全部向量索引”，但该操作不删除原始记忆、FTS5 或 tokenizer cache。
+SQLite 不重复保存不必要的私人正文；chunk 优先保存原始事实/run 的引用、offset 与 `estimated_tokens`。删除原始记忆时在同一事务中删除派生向量。首版不提供单独删除全部向量索引的入口；用户仍可清除全部本地数据，未来可再增加只删除派生向量而保留原始记忆与 FTS5 的操作。
 
 ## Observer 与 trace 事件
 
-计划以分阶段事件替换旧的单一 `retrieval` 事件：
+实现使用以下分阶段事件，并暂时保留原有 `retrieval` 汇总事件：
 
 ```text
 embedding_started
@@ -412,26 +422,14 @@ embedding_generation_activated
 
 `embedding_failed` 的 purpose 至少区分 `query`、`memory_create`、`run_complete`、`rebuild` 和 `config_probe`。事件名称、关键字段和相对顺序必须通过行为测试验证。
 
-## 实现与验证顺序
+## 已实现范围
 
-建议按以下顺序实现，每一步保持公开接口可运行：
-
-1. 引入 Tokenizer 与 TokenCounter，把字符预算替换为 token 预算。
-2. 拆出 `retrieve/lexical/`，保持现有 lexical 行为并排除失败 run。
-3. 增加 Embedding HTTP adapter、切块器、向量 generation 和精确 cosine 搜索。
-4. 为 Semantic 与 Session 分别实现 Dense 候选及 run 聚合。
-5. 实现纯函数 RRF 与 MMR，并补充公式级和稳定性测试。
-6. 接入三种全局模式与自动 Recall/工具的既有限制。
-7. 增加影子重建、取消、原子切换和配置 UI。
-8. 增加分阶段 observer/trace 与页面展示。
-9. 更新根 README、Memory README、Agent Loop README 和配置说明，将规划能力改为已实现能力。
-
-完成实现前，现有文档中的“当前只有 FTS5 + BM25”仍然是事实，不应提前改写。
+首版已完成统一 token 估算、Lexical 分层、Embedding HTTP adapter、切块、SQLite generation、精确 cosine、Semantic/Session Dense、RRF、MMR、三种模式、影子重建/取消/原子激活、配置 UI 与分阶段 trace。当前明确不做 recency boost 与 ANN；这些只能作为未来候选，不能视为现成功能。
 
 ## 最低行为测试
 
-- 中文、英文、混合文本按目标 tokenizer 的真实 token 与 offset 切块。
-- 400/512/64/80 token 规则覆盖段落、长句和短尾块。
+- 中文、英文、混合文本按统一估算公式与字符 offset 切块。
+- 400/512/64/80 estimated-token 规则覆盖段落、长句和短尾块。
 - 维度、非法浮点、缺失 index、超时和 HTTP 错误立即失败且零重试。
 - Semantic 与 Session 候选池严格隔离。
 - 多 chunk/run 只以最高命中参与排名。
@@ -442,8 +440,7 @@ embedding_generation_activated
 - 已配置 Embedding 时，lexical-only 写入仍同步维护 active generation。
 - 未配置 Embedding 时 lexical-only 不发起远程请求。
 - 影子重建成功原子切换；失败、取消和重启中断都保留旧 generation。
-- Session Recall 按排名优先消耗 8,192-token预算，截断发生在 token 边界。
+- Session Recall 按排名优先消耗 8,192 estimated-token 预算，截断发生在字符边界。
 - 自动 Recall、Agent 工具和 Memory 管理页分别保持既有限制。
 - Trace 不泄露正文、向量或凭证。
-- Context Window 计算包含完整请求并预留输出和 512 tokens。
-
+- Context Window 估算覆盖完整上下文并预留输出和 512 tokens。

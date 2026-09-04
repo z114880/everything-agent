@@ -9,22 +9,14 @@ export function toSearchText(value: string): string {
   const flushHan = () => {
     const chars = [...hanRun];
     if (chars.length === 1) tokens.push(chars[0]!);
-    for (let index = 0; index < chars.length - 1; index += 1) {
-      tokens.push(`${chars[index]}${chars[index + 1]}`);
-    }
+    for (let index = 0; index < chars.length - 1; index += 1) tokens.push(`${chars[index]}${chars[index + 1]}`);
     hanRun = "";
   };
-
   for (const character of normalized) {
-    if (HAN.test(character)) {
-      hanRun += character;
-      continue;
-    }
-    flushHan();
+    if (HAN.test(character)) hanRun += character;
+    else flushHan();
   }
   flushHan();
-
-  // 再扫描连续拉丁字母和数字，避免逐字符遍历把英文拆散。
   const withoutHan = normalized.replace(/\p{Script=Han}/gu, " ");
   tokens.push(...(withoutHan.match(WORDS) ?? []));
   return [...new Set(tokens.filter(Boolean))].join(" ");

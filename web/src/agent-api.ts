@@ -1,6 +1,7 @@
 import type { Workflow } from "./workflow-api";
 
 export type AgentProvider = "anthropic" | "openai-compatible";
+export type RetrievalMode = "lexical_only" | "dense_only" | "hybrid";
 
 export interface AgentSettings {
   provider: AgentProvider;
@@ -9,8 +10,17 @@ export interface AgentSettings {
   sessionSearchWindow: number;
   sessionScrollStep: number;
   sessionRecallMessageLimit: number;
-  sessionRecallCharacterLimit: number;
-  contextCharacterLimit: number;
+  sessionRecallTokenLimit: number;
+  modelContextWindow: number;
+  retrievalMode: RetrievalMode;
+  embeddingBaseUrl: string;
+  embeddingModel: string;
+  embeddingQueryTemplate: string;
+  embeddingDocumentTemplate: string;
+  embeddingMinimumSimilarity: number;
+  embeddingKeyConfigured: boolean;
+  embeddingKeyLast4: string;
+  embeddingIndex: { ready: boolean; generationId: string | null; profileHash: string | null };
   limits: Record<string, { min: number; max: number }>;
   baseUrl: string;
   keyConfigured: boolean;
@@ -52,8 +62,8 @@ export interface ChatLogEntry {
 export interface SessionRecallResult {
   session: SessionSummary;
   rank: number;
-  retrievalSignals: { bm25?: number };
-  match: null | { messageId: number; bm25: number; totalMatches: number };
+  retrievalSignals: { bm25?: number; dense?: number; fused?: number; mmr?: number };
+  match: null | { messageId: number; bm25?: number; dense?: number; totalMatches: number };
   entries: ChatLogEntry[];
   totalMessageCount: number;
   returnedMessageCount: number;
@@ -170,8 +180,16 @@ export function saveAgentConfig(value: {
   sessionSearchWindow: number;
   sessionScrollStep: number;
   sessionRecallMessageLimit: number;
-  sessionRecallCharacterLimit: number;
-  contextCharacterLimit: number;
+  sessionRecallTokenLimit: number;
+  modelContextWindow: number;
+  retrievalMode: RetrievalMode;
+  embeddingBaseUrl: string;
+  embeddingModel: string;
+  embeddingQueryTemplate: string;
+  embeddingDocumentTemplate: string;
+  embeddingMinimumSimilarity: number;
+  embeddingApiKey: string;
+  clearEmbeddingApiKey: boolean;
   force?: boolean;
 }): Promise<{ ok: true; settings: AgentSettings; models: string[] }> {
   return requestJson(`${endpoint}/config`, {
@@ -186,6 +204,15 @@ export function resetRuntimeConfig(): Promise<{ ok: true; settings: AgentSetting
   return requestJson(`${endpoint}/config/reset-runtime`, { method: "POST" });
 }
 
+/** 建立完整影子向量索引，并在全部成功后原子激活。 */
+export function rebuildEmbeddingIndex(): Promise<{ ok: true; settings: AgentSettings; result: { rebuildId: string; generationId: string; chunkCount: number } }> {
+  return requestJson(`${endpoint}/config/rebuild-embeddings`, { method: "POST" });
+}
+
+export function cancelEmbeddingIndexRebuild(): Promise<{ ok: true; cancelled: boolean }> {
+  return requestJson(`${endpoint}/config/cancel-embedding-rebuild`, { method: "POST" });
+}
+
 /** 立即清除指定 Provider 的本地 API Key。 */
 export function clearProviderApiKey(provider: AgentProvider): Promise<{ ok: true; settings: AgentSettings }> {
   return requestJson(`${endpoint}/config/clear-api-key`, {
@@ -193,6 +220,10 @@ export function clearProviderApiKey(provider: AgentProvider): Promise<{ ok: true
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ provider }),
   });
+}
+
+export function clearEmbeddingApiKey(): Promise<{ ok: true; settings: AgentSettings }> {
+  return requestJson(`${endpoint}/config/clear-embedding-api-key`, { method: "POST" });
 }
 
 /** 显式更新 `.everything/EVERYTHING.md`。 */

@@ -28,7 +28,8 @@ describe("JSONL 运行记录", () => {
       sessionId: "s1",
       iteration: 1,
       modelCallId: "model-1",
-      response: { content: [{ type: "text", text: "完成" }], usage: { input_tokens: 12, output_tokens: 3 } },
+      response: { content: [{ type: "text", text: "完成" }], tokenUsage: { inputTokens: 12, outputTokens: 3, totalTokens: 15 } },
+      tokenUsage: { inputTokens: 12, outputTokens: 3, totalTokens: 15 },
     });
     await tracer.record("tool_completed", {
       runId: "r1",
@@ -67,7 +68,8 @@ describe("JSONL 运行记录", () => {
     expect(JSON.stringify(records[1]?.payload).length).toBeGreaterThan(1_000);
     expect(JSON.stringify(records[1]?.payload)).toContain("Bearer [凭证已移除]");
     expect(records[1]?.payload?.request).toMatchObject({ maxTokens: 2_048 });
-    expect(records[2]?.payload?.response).toMatchObject({ usage: { input_tokens: 12, output_tokens: 3 } });
+    expect(records[2]?.payload?.response).toMatchObject({ tokenUsage: { inputTokens: 12, outputTokens: 3, totalTokens: 15 } });
+    expect(records[2]?.payload?.tokenUsage).toEqual({ inputTokens: 12, outputTokens: 3, totalTokens: 15 });
     expect(JSON.stringify(records)).not.toContain('"authorization":"secret"');
     expect(await readFile(join(home, "traces", "2026-09-03", "001-s1.jsonl"), "utf8"))
       .toContain('"type":"run_started"');
@@ -172,5 +174,25 @@ describe("JSONL 运行记录", () => {
       expect.objectContaining({ type: "custom", runId: "r1", sessionId: "s1" }),
     ]);
     expect(JSON.stringify(await readTraceRecords(home))).not.toContain("内容");
+  });
+
+  it("Embedding 与融合事件只记录阶段元数据，不记录正文、向量或密钥", async () => {
+    const home = await mkdtemp(join(tmpdir(), "everything-trace-"));
+    const tracer = new JsonlTracer(home);
+    await tracer.record("embedding_completed", {
+      runId: "r1", purpose: "query", itemCount: 1, estimatedTokens: 8, tokenUsage: null, dimensions: 1024,
+      text: "私人正文", vector: [1, 2], apiKey: "secret",
+    });
+    await tracer.record("mmr_completed", {
+      runId: "r1", corpus: "semantic",
+      selected: [{ id: "1", relevance: 0.8, redundancy: 0.1, mmrScore: 0.53 }],
+      rawText: "私人正文",
+    });
+    const records = await readTraceRecords(home);
+    expect(records[0]?.payload).toMatchObject({ purpose: "query", dimensions: 1024, estimatedTokens: 8, tokenUsage: null });
+    expect(records[1]?.payload).toMatchObject({ corpus: "semantic", selected: [{ id: "1" }] });
+    expect(JSON.stringify(records)).not.toContain("私人正文");
+    expect(JSON.stringify(records)).not.toContain("secret");
+    expect(JSON.stringify(records)).not.toContain("vector");
   });
 });

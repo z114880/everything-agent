@@ -7,6 +7,7 @@ import type { Graph, StateRecord } from "../../src/engine/src/index.ts";
 import {
   AgentConfigError,
   clearProviderApiKey,
+  clearEmbeddingApiKey,
   clearLocalAgentData,
   loadAgentBootstrap,
   handleMemoryAction,
@@ -14,6 +15,8 @@ import {
   runLocalAgent,
   saveAgentSettings,
   resetRuntimeSettings,
+  rebuildEmbeddingIndex,
+  cancelEmbeddingIndexRebuild,
   saveSystemPrompt,
 } from "./agent-service.ts";
 
@@ -159,8 +162,23 @@ async function handleAgentRequest(
     return;
   }
 
+  if (request.method === "POST" && pathname === `${agentApiPrefix}/config/rebuild-embeddings`) {
+    sendJson(response, 200, { ok: true, ...await rebuildEmbeddingIndex() });
+    return;
+  }
+
+  if (request.method === "POST" && pathname === `${agentApiPrefix}/config/cancel-embedding-rebuild`) {
+    sendJson(response, 200, { ok: true, ...cancelEmbeddingIndexRebuild() });
+    return;
+  }
+
   if (request.method === "POST" && pathname === `${agentApiPrefix}/config/clear-api-key`) {
     sendJson(response, 200, { ok: true, ...await clearProviderApiKey(await readJsonBody(request)) });
+    return;
+  }
+
+  if (request.method === "POST" && pathname === `${agentApiPrefix}/config/clear-embedding-api-key`) {
+    sendJson(response, 200, { ok: true, ...await clearEmbeddingApiKey() });
     return;
   }
 

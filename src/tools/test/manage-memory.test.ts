@@ -7,22 +7,25 @@ import { ManageMemoryTool } from "../manage-memory.ts";
 import { LocalToolRegistry } from "../tool-registry.ts";
 
 const memories: MemoryRuntime[] = [];
-const recall: SessionRecallSettings = { searchWindow: 5, scrollStep: 10, messageLimit: 100, characterLimit: 50_000 };
+const recall: SessionRecallSettings = {
+  searchWindow: 5, scrollStep: 10, messageLimit: 100, tokenLimit: 50_000,
+  tokenEstimator: { estimateText(text: string) { return text.length } },
+};
 afterEach(() => memories.splice(0).forEach((memory) => memory.close()));
 
 describe("本地记忆工具", () => {
   it("manage_memory 只管理 Semantic Memory 并校验长期价值声明", async () => {
     const tool = new ManageMemoryTool(await memory());
     expect(() => tool.execute({ action: "create", subject: "当前时间", content: "七点" })).toThrow("category");
-    expect(tool.execute({
+    await expect(tool.execute({
       action: "create", category: "preference", stable: true, futureUseful: true,
       subject: "用户", content: "喜欢茶",
-    })).toMatchObject({ subject: "用户", content: "喜欢茶" });
-    expect(tool.execute({ action: "search", query: "喜欢茶" })).toHaveLength(1);
+    })).resolves.toMatchObject({ subject: "用户", content: "喜欢茶" });
+    await expect(tool.execute({ action: "search", query: "喜欢茶" })).resolves.toHaveLength(1);
   });
 
   it("删除 Semantic Memory 前必须取得同一目标的确认令牌", async () => {
-    const runtime = await memory(); const item = runtime.createSemantic("用户", "喜欢茶"); const tool = new ManageMemoryTool(runtime);
+    const runtime = await memory(); const item = await runtime.createSemantic("用户", "喜欢茶"); const tool = new ManageMemoryTool(runtime);
     const pending = tool.execute({ action: "request_delete", id: item.id }) as { confirmation: string };
     expect(tool.execute({ action: "delete", id: item.id, confirmation: pending.confirmation })).toEqual({ deleted: true, id: item.id });
     expect(runtime.listSemantic()).toEqual([]);
@@ -30,11 +33,11 @@ describe("本地记忆工具", () => {
   });
 
   it("支持更新并拒绝无效 Semantic 操作参数", async () => {
-    const runtime = await memory(); const item = runtime.createSemantic("用户", "喜欢茶"); const tool = new ManageMemoryTool(runtime);
-    expect(tool.execute({
+    const runtime = await memory(); const item = await runtime.createSemantic("用户", "喜欢茶"); const tool = new ManageMemoryTool(runtime);
+    await expect(tool.execute({
       action: "update", id: item.id, category: "preference", stable: true, futureUseful: true,
       subject: "用户", content: "喜欢绿茶",
-    })).toMatchObject({ content: "喜欢绿茶" });
+    })).resolves.toMatchObject({ content: "喜欢绿茶" });
     expect(() => tool.execute(null)).toThrow("参数必须是对象");
     expect(() => tool.execute({ action: "unknown" })).toThrow("未知");
     expect(() => tool.execute({ action: "update", id: 0, category: "preference", stable: true, futureUseful: true, subject: "x", content: "y" })).toThrow("正整数");
@@ -44,19 +47,19 @@ describe("本地记忆工具", () => {
 
   it("注册 Session Search 与 Session Read，并绑定当前 Session 排除规则", async () => {
     const runtime = await memory(); const current = runtime.createSession("当前"); const historical = runtime.createSession("历史");
-    addRun(runtime, current.id, "r1", "发布方案", "当前方案");
-    addRun(runtime, historical.id, "r2", "发布方案", "历史方案");
+    await addRun(runtime, current.id, "r1", "发布方案", "当前方案");
+    await addRun(runtime, historical.id, "r2", "发布方案", "历史方案");
     const registry = new LocalToolRegistry(runtime, undefined, { currentSessionId: current.id, settings: recall });
     const schemas = registry.schemas() as Array<{ name: string }>;
     expect(schemas.map((item) => item.name)).toEqual(["get_current_time", "manage_memory", "session_search", "session_read"]);
     const context = { signal: undefined, deadline: null, iteration: 1, toolUseId: "t1" };
-    const result = registry.execute("session_search", { query: "发布方案" }, async () => {}, context) as { sessions: Array<{ session: { id: string } }> };
+    const result = await registry.execute("session_search", { query: "发布方案" }, async () => {}, context) as { sessions: Array<{ session: { id: string } }> };
     expect(result.sessions.map((item) => item.session.id)).toEqual([historical.id]);
-    const recent = registry.execute("session_search", { recent: true }, async () => {}, context) as { sessions: unknown[] };
+    const recent = await registry.execute("session_search", { recent: true }, async () => {}, context) as { sessions: unknown[] };
     expect(recent.sessions).toHaveLength(1);
-    const read = registry.execute("session_read", { sessionId: historical.id }, async () => {}, context) as { entries: unknown[] };
+    const read = await registry.execute("session_read", { sessionId: historical.id }, async () => {}, context) as { entries: unknown[] };
     expect(read.entries).not.toHaveLength(0);
-    expect(() => registry.execute("session_read", { sessionId: current.id }, async () => {}, context)).toThrow("当前 Session");
+    await expect(registry.execute("session_read", { sessionId: current.id }, async () => {}, context)).rejects.toThrow("当前 Session");
     expect(() => registry.execute("session_search", null, async () => {}, context)).toThrow("参数必须是对象");
   });
 
@@ -74,7 +77,7 @@ describe("本地记忆工具", () => {
 async function memory(): Promise<MemoryRuntime> {
   const runtime = new MemoryRuntime(await mkdtemp(join(tmpdir(), "everything-manage-memory-"))); memories.push(runtime); return runtime;
 }
-function addRun(memory: MemoryRuntime, sessionId: string, runId: string, prompt: string, reply: string) {
+async function addRun(memory: MemoryRuntime, sessionId: string, runId: string, prompt: string, reply: string): Promise<void> {
   memory.startRun(sessionId, runId, prompt);
-  memory.completeRun(sessionId, runId, [{ role: "assistant", content: reply }]);
+  await memory.completeRun(sessionId, runId, [{ role: "assistant", content: reply }]);
 }

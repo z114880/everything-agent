@@ -1,4 +1,4 @@
-export const MEMORY_SCHEMA_VERSION = 2;
+export const MEMORY_SCHEMA_VERSION = 4;
 
 export const MEMORY_SCHEMA = `
 PRAGMA foreign_keys = ON;
@@ -97,5 +97,48 @@ CREATE TABLE IF NOT EXISTS memory_audit (
   action TEXT NOT NULL,
   source TEXT NOT NULL,
   created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS embedding_generations (
+  id TEXT PRIMARY KEY,
+  status TEXT NOT NULL CHECK (status IN ('building', 'active', 'failed', 'cancelled', 'interrupted')),
+  profile_json TEXT NOT NULL,
+  profile_hash TEXT NOT NULL,
+  chunking_version INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  activated_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS embedding_single_active_generation
+ON embedding_generations(status) WHERE status = 'active';
+
+CREATE TABLE IF NOT EXISTS embedding_chunks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  generation_id TEXT NOT NULL REFERENCES embedding_generations(id) ON DELETE CASCADE,
+  corpus TEXT NOT NULL CHECK (corpus IN ('semantic', 'session')),
+  source_id TEXT NOT NULL,
+  session_id TEXT,
+  anchor_message_id INTEGER,
+  chunk_index INTEGER NOT NULL,
+  start_offset INTEGER NOT NULL,
+  end_offset INTEGER NOT NULL,
+  estimated_tokens INTEGER NOT NULL,
+  vector BLOB NOT NULL,
+  UNIQUE(generation_id, corpus, source_id, chunk_index)
+);
+CREATE INDEX IF NOT EXISTS embedding_chunks_generation_corpus
+ON embedding_chunks(generation_id, corpus);
+CREATE INDEX IF NOT EXISTS embedding_chunks_source
+ON embedding_chunks(generation_id, corpus, source_id);
+
+CREATE TABLE IF NOT EXISTS embedding_rebuilds (
+  id TEXT PRIMARY KEY,
+  generation_id TEXT NOT NULL REFERENCES embedding_generations(id) ON DELETE CASCADE,
+  status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed', 'cancelled', 'interrupted')),
+  total_chunks INTEGER NOT NULL DEFAULT 0,
+  processed_chunks INTEGER NOT NULL DEFAULT 0,
+  error_type TEXT,
+  error_message TEXT,
+  started_at TEXT NOT NULL,
+  completed_at TEXT
 );
 `;

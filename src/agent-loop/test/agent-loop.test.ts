@@ -18,7 +18,7 @@ function textResponse(text: string, overrides: Partial<ModelResponse> = {}): Mod
   return {
     content: [{ type: "text", text }],
     stop_reason: "end_turn",
-    usage: { input_tokens: 3, output_tokens: 2 },
+    tokenUsage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
     ...overrides,
   };
 }
@@ -31,7 +31,7 @@ function toolResponse(
   return {
     content: [{ type: "tool_use", id, name, input }],
     stop_reason: "tool_use",
-    usage: { input_tokens: 4, output_tokens: 1 },
+    tokenUsage: { inputTokens: 4, outputTokens: 1, totalTokens: 5 },
   };
 }
 
@@ -110,7 +110,7 @@ describe("runAgentLoop", () => {
       modelCallId: events[2]!.event.modelCallId,
       response: { content: [{ type: "text", text: "你好" }] },
       stopReason: "end_turn",
-      usage: { in: 3, out: 2 },
+      tokenUsage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
     });
     expect(events.every(({ event }) => typeof event.runId === "string")).toBe(true);
   });
@@ -207,16 +207,19 @@ describe("runAgentLoop", () => {
     });
   });
 
-  it("每次模型调用前拒绝超过字符 Context Limit 的完整输入", async () => {
+  it("每次模型调用前拒绝超过 token Context Window 的完整输入", async () => {
     const client = scriptedClient([textResponse("不应调用")]);
+    const tokenEstimator = { estimateRequest: vi.fn(() => 100), estimateText: vi.fn(() => 1) };
     await expect(runAgentLoop({
       client,
       model: "test-model",
       system: "系统规则",
       messages: [{ role: "user", content: "x".repeat(100) }],
       tools: fakeTools(),
-      contextCharacterLimit: 20,
-    })).rejects.toThrow("超过配置上限");
+      modelContextWindow: 2_600,
+      tokenEstimator,
+    })).rejects.toThrow("超过 Context Window");
+    expect(tokenEstimator.estimateRequest).toHaveBeenCalledOnce();
     expect(client.messages.create).not.toHaveBeenCalled();
   });
 
@@ -383,7 +386,7 @@ describe("runAgentLoop", () => {
     [{ client: scriptedClient([]), model: "x", messages: [], tools: {} }, "tools"],
     [{ client: scriptedClient([]), model: "x", messages: [], tools: fakeTools(), maxIterations: 0 }, "maxIterations"],
     [{ client: scriptedClient([]), model: "x", messages: [], tools: fakeTools(), maxTokens: 0 }, "maxTokens"],
-    [{ client: scriptedClient([]), model: "x", messages: [], tools: fakeTools(), contextCharacterLimit: 0 }, "contextCharacterLimit"],
+    [{ client: scriptedClient([]), model: "x", messages: [], tools: fakeTools(), modelContextWindow: 0 }, "modelContextWindow"],
     [{ client: scriptedClient([]), model: "x", messages: [], tools: fakeTools(), timeoutMs: 0 }, "timeoutMs"],
     [{ client: scriptedClient([]), model: "x", messages: [], tools: fakeTools(), observer: null }, "observer"],
     [{ client: scriptedClient([]), model: "x", messages: [], tools: fakeTools(), serializeToolEvent: null }, "serializeToolEvent"],

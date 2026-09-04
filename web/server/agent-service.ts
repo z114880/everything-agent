@@ -7,7 +7,9 @@ import {
   MemoryRuntime,
   ManageMemoryTool,
   JsonlTracer,
+  OpenAIEmbeddingClient,
   readTraceFiles,
+  RoughTokenEstimator,
   runAgentLoop,
 } from "../../src/index.ts";
 import type {
@@ -16,7 +18,9 @@ import type {
   AgentObserver,
   AgentProvider,
   SessionRecallSettings,
+  TokenEstimator,
   ToolCallRecord,
+  RetrievalMode,
 } from "../../src/index.ts";
 import { clearEverythingData } from "./local-data.ts";
 
@@ -25,13 +29,14 @@ const everythingHome = fileURLToPath(new URL("../../.everything/", import.meta.u
 const systemPromptPath = fileURLToPath(new URL("../../.everything/EVERYTHING.md", import.meta.url));
 const legacySystemPromptPath = fileURLToPath(new URL("../../EVERYTHING.md", import.meta.url));
 const VALID_PROVIDERS = new Set<AgentProvider>(["anthropic", "openai-compatible"]);
+const VALID_RETRIEVAL_MODES = new Set<RetrievalMode>(["lexical_only", "dense_only", "hybrid"]);
 const DEFAULT_TIMEOUT_MS = 60_000;
 export const RUNTIME_DEFAULTS = {
   sessionSearchWindow: 5,
   sessionScrollStep: 10,
   sessionRecallMessageLimit: 100,
-  sessionRecallCharacterLimit: 50_000,
-  contextCharacterLimit: 200_000,
+  sessionRecallTokenLimit: 8_192,
+  modelContextWindow: 32_768,
 } as const;
 const CONFIG_KEYS = [
   "EVERYTHING_PROVIDER",
@@ -40,12 +45,20 @@ const CONFIG_KEYS = [
   "EVERYTHING_SESSION_SEARCH_WINDOW",
   "EVERYTHING_SESSION_SCROLL_STEP",
   "EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT",
-  "EVERYTHING_SESSION_RECALL_CHARACTER_LIMIT",
-  "EVERYTHING_CONTEXT_CHARACTER_LIMIT",
+  "EVERYTHING_SESSION_RECALL_TOKEN_LIMIT",
+  "EVERYTHING_MODEL_CONTEXT_WINDOW",
+  "EVERYTHING_RETRIEVAL_MODE",
+  "EVERYTHING_EMBEDDING_BASE_URL",
+  "EVERYTHING_EMBEDDING_MODEL",
+  "EVERYTHING_EMBEDDING_QUERY_TEMPLATE",
+  "EVERYTHING_EMBEDDING_DOCUMENT_TEMPLATE",
+  "EVERYTHING_EMBEDDING_MINIMUM_SIMILARITY",
+  "EVERYTHING_EMBEDDING_API_KEY",
   "EVERYTHING_BASE_URL",
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
 ] as const;
+const OBSOLETE_CONFIG_KEYS = ["EVERYTHING_CHAT_TOKENIZER_ID", "EVERYTHING_EMBEDDING_TOKENIZER_ID"] as const;
 
 interface RuntimeSettings {
   provider: AgentProvider;
@@ -54,8 +67,15 @@ interface RuntimeSettings {
   sessionSearchWindow: number;
   sessionScrollStep: number;
   sessionRecallMessageLimit: number;
-  sessionRecallCharacterLimit: number;
-  contextCharacterLimit: number;
+  sessionRecallTokenLimit: number;
+  modelContextWindow: number;
+  retrievalMode: RetrievalMode;
+  embeddingBaseUrl: string;
+  embeddingModel: string;
+  embeddingQueryTemplate: string;
+  embeddingDocumentTemplate: string;
+  embeddingMinimumSimilarity: number;
+  embeddingApiKey: string;
   baseUrl: string;
   apiKey: string;
   keyName: "ANTHROPIC_API_KEY" | "OPENAI_API_KEY";
@@ -69,8 +89,17 @@ export interface PublicAgentSettings {
   sessionSearchWindow: number;
   sessionScrollStep: number;
   sessionRecallMessageLimit: number;
-  sessionRecallCharacterLimit: number;
-  contextCharacterLimit: number;
+  sessionRecallTokenLimit: number;
+  modelContextWindow: number;
+  retrievalMode: RetrievalMode;
+  embeddingBaseUrl: string;
+  embeddingModel: string;
+  embeddingQueryTemplate: string;
+  embeddingDocumentTemplate: string;
+  embeddingMinimumSimilarity: number;
+  embeddingKeyConfigured: boolean;
+  embeddingKeyLast4: string;
+  embeddingIndex: ReturnType<MemoryRuntime["embeddingIndexStatus"]>;
   limits: typeof SETTING_LIMITS;
   baseUrl: string;
   keyConfigured: boolean;
@@ -81,8 +110,8 @@ const SETTING_LIMITS = {
   sessionSearchWindow: { min: 1, max: 20 },
   sessionScrollStep: { min: 1, max: 50 },
   sessionRecallMessageLimit: { min: 1, max: 200 },
-  sessionRecallCharacterLimit: { min: 1_000, max: 100_000 },
-  contextCharacterLimit: { min: 10_000, max: 1_000_000 },
+  sessionRecallTokenLimit: { min: 256, max: 131_072 },
+  modelContextWindow: { min: 4_096, max: 2_000_000 },
 } as const;
 
 let memoryRuntime: MemoryRuntime | null = null;
@@ -91,6 +120,7 @@ let manageMemoryTool: ManageMemoryTool | null = null;
 let recoveryScheduled = false;
 let dataClearing = false;
 const sessionLocks = new Map<string, Promise<void>>();
+const tokenEstimator = new RoughTokenEstimator();
 
 /** 配置保存失败时携带是否允许强制保存。 */
 export class AgentConfigError extends Error {
@@ -121,21 +151,28 @@ export async function saveAgentSettings(body: Record<string, unknown>): Promise<
   settings: PublicAgentSettings;
   models: string[];
 }> {
+  if (memoryRuntime?.isEmbeddingRebuildRunning()) {
+    throw new AgentConfigError("Embedding 索引正在重建，请等待完成或先取消重建");
+  }
   const provider = parseProvider(body.provider);
   const model = requiredText(body.model, "Model", 200);
   const smallModel = optionalText(body.smallModel, "Small Model", 200);
   const runtime = parseRuntimeSettingBody(body);
+  if (runtime.embeddingBaseUrl) validateBaseUrl(runtime.embeddingBaseUrl);
   const baseUrl = optionalText(body.baseUrl, "Base URL", 2_000);
   const effectiveBaseUrl = provider === "openai-compatible" ? baseUrl : "";
   if (effectiveBaseUrl) validateBaseUrl(effectiveBaseUrl);
   const apiKey = optionalText(body.apiKey, "API Key", 10_000);
   const clearApiKey = body.clearApiKey === true;
+  const embeddingApiKey = optionalText(body.embeddingApiKey, "Embedding API Key", 10_000);
+  const clearEmbeddingApiKey = body.clearEmbeddingApiKey === true;
   const force = body.force === true;
   const before = await readEnvValues();
   const keyName = keyNameFor(provider);
   const currentKey = before[keyName] ?? "";
   const currentBaseUrl = before.EVERYTHING_BASE_URL ?? "";
   const candidateKey = clearApiKey ? "" : apiKey || currentKey;
+  const candidateEmbeddingKey = clearEmbeddingApiKey ? "" : embeddingApiKey || before.EVERYTHING_EMBEDDING_API_KEY || "";
   const keyChanged = Boolean(apiKey && apiKey !== currentKey);
   const baseChanged = provider === "openai-compatible" && effectiveBaseUrl !== currentBaseUrl;
   let models: string[] = [];
@@ -155,12 +192,26 @@ export async function saveAgentSettings(body: Record<string, unknown>): Promise<
     EVERYTHING_SESSION_SEARCH_WINDOW: String(runtime.sessionSearchWindow),
     EVERYTHING_SESSION_SCROLL_STEP: String(runtime.sessionScrollStep),
     EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT: String(runtime.sessionRecallMessageLimit),
-    EVERYTHING_SESSION_RECALL_CHARACTER_LIMIT: String(runtime.sessionRecallCharacterLimit),
-    EVERYTHING_CONTEXT_CHARACTER_LIMIT: String(runtime.contextCharacterLimit),
+    EVERYTHING_SESSION_RECALL_TOKEN_LIMIT: String(runtime.sessionRecallTokenLimit),
+    EVERYTHING_MODEL_CONTEXT_WINDOW: String(runtime.modelContextWindow),
+    EVERYTHING_RETRIEVAL_MODE: runtime.retrievalMode,
+    EVERYTHING_EMBEDDING_BASE_URL: runtime.embeddingBaseUrl,
+    EVERYTHING_EMBEDDING_MODEL: runtime.embeddingModel,
+    EVERYTHING_EMBEDDING_QUERY_TEMPLATE: runtime.embeddingQueryTemplate,
+    EVERYTHING_EMBEDDING_DOCUMENT_TEMPLATE: runtime.embeddingDocumentTemplate,
+    EVERYTHING_EMBEDDING_MINIMUM_SIMILARITY: String(runtime.embeddingMinimumSimilarity),
     EVERYTHING_BASE_URL: effectiveBaseUrl,
   };
   if (apiKey) updates[keyName] = apiKey;
-  await updateEnvFile(updates, clearApiKey ? [keyName] : []);
+  if (embeddingApiKey) updates.EVERYTHING_EMBEDDING_API_KEY = embeddingApiKey;
+  if (runtime.retrievalMode !== "lexical_only" && !(candidateEmbeddingKey && runtime.embeddingBaseUrl && runtime.embeddingModel)) {
+    throw new AgentConfigError("Dense/Hybrid 模式必须完整配置独立的 Embedding Base URL、API Key 与 Model");
+  }
+  await updateEnvFile(updates, [
+    ...(clearApiKey ? [keyName] : []),
+    ...(clearEmbeddingApiKey ? ["EVERYTHING_EMBEDDING_API_KEY"] : []),
+    ...OBSOLETE_CONFIG_KEYS,
+  ]);
   const settings = await loadRuntimeSettings();
   return { settings: publicSettings(settings), models };
 }
@@ -174,16 +225,45 @@ export async function clearProviderApiKey(body: Record<string, unknown>): Promis
   return { settings: publicSettings(await loadRuntimeSettings()) };
 }
 
+/** 清除独立 Embedding API Key，并强制回到 lexical-only。 */
+export async function clearEmbeddingApiKey(): Promise<{ settings: PublicAgentSettings }> {
+  if (memoryRuntime?.isEmbeddingRebuildRunning()) throw new Error("Embedding 索引正在重建，请等待完成或先取消重建");
+  await updateEnvFile({ EVERYTHING_RETRIEVAL_MODE: "lexical_only" }, ["EVERYTHING_EMBEDDING_API_KEY"]);
+  const settings = await loadRuntimeSettings();
+  getMemoryRuntime().configureRetrieval({ mode: "lexical_only", observer: (kind, event) => getTracer().record(kind, event) });
+  return { settings: publicSettings(settings) };
+}
+
 /** 恢复全部运行参数默认值，保留模型连接和 EVERYTHING.md。 */
 export async function resetRuntimeSettings(): Promise<{ settings: PublicAgentSettings }> {
   await updateEnvFile({
     EVERYTHING_SESSION_SEARCH_WINDOW: String(RUNTIME_DEFAULTS.sessionSearchWindow),
     EVERYTHING_SESSION_SCROLL_STEP: String(RUNTIME_DEFAULTS.sessionScrollStep),
     EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT: String(RUNTIME_DEFAULTS.sessionRecallMessageLimit),
-    EVERYTHING_SESSION_RECALL_CHARACTER_LIMIT: String(RUNTIME_DEFAULTS.sessionRecallCharacterLimit),
-    EVERYTHING_CONTEXT_CHARACTER_LIMIT: String(RUNTIME_DEFAULTS.contextCharacterLimit),
-  }, ["EVERYTHING_HISTORY_TURNS"]);
+    EVERYTHING_SESSION_RECALL_TOKEN_LIMIT: String(RUNTIME_DEFAULTS.sessionRecallTokenLimit),
+    EVERYTHING_MODEL_CONTEXT_WINDOW: String(RUNTIME_DEFAULTS.modelContextWindow),
+  }, ["EVERYTHING_HISTORY_TURNS", ...OBSOLETE_CONFIG_KEYS]);
   return { settings: publicSettings(await loadRuntimeSettings()) };
+}
+
+/** 使用已保存的 Embedding profile 建立影子索引，成功后原子激活。 */
+export async function rebuildEmbeddingIndex(): Promise<{ result: Awaited<ReturnType<MemoryRuntime["rebuildEmbeddings"]>>; settings: PublicAgentSettings }> {
+  const settings = await loadRuntimeSettings();
+  const memory = getMemoryRuntime();
+  await configureMemoryRuntime(memory, settings, true);
+  try {
+    const result = await memory.rebuildEmbeddings();
+    return { result, settings: publicSettings(settings) };
+  } finally {
+    // 无论成功、失败还是取消，都退出 allowIncompleteIndex 临时状态。
+    // 失败时普通运行会重新绑定旧 active generation，避免影子索引语义名存实亡。
+    await configureMemoryRuntime(memory, settings);
+  }
+}
+
+/** 请求取消当前 Embedding 影子索引构建。 */
+export function cancelEmbeddingIndexRebuild(): { cancelled: boolean } {
+  return { cancelled: getMemoryRuntime().cancelEmbeddingRebuild() };
 }
 
 /** 显式保存 procedural memory，并让下一回合立即读取新内容。 */
@@ -208,8 +288,9 @@ export async function runLocalAgent(
 
   return withSessionLock(sessionId, async () => {
     const memory = getMemoryRuntime();
+    await configureMemoryRuntime(memory, settings);
     const trace = getTracer();
-    const client = createRuntimeClient(settings);
+    const client = createRuntimeClient(settings, tokenEstimator);
     const runId = crypto.randomUUID();
     const startedAt = performance.now();
     memory.startRun(sessionId, runId, prompt);
@@ -220,8 +301,8 @@ export async function runLocalAgent(
       provider: settings.provider,
       model: settings.model,
       settings: {
-        contextCharacterLimit: settings.contextCharacterLimit,
-        sessionRecall: recallSettings(settings),
+        modelContextWindow: settings.modelContextWindow,
+        sessionRecall: recallSettings(settings, tokenEstimator),
         maxIterations: 10,
         maxTokens: 2_048,
         timeoutMs: DEFAULT_TIMEOUT_MS,
@@ -233,7 +314,13 @@ export async function runLocalAgent(
     const emit: AgentObserver = async (kind, event) => {
       const enriched = { ...event, ...(kind === "context_assembled" ? contextMetadata : {}), runId, sessionId };
       await observer(kind, enriched);
-      if (["context_assembled", "gate_start", "gate_end", "retrieval", "model_request", "model_response", "model_failed", "stream_fallback", "tool_started", "tool_completed", "tool_failed"].includes(kind)) {
+      if ([
+        "context_assembled", "gate_start", "gate_end", "retrieval", "retrieval_completed",
+        "embedding_started", "embedding_completed", "embedding_failed",
+        "dense_retrieval_completed", "lexical_retrieval_completed", "rrf_completed", "mmr_completed",
+        "model_request", "model_response", "model_failed", "stream_fallback",
+        "tool_started", "tool_completed", "tool_failed",
+      ].includes(kind)) {
         const modelFields = kind.startsWith("model_") ? { provider: settings.provider, model: settings.model } : {};
         await trace.record(kind, { ...enriched, ...modelFields });
       }
@@ -245,8 +332,9 @@ export async function runLocalAgent(
         client,
         model: settings.smallModel || settings.model,
         currentSessionId: sessionId,
-        recall: recallSettings(settings),
+        recall: recallSettings(settings, tokenEstimator),
         observer: emit,
+        runId,
       });
       const messages: AgentMessage[] = [...history, { role: "user", content: prompt }];
       const appendedFrom = messages.length;
@@ -257,8 +345,8 @@ export async function runLocalAgent(
         sessionRecallSessionIds: retrieval.sessionRecall?.sessions.map((item) => item.session.id) ?? [],
         sessionRecallRanges: retrieval.sessionRecall?.sessions.map((item) => ({ sessionId: item.session.id, ranges: item.returnedRanges })) ?? [],
         sessionRecallEntryCount: retrieval.sessionRecall?.sessions.reduce((sum, item) => sum + item.returnedMessageCount, 0) ?? 0,
-        sessionRecallCharacterCount: retrieval.sessionRecall
-          ? JSON.stringify(retrieval.sessionRecall.sessions.flatMap((item) => item.entries)).length
+        sessionRecallEstimatedTokens: retrieval.sessionRecall
+          ? tokenEstimator.estimateText(JSON.stringify(retrieval.sessionRecall.sessions.flatMap((item) => item.entries)))
           : 0,
         sessionRecallTruncated: retrieval.sessionRecall?.truncated ?? false,
       };
@@ -269,12 +357,13 @@ export async function runLocalAgent(
         messages,
         tools: new LocalToolRegistry(memory, getManageMemoryTool(memory), {
           currentSessionId: sessionId,
-          settings: recallSettings(settings),
+          settings: recallSettings(settings, tokenEstimator),
         }),
         maxIterations: 10,
         timeoutMs: DEFAULT_TIMEOUT_MS,
         stream: true,
-        contextCharacterLimit: settings.contextCharacterLimit,
+        modelContextWindow: settings.modelContextWindow,
+        tokenEstimator,
         signal,
         observer: emit,
         serializeToolEvent: publicToolEvent,
@@ -284,7 +373,7 @@ export async function runLocalAgent(
       if (!isFinalAssistantMessage(appended.at(-1))) {
         appended.push({ role: "assistant", content: [{ type: "text", text: result.reply }] });
       }
-      memory.completeRun(sessionId, runId, appended);
+      await memory.completeRun(sessionId, runId, appended);
       const ms = Math.round(performance.now() - startedAt);
       await trace.record("run_completed", {
         runId,
@@ -342,6 +431,9 @@ export async function handleMemoryAction(body: Record<string, unknown>): Promise
     memory.deleteSession(requiredText(body.sessionId, "Session ID", 200));
     return { sessions: memory.listSessions() };
   }
+  if (["create_semantic", "search_semantic", "update_semantic", "delete_semantic", "session_search", "session_read"].includes(action)) {
+    await configureMemoryRuntime(memory, await loadRuntimeSettings());
+  }
   if (action === "create_semantic") return memory.createSemantic(requiredText(body.subject, "Subject", 500), requiredText(body.content, "Content", 20_000), "ui");
   if (action === "search_semantic") return memory.searchSemantic(requiredText(body.query, "Query", 2_000), 100);
   if (action === "update_semantic") return memory.updateSemantic(positiveId(body.id), requiredText(body.subject, "Subject", 500), requiredText(body.content, "Content", 20_000), "ui");
@@ -353,14 +445,14 @@ export async function handleMemoryAction(body: Record<string, unknown>): Promise
       recent: body.recent === true,
       limit: body.limit === undefined ? undefined : Number(body.limit),
       window: body.window === undefined ? undefined : Number(body.window),
-    }, recallSettings(settings));
+    }, recallSettings(settings, tokenEstimator));
   }
   if (action === "session_read") {
     const settings = await loadRuntimeSettings();
     return memory.readSession({
       sessionId: body.sessionId === undefined ? undefined : requiredText(body.sessionId, "Session ID", 200),
       cursor: body.cursor === undefined ? undefined : requiredText(body.cursor, "Cursor", 10_000),
-    }, recallSettings(settings));
+    }, recallSettings(settings, tokenEstimator));
   }
   throw new TypeError("未知 Memory action");
 }
@@ -374,6 +466,7 @@ export async function clearLocalAgentData(body: Record<string, unknown>): Promis
   if (body.confirmation !== "DELETE_ALL_LOCAL_DATA") throw new TypeError("缺少清理确认");
   if (dataClearing) throw new Error("本地数据正在清理");
   if (sessionLocks.size > 0) throw new Error("仍有 Agent 回合正在运行，请结束后再清理");
+  if (memoryRuntime?.isEmbeddingRebuildRunning()) throw new Error("Embedding 索引正在重建，请等待完成或先取消重建");
   dataClearing = true;
   try {
     if (memoryRuntime) await memoryRuntime.waitForConsolidation();
@@ -440,8 +533,15 @@ async function loadRuntimeSettings(): Promise<RuntimeSettings> {
     sessionSearchWindow: parseSetting(values.EVERYTHING_SESSION_SEARCH_WINDOW, "Session Search Window", RUNTIME_DEFAULTS.sessionSearchWindow, SETTING_LIMITS.sessionSearchWindow),
     sessionScrollStep: parseSetting(values.EVERYTHING_SESSION_SCROLL_STEP, "Session Scroll Step", RUNTIME_DEFAULTS.sessionScrollStep, SETTING_LIMITS.sessionScrollStep),
     sessionRecallMessageLimit: parseSetting(values.EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT, "Session Recall Message Limit", RUNTIME_DEFAULTS.sessionRecallMessageLimit, SETTING_LIMITS.sessionRecallMessageLimit),
-    sessionRecallCharacterLimit: parseSetting(values.EVERYTHING_SESSION_RECALL_CHARACTER_LIMIT, "Session Recall Character Limit", RUNTIME_DEFAULTS.sessionRecallCharacterLimit, SETTING_LIMITS.sessionRecallCharacterLimit),
-    contextCharacterLimit: parseSetting(values.EVERYTHING_CONTEXT_CHARACTER_LIMIT, "Context Character Limit", RUNTIME_DEFAULTS.contextCharacterLimit, SETTING_LIMITS.contextCharacterLimit),
+    sessionRecallTokenLimit: parseSetting(values.EVERYTHING_SESSION_RECALL_TOKEN_LIMIT, "Session Recall Token Limit", RUNTIME_DEFAULTS.sessionRecallTokenLimit, SETTING_LIMITS.sessionRecallTokenLimit),
+    modelContextWindow: parseSetting(values.EVERYTHING_MODEL_CONTEXT_WINDOW, "Model Context Window", RUNTIME_DEFAULTS.modelContextWindow, SETTING_LIMITS.modelContextWindow),
+    retrievalMode: parseRetrievalMode(values.EVERYTHING_RETRIEVAL_MODE || "lexical_only"),
+    embeddingBaseUrl: values.EVERYTHING_EMBEDDING_BASE_URL ?? "",
+    embeddingModel: values.EVERYTHING_EMBEDDING_MODEL ?? "",
+    embeddingQueryTemplate: values.EVERYTHING_EMBEDDING_QUERY_TEMPLATE ?? "{text}",
+    embeddingDocumentTemplate: values.EVERYTHING_EMBEDDING_DOCUMENT_TEMPLATE ?? "{text}",
+    embeddingMinimumSimilarity: parseSimilarity(values.EVERYTHING_EMBEDDING_MINIMUM_SIMILARITY ?? "0.30"),
+    embeddingApiKey: values.EVERYTHING_EMBEDDING_API_KEY ?? "",
     baseUrl: values.EVERYTHING_BASE_URL ?? "",
     apiKey: values[keyName] ?? "",
     keyName,
@@ -580,6 +680,15 @@ function toWorkflow(): Record<string, unknown> {
 }
 
 function publicSettings(settings: RuntimeSettings): PublicAgentSettings {
+  const memory = getMemoryRuntime();
+  const embeddingIndex = memory.embeddingIndexStatus();
+  const embeddingProfile = settings.embeddingApiKey && settings.embeddingBaseUrl && settings.embeddingModel
+    ? {
+        baseUrl: settings.embeddingBaseUrl, apiKey: settings.embeddingApiKey, model: settings.embeddingModel,
+        queryTemplate: settings.embeddingQueryTemplate,
+        documentTemplate: settings.embeddingDocumentTemplate, minimumSimilarity: settings.embeddingMinimumSimilarity,
+      }
+    : null;
   return {
     provider: settings.provider,
     model: settings.model,
@@ -587,8 +696,17 @@ function publicSettings(settings: RuntimeSettings): PublicAgentSettings {
     sessionSearchWindow: settings.sessionSearchWindow,
     sessionScrollStep: settings.sessionScrollStep,
     sessionRecallMessageLimit: settings.sessionRecallMessageLimit,
-    sessionRecallCharacterLimit: settings.sessionRecallCharacterLimit,
-    contextCharacterLimit: settings.contextCharacterLimit,
+    sessionRecallTokenLimit: settings.sessionRecallTokenLimit,
+    modelContextWindow: settings.modelContextWindow,
+    retrievalMode: settings.retrievalMode,
+    embeddingBaseUrl: settings.embeddingBaseUrl,
+    embeddingModel: settings.embeddingModel,
+    embeddingQueryTemplate: settings.embeddingQueryTemplate,
+    embeddingDocumentTemplate: settings.embeddingDocumentTemplate,
+    embeddingMinimumSimilarity: settings.embeddingMinimumSimilarity,
+    embeddingKeyConfigured: Boolean(settings.embeddingApiKey),
+    embeddingKeyLast4: settings.embeddingApiKey ? settings.embeddingApiKey.slice(-4) : "",
+    embeddingIndex: { ...embeddingIndex, ready: Boolean(embeddingProfile && memory.embeddingIndexMatches(embeddingProfile)) },
     limits: SETTING_LIMITS,
     baseUrl: settings.baseUrl,
     keyConfigured: Boolean(settings.apiKey),
@@ -601,8 +719,14 @@ function parseRuntimeSettingBody(body: Record<string, unknown>) {
     sessionSearchWindow: parseSetting(body.sessionSearchWindow, "Session Search Window", RUNTIME_DEFAULTS.sessionSearchWindow, SETTING_LIMITS.sessionSearchWindow),
     sessionScrollStep: parseSetting(body.sessionScrollStep, "Session Scroll Step", RUNTIME_DEFAULTS.sessionScrollStep, SETTING_LIMITS.sessionScrollStep),
     sessionRecallMessageLimit: parseSetting(body.sessionRecallMessageLimit, "Session Recall Message Limit", RUNTIME_DEFAULTS.sessionRecallMessageLimit, SETTING_LIMITS.sessionRecallMessageLimit),
-    sessionRecallCharacterLimit: parseSetting(body.sessionRecallCharacterLimit, "Session Recall Character Limit", RUNTIME_DEFAULTS.sessionRecallCharacterLimit, SETTING_LIMITS.sessionRecallCharacterLimit),
-    contextCharacterLimit: parseSetting(body.contextCharacterLimit, "Context Character Limit", RUNTIME_DEFAULTS.contextCharacterLimit, SETTING_LIMITS.contextCharacterLimit),
+    sessionRecallTokenLimit: parseSetting(body.sessionRecallTokenLimit, "Session Recall Token Limit", RUNTIME_DEFAULTS.sessionRecallTokenLimit, SETTING_LIMITS.sessionRecallTokenLimit),
+    modelContextWindow: parseSetting(body.modelContextWindow, "Model Context Window", RUNTIME_DEFAULTS.modelContextWindow, SETTING_LIMITS.modelContextWindow),
+    retrievalMode: parseRetrievalMode(body.retrievalMode ?? "lexical_only"),
+    embeddingBaseUrl: optionalText(body.embeddingBaseUrl, "Embedding Base URL", 2_000),
+    embeddingModel: optionalText(body.embeddingModel, "Embedding Model", 500),
+    embeddingQueryTemplate: embeddingTemplate(body.embeddingQueryTemplate, "Query Template"),
+    embeddingDocumentTemplate: embeddingTemplate(body.embeddingDocumentTemplate, "Document Template"),
+    embeddingMinimumSimilarity: parseSimilarity(body.embeddingMinimumSimilarity ?? 0.30),
   };
 }
 
@@ -648,53 +772,110 @@ function memoryDashboard(memory: MemoryRuntime): Record<string, unknown> {
 function scheduleStartupRecovery(memory: MemoryRuntime, settings: RuntimeSettings): void {
   if (recoveryScheduled || !settings.apiKey || !(settings.smallModel || settings.model)) return;
   recoveryScheduled = true;
-  memory.schedulePendingConsolidations(consolidationOptions(settings));
+  void configureMemoryRuntime(memory, settings)
+    .then(() => consolidationOptions(settings))
+    .then((options) => memory.schedulePendingConsolidations(options))
+    .catch((error: unknown) => getTracer().record("consolidation_error", {
+      errorType: error instanceof Error ? error.name : "UnknownError",
+    }));
 }
 
 function scheduleSessionConsolidation(memory: MemoryRuntime, sessionId: string, trigger: "new_session" | "startup"): void {
   void loadRuntimeSettings().then((settings) => {
     if (!dataClearing && memoryRuntime === memory && settings.apiKey && (settings.smallModel || settings.model)) {
-      memory.scheduleConsolidation(sessionId, trigger, consolidationOptions(settings));
+      void configureMemoryRuntime(memory, settings)
+        .then(() => consolidationOptions(settings))
+        .then((options) => memory.scheduleConsolidation(sessionId, trigger, options))
+        .catch((error: unknown) => getTracer().record("consolidation_error", {
+          sessionId, errorType: error instanceof Error ? error.name : "UnknownError",
+        }));
     }
   });
 }
 
-function consolidationOptions(settings: RuntimeSettings) {
+async function consolidationOptions(settings: RuntimeSettings) {
   return {
-    client: createRuntimeClient(settings),
+    client: createRuntimeClient(settings, tokenEstimator),
     model: settings.smallModel || settings.model,
     currentSessionId: "",
-    recall: recallSettings(settings),
+    recall: recallSettings(settings, tokenEstimator),
     observer: (kind: string, event: Record<string, unknown>) => getTracer().record(kind, event),
   };
 }
 
-/** 对 Gate、Consolidation 与主 Agent 的每次模型请求统一执行字符预算。 */
-function createRuntimeClient(settings: RuntimeSettings): AgentModelClient {
+/** 创建真实模型客户端；非 Loop 调用也使用同一估算预算。 */
+function createRuntimeClient(settings: RuntimeSettings, estimator?: TokenEstimator): AgentModelClient {
   const client = createModelClient(settings);
-  const assertLimit = (request: { system: string; messages: AgentMessage[]; tools: unknown }) => {
-    const characters = JSON.stringify({ system: request.system, messages: request.messages, tools: request.tools }).length;
-    if (characters > settings.contextCharacterLimit) {
-      throw new Error(`模型输入上下文为 ${characters} 字符，超过配置上限 ${settings.contextCharacterLimit}；请新建 Session 或调高 Context Limit`);
-    }
-  };
+  if (!estimator) return client;
   return {
     messages: {
-      create(request) { assertLimit(request); return client.messages.create(request) },
-      ...(client.messages.stream ? {
-        stream(request) { assertLimit(request); return client.messages.stream!(request) },
-      } : {}),
+      async create(request) {
+        assertModelTokenLimit(request, settings.modelContextWindow, estimator);
+        return client.messages.create(request);
+      },
+      ...(client.messages.stream ? { stream: client.messages.stream.bind(client.messages) } : {}),
     },
   };
 }
 
-function recallSettings(settings: RuntimeSettings): SessionRecallSettings {
+function assertModelTokenLimit(
+  request: Parameters<AgentModelClient["messages"]["create"]>[0],
+  modelContextWindow: number,
+  estimator: TokenEstimator,
+): void {
+  const estimatedInputTokens = estimator.estimateRequest(request);
+  const total = estimatedInputTokens + request.max_tokens + 512;
+  if (total > modelContextWindow) {
+    throw new Error(`模型输入估算、输出预留与安全余量共 ${total} tokens，超过 Context Window ${modelContextWindow}`);
+  }
+}
+
+function recallSettings(settings: RuntimeSettings, estimator: TokenEstimator): SessionRecallSettings {
   return {
     searchWindow: settings.sessionSearchWindow,
     scrollStep: settings.sessionScrollStep,
     messageLimit: settings.sessionRecallMessageLimit,
-    characterLimit: settings.sessionRecallCharacterLimit,
+    tokenLimit: settings.sessionRecallTokenLimit,
+    tokenEstimator: estimator,
   };
+}
+
+async function configureMemoryRuntime(memory: MemoryRuntime, settings: RuntimeSettings, allowIncompleteIndex = false): Promise<void> {
+  const complete = Boolean(
+    settings.embeddingApiKey && settings.embeddingBaseUrl
+    && settings.embeddingModel,
+  );
+  if (!complete) {
+    if (settings.retrievalMode !== "lexical_only") throw new Error("Dense/Hybrid 模式的 Embedding 配置不完整");
+    memory.configureRetrieval({ mode: "lexical_only", observer: (kind, event) => getTracer().record(kind, event) });
+    return;
+  }
+  const desiredProfile = {
+    baseUrl: settings.embeddingBaseUrl,
+    apiKey: settings.embeddingApiKey,
+    model: settings.embeddingModel,
+    queryTemplate: settings.embeddingQueryTemplate,
+    documentTemplate: settings.embeddingDocumentTemplate,
+    minimumSimilarity: settings.embeddingMinimumSimilarity,
+  };
+  const activeProfile = !allowIncompleteIndex && !memory.embeddingIndexMatches(desiredProfile)
+    ? memory.activeEmbeddingProfile()
+    : null;
+  const profile = activeProfile
+    ? {
+        ...activeProfile,
+        apiKey: settings.embeddingApiKey,
+        // 这两个字段不参与文档向量构建，可安全即时采用新配置。
+        queryTemplate: settings.embeddingQueryTemplate,
+        minimumSimilarity: settings.embeddingMinimumSimilarity,
+      }
+    : desiredProfile;
+  memory.configureRetrieval({
+    mode: settings.retrievalMode,
+    embedding: { profile, client: new OpenAIEmbeddingClient(profile) },
+    observer: (kind, event) => getTracer().record(kind, event),
+    ...(allowIncompleteIndex ? { allowIncompleteIndex: true } : {}),
+  });
 }
 
 async function withSessionLock<T>(sessionId: string, operation: () => Promise<T>): Promise<T> {
@@ -732,6 +913,27 @@ function parseProvider(value: unknown): AgentProvider {
     throw new TypeError("Provider 必须是 anthropic 或 openai-compatible");
   }
   return value as AgentProvider;
+}
+
+function parseRetrievalMode(value: unknown): RetrievalMode {
+  if (typeof value !== "string" || !VALID_RETRIEVAL_MODES.has(value as RetrievalMode)) {
+    throw new TypeError("Retrieval Mode 必须是 lexical_only、dense_only 或 hybrid");
+  }
+  return value as RetrievalMode;
+}
+
+function parseSimilarity(value: unknown): number {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < -1 || number > 1) {
+    throw new TypeError("Minimum Similarity 必须是 -1–1 的数字");
+  }
+  return number;
+}
+
+function embeddingTemplate(value: unknown, field: string): string {
+  const template = value === undefined ? "{text}" : optionalText(value, field, 2_000);
+  if ((template.match(/\{text\}/g) ?? []).length !== 1) throw new TypeError(`${field} 必须且只能包含一个 {text}`);
+  return template;
 }
 
 function keyNameFor(provider: AgentProvider): RuntimeSettings["keyName"] {

@@ -22,13 +22,16 @@ export interface ModelResponse {
   content: ModelContentBlock[];
   stop_reason?: string | null;
   stopReason?: string | null;
-  usage?: {
-    input_tokens?: number;
-    inputTokens?: number;
-    output_tokens?: number;
-    outputTokens?: number;
-  };
+  /** 由模型协议适配器归一化的真实 token 消耗；供应商未返回完整数据时为 null。 */
+  tokenUsage?: TokenUsage | null;
   [key: string]: unknown;
+}
+
+/** 一次远程调用由供应商报告的真实 token 消耗。 */
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
 }
 
 /** 发送给模型客户端的请求。 */
@@ -53,6 +56,12 @@ export interface AgentModelClient {
     create(request: ModelRequest): Promise<ModelResponse> | ModelResponse;
     stream?: (request: ModelRequest) => Promise<ModelStream> | ModelStream;
   };
+}
+
+/** 在模型请求前提供近似预算的供应商无关接口。 */
+export interface TokenEstimator {
+  estimateRequest(request: ModelRequest): number;
+  estimateText(text: string): number;
 }
 
 /** 工具执行期间获得的取消、截止时间和调用身份。 */
@@ -101,8 +110,10 @@ export interface AgentLoopOptions {
   tools: ToolRegistry;
   maxIterations?: number;
   maxTokens?: number;
-  /** 每次模型请求的完整输入字符硬预算；超过时明确失败，不裁剪。 */
-  contextCharacterLimit?: number;
+  /** 模型总上下文窗口；输入、输出和固定安全余量之和不得超过它。 */
+  modelContextWindow?: number;
+  /** 配置 Context Window 时必须注入的 token 估算器。 */
+  tokenEstimator?: TokenEstimator;
   observer?: AgentObserver;
   stream?: boolean;
   signal?: AbortSignal;
