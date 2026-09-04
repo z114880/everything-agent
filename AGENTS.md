@@ -24,6 +24,12 @@
 - `src/agent-loop/` 已实现基础 Agent Loop，`src/agent-graph/` 提供 Harness 拓扑，`src/tools/` 提供本地 Tool Registry；`src/model/` 已实现真实 LLM 协议适配，`src/memory/` 已实现本地 Session、SQLite 长期记忆、FTS5 检索与 consolidation。
 - 文档必须明确区分已经实现的能力和规划能力，不得把路线图描述成现成功能。
 
+## 开发阶段兼容策略
+
+- 项目目前处于需求开发阶段，不要求兼容旧代码、旧接口或旧数据。
+- 新需求与旧实现冲突时，应直接删除冲突的旧代码和旧数据，不要增加过渡适配器、兼容参数或遗留数据表。
+- 该策略不授权修改无关用户改动，也不放宽密钥、个人数据、依赖目录和生成物的保护要求。
+
 ## 架构约束
 
 ### Engine

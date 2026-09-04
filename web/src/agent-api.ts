@@ -6,7 +6,12 @@ export interface AgentSettings {
   provider: AgentProvider;
   model: string;
   smallModel: string;
-  historyTurns: number;
+  sessionSearchWindow: number;
+  sessionScrollStep: number;
+  sessionRecallMessageLimit: number;
+  sessionRecallCharacterLimit: number;
+  contextCharacterLimit: number;
+  limits: Record<string, { min: number; max: number }>;
   baseUrl: string;
   keyConfigured: boolean;
   keyLast4: string;
@@ -26,6 +31,8 @@ export interface SessionSummary {
   createdAt: string;
   updatedAt: string;
   pendingMessages: number;
+  completedRunCount: number;
+  incompleteRunCount: number;
 }
 
 export interface ChatLogEntry {
@@ -36,27 +43,63 @@ export interface ChatLogEntry {
   kind: string;
   content: unknown;
   createdAt: string;
+  runComplete?: boolean;
+  contentTruncated?: boolean;
+  contentFragment?: boolean;
+  contentOffset?: number;
+}
+
+export interface SessionRecallResult {
+  session: SessionSummary;
+  rank: number;
+  retrievalSignals: { bm25?: number };
+  match: null | { messageId: number; bm25: number; totalMatches: number };
+  entries: ChatLogEntry[];
+  totalMessageCount: number;
+  returnedMessageCount: number;
+  indexedMessageCount: number;
+  returnedRanges: Array<{ fromMessageId: number; toMessageId: number }>;
+  isComplete: boolean;
+  truncated: boolean;
+  expandLimitReached: boolean;
+  nextCursor: string | null;
+}
+export interface SessionSearchResult {
+  retrievalMode: "search" | "recent";
+  query?: string;
+  requestedLimit: number;
+  returnedSessionCount: number;
+  droppedSessionCount: number;
+  truncated: boolean;
+  sessions: SessionRecallResult[];
+}
+export interface SessionReadResult {
+  mode: "expand" | "sequential";
+  session: SessionSummary;
+  entries: ChatLogEntry[];
+  totalMessageCount: number;
+  returnedMessageCount: number;
+  returnedRanges: Array<{ fromMessageId: number; toMessageId: number }>;
+  isComplete: boolean;
+  truncated: boolean;
+  expandLimitReached: boolean;
+  nextCursor: string | null;
 }
 
 export interface SemanticMemory {
   id: number; subject: string; content: string; source: string; createdAt: string; updatedAt: string;
 }
 
-export interface EpisodicMemory {
-  id: number; sessionId: string | null; summary: string; happenedAt: string; source: string; createdAt: string; updatedAt: string;
-}
-
 export interface ConsolidationRun {
   id: number; runId: string; sessionId: string; trigger: string; status: string; throughMessageId: number;
-  factsCreated: number; factsUpdated: number; factsSkipped: number; episodeChanged: boolean;
+  factsCreated: number; factsUpdated: number; factsSkipped: number;
   errorType: string | null; startedAt: string; completedAt: string | null;
 }
 
 export interface MemoryDashboard {
-  overview: { semanticCount: number; episodicCount: number; sessionCount: number; pendingSessionCount: number; databasePath: string; latestConsolidation: ConsolidationRun | null };
+  overview: { semanticCount: number; indexedSessionCount: number; indexedMessageCount: number; sessionCount: number; pendingSessionCount: number; databasePath: string; latestConsolidation: ConsolidationRun | null };
   sessions: SessionSummary[];
   semantic: SemanticMemory[];
-  episodic: EpisodicMemory[];
   chatLog: ChatLogEntry[];
   consolidations: ConsolidationRun[];
 }
@@ -120,7 +163,11 @@ export function saveAgentConfig(value: {
   apiKey: string;
   clearApiKey: boolean;
   smallModel: string;
-  historyTurns: number;
+  sessionSearchWindow: number;
+  sessionScrollStep: number;
+  sessionRecallMessageLimit: number;
+  sessionRecallCharacterLimit: number;
+  contextCharacterLimit: number;
   force?: boolean;
 }): Promise<{ ok: true; settings: AgentSettings; models: string[] }> {
   return requestJson(`${endpoint}/config`, {
@@ -128,6 +175,11 @@ export function saveAgentConfig(value: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(value),
   });
+}
+
+/** 恢复非模型运行参数默认值。 */
+export function resetRuntimeConfig(): Promise<{ ok: true; settings: AgentSettings }> {
+  return requestJson(`${endpoint}/config/reset-runtime`, { method: "POST" });
 }
 
 /** 显式更新 `.everything/EVERYTHING.md`。 */

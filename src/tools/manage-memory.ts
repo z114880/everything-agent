@@ -1,121 +1,65 @@
-import { SEMANTIC_MEMORY_CATEGORIES, type MemoryRuntime } from "../memory/index.ts";
-
-const CONFIRMATION_TTL_MS = 10 * 60 * 1_000;
+import type { MemoryRuntime } from "../memory/index.ts";
 
 export const MANAGE_MEMORY_TOOL = "manage_memory";
-
 export const manageMemorySchema = {
   name: MANAGE_MEMORY_TOOL,
-  description: "搜索、创建、修正或删除长期记忆。创建或修正 Semantic 时，只能保存稳定用户属性、长期偏好、持续项目事实、明确约束或未来承诺；不得保存当前时间、天气、新闻、价格、汇率、一次性查询结果或普通问答答案。Episodic memory 不能由此工具创建或修改；删除必须先取得确认令牌。",
+  description: "搜索、创建、更新或删除稳定且跨会话有用的 Semantic Memory。过去对话请使用 session_search/session_read。删除前必须先请求确认令牌。",
   input_schema: {
     type: "object",
     properties: {
-      action: { type: "string", enum: ["search", "create", "update", "delete"] },
-      kind: { type: "string", enum: ["semantic", "episodic"] },
-      query: { type: "string" },
-      id: { type: "integer" },
-      subject: { type: "string" },
+      action: { type: "string", enum: ["search", "create", "update", "request_delete", "delete"] },
+      query: { type: "string" }, id: { type: "integer", minimum: 1 }, subject: { type: "string" },
       content: { type: "string" },
-      category: { type: "string", enum: [...SEMANTIC_MEMORY_CATEGORIES] },
-      stable: { type: "boolean" },
-      futureUseful: { type: "boolean" },
-      confirmationId: { type: "string" },
+      category: { type: "string", enum: ["user_attribute", "preference", "ongoing_project", "constraint", "commitment"] },
+      stable: { type: "boolean" }, futureUseful: { type: "boolean" }, confirmation: { type: "string" },
     },
-    required: ["action", "kind"],
-    additionalProperties: false,
+    required: ["action"], additionalProperties: false,
   },
 };
 
-interface PendingDelete {
-  kind: "semantic" | "episodic";
-  id: number;
-  expiresAt: number;
-}
-/** 管理聊天侧记忆操作，并在工具内部强制 episodic 与删除权限。 */
+/** 管理聊天侧 Semantic Memory，并在工具内部强制写入与删除权限。 */
 export class ManageMemoryTool {
+  private readonly confirmations = new Map<string, { id: number; expiresAt: number }>();
   private readonly memory: MemoryRuntime;
-  private readonly pendingDeletes = new Map<string, PendingDelete>();
-
-  constructor(memory: MemoryRuntime) {
-    this.memory = memory;
-  }
-
+  constructor(memory: MemoryRuntime) { this.memory = memory }
   execute(value: unknown): unknown {
-    const input = objectInput(value);
-    const action = text(input.action, "action");
-    const kind = memoryKind(input.kind);
-
-    if (action === "search") {
-      const query = text(input.query, "query");
-      return kind === "semantic"
-        ? this.memory.searchSemantic(query, 10)
-        : this.memory.searchEpisodic(query, 10);
-    }
+    const args = record(value); const action = text(args.action, "action");
+    if (action === "search") return this.memory.searchSemantic(text(args.query, "query"), 20);
     if (action === "create") {
-      if (kind !== "semantic") throw new Error("Episodic memory 只能由 Session consolidation 或用户界面创建");
-      assertSemanticWriteDeclaration(input);
-      return this.memory.createSemantic(text(input.subject, "subject"), text(input.content, "content"), "user");
+      validateDeclaration(args);
+      return this.memory.createSemantic(text(args.subject, "subject"), text(args.content, "content"), "agent");
     }
     if (action === "update") {
-      if (kind !== "semantic") throw new Error("Episodic memory 不能由普通工具调用修改");
-      const id = integer(input.id, "id");
-      assertSemanticWriteDeclaration(input);
-      return this.memory.updateSemantic(id, text(input.subject, "subject"), text(input.content, "content"), "user");
+      validateDeclaration(args);
+      return this.memory.updateSemantic(idValue(args.id), text(args.subject, "subject"), text(args.content, "content"), "agent");
     }
-    if (action === "delete") return this.delete(kind, integer(input.id, "id"), input.confirmationId);
-    throw new TypeError("manage_memory action 无效");
-  }
-
-  private delete(kind: "semantic" | "episodic", id: number, confirmationValue: unknown): unknown {
-    this.removeExpiredConfirmations();
-    if (typeof confirmationValue !== "string" || !confirmationValue) {
-      const target = kind === "semantic"
-        ? this.memory.listSemantic().find((item) => item.id === id)
-        : this.memory.listEpisodic().find((item) => item.id === id);
-      if (!target) throw new Error("待删除的记忆不存在");
-      const confirmationId = crypto.randomUUID();
-      this.pendingDeletes.set(confirmationId, { kind, id, expiresAt: Date.now() + CONFIRMATION_TTL_MS });
-      return { requiresConfirmation: true, confirmationId, kind, id, target };
+    if (action === "request_delete") {
+      const id = idValue(args.id); const token = crypto.randomUUID();
+      this.confirmations.set(token, { id, expiresAt: Date.now() + 60_000 });
+      return { confirmation: token, expiresInMs: 60_000, message: `确认删除 Semantic Memory #${id}` };
     }
-    const pending = this.pendingDeletes.get(confirmationValue);
-    if (!pending || pending.kind !== kind || pending.id !== id) throw new Error("删除确认无效或已过期");
-    this.pendingDeletes.delete(confirmationValue);
-    if (kind === "semantic") this.memory.deleteSemantic(id, "user");
-    else this.memory.deleteEpisodic(id, "user");
-    return { deleted: true, kind, id };
-  }
-
-  private removeExpiredConfirmations(): void {
-    const now = Date.now();
-    for (const [id, pending] of this.pendingDeletes) if (pending.expiresAt <= now) this.pendingDeletes.delete(id);
+    if (action === "delete") {
+      const id = idValue(args.id); const token = text(args.confirmation, "confirmation"); const pending = this.confirmations.get(token);
+      this.confirmations.delete(token);
+      if (!pending || pending.id !== id || pending.expiresAt < Date.now()) throw new Error("删除确认无效或已过期");
+      this.memory.deleteSemantic(id, "agent"); return { deleted: true, id };
+    }
+    throw new TypeError("未知的 memory action");
   }
 }
-
-function objectInput(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("manage_memory 参数必须是对象");
+function validateDeclaration(args: Record<string, unknown>): void {
+  const allowed = new Set(["user_attribute", "preference", "ongoing_project", "constraint", "commitment"]);
+  if (!allowed.has(text(args.category, "category"))) throw new TypeError("category 不属于允许的 Semantic Memory 范围");
+  if (args.stable !== true || args.futureUseful !== true) throw new TypeError("Semantic Memory 必须明确声明 stable 和 futureUseful 为 true");
+}
+function record(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("工具参数必须是对象");
   return value as Record<string, unknown>;
 }
-
 function text(value: unknown, field: string): string {
-  if (typeof value !== "string" || !value.trim()) throw new TypeError(`${field} 必须是非空字符串`);
+  if (typeof value !== "string" || !value.trim()) throw new TypeError(`${field} 不能为空`);
   return value.trim();
 }
-
-function integer(value: unknown, field: string): number {
-  if (!Number.isInteger(value) || Number(value) < 1) throw new TypeError(`${field} 必须是正整数`);
-  return Number(value);
-}
-
-function memoryKind(value: unknown): "semantic" | "episodic" {
-  if (value !== "semantic" && value !== "episodic") throw new TypeError("kind 必须是 semantic 或 episodic");
-  return value;
-}
-
-/** 强制模型为 Semantic 写入声明允许类别、稳定性和未来用途。 */
-function assertSemanticWriteDeclaration(input: Record<string, unknown>): void {
-  if (typeof input.category !== "string" || !SEMANTIC_MEMORY_CATEGORIES.some((category) => category === input.category)) {
-    throw new TypeError(`category 必须是 ${SEMANTIC_MEMORY_CATEGORIES.join("、")} 之一`);
-  }
-  if (input.stable !== true) throw new TypeError("stable 必须为 true");
-  if (input.futureUseful !== true) throw new TypeError("futureUseful 必须为 true");
+function idValue(value: unknown): number {
+  const id = Number(value); if (!Number.isInteger(id) || id < 1) throw new TypeError("id 必须是正整数"); return id;
 }

@@ -17,6 +17,8 @@ describe("运行记录分组", () => {
       id: "s1",
       title: "猫咪问题",
       messageCount: 4,
+      completedRunCount: 1,
+      incompleteRunCount: 1,
       createdAt: "2026-09-03T08:00:00+08:00",
       updatedAt: "2026-09-03T08:02:01+08:00",
       pendingMessages: 0,

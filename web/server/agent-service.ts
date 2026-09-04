@@ -12,8 +12,10 @@ import {
 } from "../../src/index.ts";
 import type {
   AgentMessage,
+  AgentModelClient,
   AgentObserver,
   AgentProvider,
+  SessionRecallSettings,
   ToolCallRecord,
 } from "../../src/index.ts";
 import { clearEverythingData } from "./local-data.ts";
@@ -24,11 +26,22 @@ const systemPromptPath = fileURLToPath(new URL("../../.everything/EVERYTHING.md"
 const legacySystemPromptPath = fileURLToPath(new URL("../../EVERYTHING.md", import.meta.url));
 const VALID_PROVIDERS = new Set<AgentProvider>(["anthropic", "openai-compatible"]);
 const DEFAULT_TIMEOUT_MS = 60_000;
+export const RUNTIME_DEFAULTS = {
+  sessionSearchWindow: 5,
+  sessionScrollStep: 10,
+  sessionRecallMessageLimit: 100,
+  sessionRecallCharacterLimit: 50_000,
+  contextCharacterLimit: 200_000,
+} as const;
 const CONFIG_KEYS = [
   "EVERYTHING_PROVIDER",
   "EVERYTHING_MODEL",
   "EVERYTHING_SMALL_MODEL",
-  "EVERYTHING_HISTORY_TURNS",
+  "EVERYTHING_SESSION_SEARCH_WINDOW",
+  "EVERYTHING_SESSION_SCROLL_STEP",
+  "EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT",
+  "EVERYTHING_SESSION_RECALL_CHARACTER_LIMIT",
+  "EVERYTHING_CONTEXT_CHARACTER_LIMIT",
   "EVERYTHING_BASE_URL",
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
@@ -38,7 +51,11 @@ interface RuntimeSettings {
   provider: AgentProvider;
   model: string;
   smallModel: string;
-  historyTurns: number;
+  sessionSearchWindow: number;
+  sessionScrollStep: number;
+  sessionRecallMessageLimit: number;
+  sessionRecallCharacterLimit: number;
+  contextCharacterLimit: number;
   baseUrl: string;
   apiKey: string;
   keyName: "ANTHROPIC_API_KEY" | "OPENAI_API_KEY";
@@ -49,11 +66,24 @@ export interface PublicAgentSettings {
   provider: AgentProvider;
   model: string;
   smallModel: string;
-  historyTurns: number;
+  sessionSearchWindow: number;
+  sessionScrollStep: number;
+  sessionRecallMessageLimit: number;
+  sessionRecallCharacterLimit: number;
+  contextCharacterLimit: number;
+  limits: typeof SETTING_LIMITS;
   baseUrl: string;
   keyConfigured: boolean;
   keyLast4: string;
 }
+
+const SETTING_LIMITS = {
+  sessionSearchWindow: { min: 1, max: 20 },
+  sessionScrollStep: { min: 1, max: 50 },
+  sessionRecallMessageLimit: { min: 1, max: 200 },
+  sessionRecallCharacterLimit: { min: 1_000, max: 100_000 },
+  contextCharacterLimit: { min: 10_000, max: 1_000_000 },
+} as const;
 
 let memoryRuntime: MemoryRuntime | null = null;
 let tracer: JsonlTracer | null = null;
@@ -94,7 +124,7 @@ export async function saveAgentSettings(body: Record<string, unknown>): Promise<
   const provider = parseProvider(body.provider);
   const model = requiredText(body.model, "Model", 200);
   const smallModel = optionalText(body.smallModel, "Small Model", 200);
-  const historyTurns = parseHistoryTurns(body.historyTurns ?? 10);
+  const runtime = parseRuntimeSettingBody(body);
   const baseUrl = optionalText(body.baseUrl, "Base URL", 2_000);
   const effectiveBaseUrl = provider === "openai-compatible" ? baseUrl : "";
   if (effectiveBaseUrl) validateBaseUrl(effectiveBaseUrl);
@@ -122,13 +152,29 @@ export async function saveAgentSettings(body: Record<string, unknown>): Promise<
     EVERYTHING_PROVIDER: provider,
     EVERYTHING_MODEL: model,
     EVERYTHING_SMALL_MODEL: smallModel,
-    EVERYTHING_HISTORY_TURNS: String(historyTurns),
+    EVERYTHING_SESSION_SEARCH_WINDOW: String(runtime.sessionSearchWindow),
+    EVERYTHING_SESSION_SCROLL_STEP: String(runtime.sessionScrollStep),
+    EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT: String(runtime.sessionRecallMessageLimit),
+    EVERYTHING_SESSION_RECALL_CHARACTER_LIMIT: String(runtime.sessionRecallCharacterLimit),
+    EVERYTHING_CONTEXT_CHARACTER_LIMIT: String(runtime.contextCharacterLimit),
     EVERYTHING_BASE_URL: effectiveBaseUrl,
   };
   if (apiKey) updates[keyName] = apiKey;
   await updateEnvFile(updates, clearApiKey ? [keyName] : []);
   const settings = await loadRuntimeSettings();
   return { settings: publicSettings(settings), models };
+}
+
+/** 恢复全部运行参数默认值，保留模型连接和 EVERYTHING.md。 */
+export async function resetRuntimeSettings(): Promise<{ settings: PublicAgentSettings }> {
+  await updateEnvFile({
+    EVERYTHING_SESSION_SEARCH_WINDOW: String(RUNTIME_DEFAULTS.sessionSearchWindow),
+    EVERYTHING_SESSION_SCROLL_STEP: String(RUNTIME_DEFAULTS.sessionScrollStep),
+    EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT: String(RUNTIME_DEFAULTS.sessionRecallMessageLimit),
+    EVERYTHING_SESSION_RECALL_CHARACTER_LIMIT: String(RUNTIME_DEFAULTS.sessionRecallCharacterLimit),
+    EVERYTHING_CONTEXT_CHARACTER_LIMIT: String(RUNTIME_DEFAULTS.contextCharacterLimit),
+  }, ["EVERYTHING_HISTORY_TURNS"]);
+  return { settings: publicSettings(await loadRuntimeSettings()) };
 }
 
 /** 显式保存 procedural memory，并让下一回合立即读取新内容。 */
@@ -154,7 +200,7 @@ export async function runLocalAgent(
   return withSessionLock(sessionId, async () => {
     const memory = getMemoryRuntime();
     const trace = getTracer();
-    const client = createModelClient(settings);
+    const client = createRuntimeClient(settings);
     const runId = crypto.randomUUID();
     const startedAt = performance.now();
     memory.startRun(sessionId, runId, prompt);
@@ -165,7 +211,8 @@ export async function runLocalAgent(
       provider: settings.provider,
       model: settings.model,
       settings: {
-        historyTurns: settings.historyTurns,
+        contextCharacterLimit: settings.contextCharacterLimit,
+        sessionRecall: recallSettings(settings),
         maxIterations: 10,
         maxTokens: 2_048,
         timeoutMs: DEFAULT_TIMEOUT_MS,
@@ -183,31 +230,42 @@ export async function runLocalAgent(
       }
     };
     try {
-      const history = memory.getWorkingMemory(sessionId, settings.historyTurns);
+      const history = memory.getWorkingMemory(sessionId);
       const gateHistory = memory.getWorkingMemory(sessionId, 3);
       const retrieval = await memory.retrieve(prompt, gateHistory, {
         client,
         model: settings.smallModel || settings.model,
+        currentSessionId: sessionId,
+        recall: recallSettings(settings),
         observer: emit,
       });
       const messages: AgentMessage[] = [...history, { role: "user", content: prompt }];
       const appendedFrom = messages.length;
       const baseSystem = await readSystemPrompt();
       contextMetadata = {
-        historyTurnLimit: settings.historyTurns,
         historyMessageCount: history.length,
         semanticMemoryIds: retrieval.semantic.map((item) => item.id),
-        episodicMemoryIds: retrieval.episodic.map((item) => item.id),
+        sessionRecallSessionIds: retrieval.sessionRecall?.sessions.map((item) => item.session.id) ?? [],
+        sessionRecallRanges: retrieval.sessionRecall?.sessions.map((item) => ({ sessionId: item.session.id, ranges: item.returnedRanges })) ?? [],
+        sessionRecallEntryCount: retrieval.sessionRecall?.sessions.reduce((sum, item) => sum + item.returnedMessageCount, 0) ?? 0,
+        sessionRecallCharacterCount: retrieval.sessionRecall
+          ? JSON.stringify(retrieval.sessionRecall.sessions.flatMap((item) => item.entries)).length
+          : 0,
+        sessionRecallTruncated: retrieval.sessionRecall?.truncated ?? false,
       };
       const result = await runAgentLoop({
         client,
         model: settings.model,
         system: [baseSystem, retrieval.context].filter(Boolean).join("\n\n"),
         messages,
-        tools: new LocalToolRegistry(memory, getManageMemoryTool(memory)),
+        tools: new LocalToolRegistry(memory, getManageMemoryTool(memory), {
+          currentSessionId: sessionId,
+          settings: recallSettings(settings),
+        }),
         maxIterations: 10,
         timeoutMs: DEFAULT_TIMEOUT_MS,
         stream: true,
+        contextCharacterLimit: settings.contextCharacterLimit,
         signal,
         observer: emit,
         serializeToolEvent: publicToolEvent,
@@ -279,10 +337,22 @@ export async function handleMemoryAction(body: Record<string, unknown>): Promise
   if (action === "search_semantic") return memory.searchSemantic(requiredText(body.query, "Query", 2_000), 100);
   if (action === "update_semantic") return memory.updateSemantic(positiveId(body.id), requiredText(body.subject, "Subject", 500), requiredText(body.content, "Content", 20_000), "ui");
   if (action === "delete_semantic") return void memory.deleteSemantic(positiveId(body.id), "ui");
-  if (action === "create_episodic") return memory.createEpisodic(requiredText(body.summary, "Summary", 20_000), parseTimestamp(body.happenedAt), "ui");
-  if (action === "search_episodic") return memory.searchEpisodic(requiredText(body.query, "Query", 2_000), 100);
-  if (action === "update_episodic") return memory.updateEpisodic(positiveId(body.id), requiredText(body.summary, "Summary", 20_000), parseTimestamp(body.happenedAt), "ui");
-  if (action === "delete_episodic") return void memory.deleteEpisodic(positiveId(body.id), "ui");
+  if (action === "session_search") {
+    const settings = await loadRuntimeSettings();
+    return memory.searchSessions({
+      query: body.query === undefined ? undefined : requiredText(body.query, "Query", 2_000),
+      recent: body.recent === true,
+      limit: body.limit === undefined ? undefined : Number(body.limit),
+      window: body.window === undefined ? undefined : Number(body.window),
+    }, recallSettings(settings));
+  }
+  if (action === "session_read") {
+    const settings = await loadRuntimeSettings();
+    return memory.readSession({
+      sessionId: body.sessionId === undefined ? undefined : requiredText(body.sessionId, "Session ID", 200),
+      cursor: body.cursor === undefined ? undefined : requiredText(body.cursor, "Cursor", 10_000),
+    }, recallSettings(settings));
+  }
   throw new TypeError("未知 Memory action");
 }
 
@@ -361,7 +431,11 @@ async function loadRuntimeSettings(): Promise<RuntimeSettings> {
     provider,
     model: values.EVERYTHING_MODEL ?? "",
     smallModel: values.EVERYTHING_SMALL_MODEL ?? "",
-    historyTurns: parseHistoryTurns(values.EVERYTHING_HISTORY_TURNS || 10),
+    sessionSearchWindow: parseSetting(values.EVERYTHING_SESSION_SEARCH_WINDOW, "Session Search Window", RUNTIME_DEFAULTS.sessionSearchWindow, SETTING_LIMITS.sessionSearchWindow),
+    sessionScrollStep: parseSetting(values.EVERYTHING_SESSION_SCROLL_STEP, "Session Scroll Step", RUNTIME_DEFAULTS.sessionScrollStep, SETTING_LIMITS.sessionScrollStep),
+    sessionRecallMessageLimit: parseSetting(values.EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT, "Session Recall Message Limit", RUNTIME_DEFAULTS.sessionRecallMessageLimit, SETTING_LIMITS.sessionRecallMessageLimit),
+    sessionRecallCharacterLimit: parseSetting(values.EVERYTHING_SESSION_RECALL_CHARACTER_LIMIT, "Session Recall Character Limit", RUNTIME_DEFAULTS.sessionRecallCharacterLimit, SETTING_LIMITS.sessionRecallCharacterLimit),
+    contextCharacterLimit: parseSetting(values.EVERYTHING_CONTEXT_CHARACTER_LIMIT, "Context Character Limit", RUNTIME_DEFAULTS.contextCharacterLimit, SETTING_LIMITS.contextCharacterLimit),
     baseUrl: values.EVERYTHING_BASE_URL ?? "",
     apiKey: values[keyName] ?? "",
     keyName,
@@ -431,15 +505,57 @@ async function probeModels(
 }
 
 function publicToolEvent(call: ToolCallRecord): Record<string, unknown> {
+  const result = call.tool === "session_search" || call.tool === "session_read"
+    ? sessionRecallToolMetadata(call.result)
+    : removeCredentials(call.result);
   return {
     tool: call.tool,
     toolCallId: call.toolUseId,
     iteration: call.iteration,
     isError: call.isError,
     arguments: removeCredentials(call.args),
-    result: removeCredentials(call.result),
+    result,
     outputLength: call.output.length,
     summary: call.isError ? "工具执行失败" : "工具执行完成",
+  };
+}
+
+function sessionRecallToolMetadata(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const result = value as Record<string, unknown>;
+  if (Array.isArray(result.sessions)) {
+    return {
+      retrievalMode: result.retrievalMode,
+      requestedLimit: result.requestedLimit,
+      returnedSessionCount: result.returnedSessionCount,
+      droppedSessionCount: result.droppedSessionCount,
+      truncated: result.truncated,
+      sessions: result.sessions.map((item) => {
+        const sessionResult = item as Record<string, unknown>;
+        const session = sessionResult.session as Record<string, unknown> | undefined;
+        return {
+          sessionId: session?.id,
+          rank: sessionResult.rank,
+          match: sessionResult.match,
+          retrievalSignals: sessionResult.retrievalSignals,
+          returnedMessageCount: sessionResult.returnedMessageCount,
+          returnedRanges: sessionResult.returnedRanges,
+          isComplete: sessionResult.isComplete,
+          truncated: sessionResult.truncated,
+        };
+      }),
+    };
+  }
+  const session = result.session as Record<string, unknown> | undefined;
+  return {
+    mode: result.mode,
+    sessionId: session?.id,
+    totalMessageCount: result.totalMessageCount,
+    returnedMessageCount: result.returnedMessageCount,
+    returnedRanges: result.returnedRanges,
+    isComplete: result.isComplete,
+    truncated: result.truncated,
+    expandLimitReached: result.expandLimitReached,
   };
 }
 
@@ -462,16 +578,33 @@ function publicSettings(settings: RuntimeSettings): PublicAgentSettings {
     provider: settings.provider,
     model: settings.model,
     smallModel: settings.smallModel,
-    historyTurns: settings.historyTurns,
+    sessionSearchWindow: settings.sessionSearchWindow,
+    sessionScrollStep: settings.sessionScrollStep,
+    sessionRecallMessageLimit: settings.sessionRecallMessageLimit,
+    sessionRecallCharacterLimit: settings.sessionRecallCharacterLimit,
+    contextCharacterLimit: settings.contextCharacterLimit,
+    limits: SETTING_LIMITS,
     baseUrl: settings.baseUrl,
     keyConfigured: Boolean(settings.apiKey),
     keyLast4: settings.apiKey ? settings.apiKey.slice(-4) : "",
   };
 }
 
-function parseHistoryTurns(value: unknown): number {
-  const number = typeof value === "string" && value.trim() ? Number(value) : Number(value);
-  if (!Number.isInteger(number) || number < 1 || number > 50) throw new TypeError("History Turns 必须是 1–50 的整数");
+function parseRuntimeSettingBody(body: Record<string, unknown>) {
+  return {
+    sessionSearchWindow: parseSetting(body.sessionSearchWindow, "Session Search Window", RUNTIME_DEFAULTS.sessionSearchWindow, SETTING_LIMITS.sessionSearchWindow),
+    sessionScrollStep: parseSetting(body.sessionScrollStep, "Session Scroll Step", RUNTIME_DEFAULTS.sessionScrollStep, SETTING_LIMITS.sessionScrollStep),
+    sessionRecallMessageLimit: parseSetting(body.sessionRecallMessageLimit, "Session Recall Message Limit", RUNTIME_DEFAULTS.sessionRecallMessageLimit, SETTING_LIMITS.sessionRecallMessageLimit),
+    sessionRecallCharacterLimit: parseSetting(body.sessionRecallCharacterLimit, "Session Recall Character Limit", RUNTIME_DEFAULTS.sessionRecallCharacterLimit, SETTING_LIMITS.sessionRecallCharacterLimit),
+    contextCharacterLimit: parseSetting(body.contextCharacterLimit, "Context Character Limit", RUNTIME_DEFAULTS.contextCharacterLimit, SETTING_LIMITS.contextCharacterLimit),
+  };
+}
+
+function parseSetting(value: unknown, name: string, fallback: number, limits: { min: number; max: number }): number {
+  const number = value === undefined || value === "" ? fallback : Number(value);
+  if (!Number.isInteger(number) || number < limits.min || number > limits.max) {
+    throw new TypeError(`${name} 必须是 ${limits.min}–${limits.max} 的整数`);
+  }
   return number;
 }
 
@@ -479,13 +612,6 @@ function positiveId(value: unknown): number {
   const number = Number(value);
   if (!Number.isInteger(number) || number < 1) throw new TypeError("ID 必须是正整数");
   return number;
-}
-
-function parseTimestamp(value: unknown): string {
-  const text = requiredText(value, "时间", 100);
-  const date = new Date(text);
-  if (Number.isNaN(date.getTime())) throw new TypeError("时间格式无效");
-  return date.toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
 function getMemoryRuntime(): MemoryRuntime {
@@ -508,7 +634,6 @@ function memoryDashboard(memory: MemoryRuntime): Record<string, unknown> {
     overview: memory.overview(),
     sessions: memory.listSessions(),
     semantic: memory.listSemantic(),
-    episodic: memory.listEpisodic(),
     chatLog: memory.getChatLog(undefined, 2_000),
     consolidations: memory.listConsolidations(),
   };
@@ -530,9 +655,39 @@ function scheduleSessionConsolidation(memory: MemoryRuntime, sessionId: string, 
 
 function consolidationOptions(settings: RuntimeSettings) {
   return {
-    client: createModelClient(settings),
+    client: createRuntimeClient(settings),
     model: settings.smallModel || settings.model,
+    currentSessionId: "",
+    recall: recallSettings(settings),
     observer: (kind: string, event: Record<string, unknown>) => getTracer().record(kind, event),
+  };
+}
+
+/** 对 Gate、Consolidation 与主 Agent 的每次模型请求统一执行字符预算。 */
+function createRuntimeClient(settings: RuntimeSettings): AgentModelClient {
+  const client = createModelClient(settings);
+  const assertLimit = (request: { system: string; messages: AgentMessage[]; tools: unknown }) => {
+    const characters = JSON.stringify({ system: request.system, messages: request.messages, tools: request.tools }).length;
+    if (characters > settings.contextCharacterLimit) {
+      throw new Error(`模型输入上下文为 ${characters} 字符，超过配置上限 ${settings.contextCharacterLimit}；请新建 Session 或调高 Context Limit`);
+    }
+  };
+  return {
+    messages: {
+      create(request) { assertLimit(request); return client.messages.create(request) },
+      ...(client.messages.stream ? {
+        stream(request) { assertLimit(request); return client.messages.stream!(request) },
+      } : {}),
+    },
+  };
+}
+
+function recallSettings(settings: RuntimeSettings): SessionRecallSettings {
+  return {
+    searchWindow: settings.sessionSearchWindow,
+    scrollStep: settings.sessionScrollStep,
+    messageLimit: settings.sessionRecallMessageLimit,
+    characterLimit: settings.sessionRecallCharacterLimit,
   };
 }
 

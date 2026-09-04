@@ -15,7 +15,7 @@ Working Memory → LLM ↔ Tools → Reply
 - LLM 根据经过代码验证的路由标签进入 Tools 或 Reply。
 - Tools 执行完成后回到 LLM，并同时受到 Agent Loop 迭代限制保护。
 
-User Prompt、SQLite Session History 和 System Prompt 是 Harness 的输入，不属于 Graph 静态拓扑。服务端从持久化 Chat Log 恢复最近的完整回合并组装本轮 Working Memory；前端通过 Agent Loop 的 `context_assembled` observer 事件更新 `working_memory` 静态节点的执行状态。
+User Prompt、SQLite Session History 和 System Prompt 是 Harness 的输入，不属于 Graph 静态拓扑。服务端从持久化 Chat Log 恢复当前 Session 的全部完整回合，并组装独立 Gate 召回的 Semantic Memory 与历史 Session Recall；前端通过 Agent Loop 的 `context_assembled` observer 事件更新 `working_memory` 静态节点的执行状态。
 
 ## 使用方式
 

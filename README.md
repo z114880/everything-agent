@@ -1,18 +1,33 @@
 # Everything Agent
 
+## 快速开始
+
+环境要求：Node.js 24.12 或更高版本。后端通过 Node.js 原生 TypeScript 类型擦除直接运行 `src/`，前端仍由 Vite 处理。Memory 使用 Node.js 内置 `node:sqlite`，启动时会验证 FTS5 可用性。
+
+```bash
+npm install
+npm run dev:web
+```
+
+`npm run dev:web` 是启动 Everything Agent 本地控制台、Engine 和 Agent 桥接接口的主要命令。启动后按照终端输出在浏览器中打开本地地址，并进入“配置”页面设置模型。
+
+提交改动前可运行完整检查和示例：
+
+```bash
+npm run typecheck
+npm test
+npm run example
+```
+
 ## 本地可视化控制台
 
 仓库已包含一个 React + Tailwind 的本地控制台：
 
 - **Agent**：运行真实 `runAgentLoop`，从 SQLite 恢复多轮 Session，展示 Working Memory、LLM、Tools 和 Reply。工具调用过程完整保存在本地 Chat Log，活动边和回复由真实 observer 事件驱动。
 - **Workflow**：枚举 `src/workflows/` 下的 TypeScript 文件，可编辑和执行任一工作流。拓扑来自真实 `Graph.describe()`，执行由本地 Node.js 进程调用 `runGraph()`。
-- **Memory**：通过 Overview、Semantic、Episodic、Procedural、Chat Log 和 Consolidation 查看与管理本地记忆。
+- **Memory**：通过 Overview、Semantic、Episodic (Session Recall)、Procedural、Chat Log 和 Consolidation 查看本地记忆与真实历史检索窗口。
 - **运行记录**：只读回放 `.everything/traces/<日期>/<sessionId>.jsonl` 中的 classic loop 与 memory 执行事实，按 Session 和 Agent 回合分组展示输入、回复、模型请求/响应、工具调用、检索、耗时与错误。trace 不记录 Session 创建或选择这类 UI 活动。“配置”页面提供带二次确认的“一键清理”，可删除数据库、Session、Memory 与 trace，只保留 `.everything/EVERYTHING.md`。
-- **配置**：把 Provider、主/小模型、历史窗口、Base URL 和密钥写入根目录 `.env`，把 System Prompt 保存到 `.everything/EVERYTHING.md`。浏览器只能读取密钥是否存在及末四位。
-
-```bash
-npm run dev:web
-```
+- **配置**：把 Provider、主/小模型、Session Recall 预算、Context Limit、Base URL 和密钥写入根目录 `.env`，把 System Prompt 保存到 `.everything/EVERYTHING.md`。浏览器只能读取密钥是否存在及末四位。
 
 首次运行后打开“配置”菜单，选择 Anthropic 或 OpenAI Compatible。对应环境变量为：
 
@@ -20,7 +35,11 @@ npm run dev:web
 EVERYTHING_PROVIDER="anthropic"
 EVERYTHING_MODEL="your-model-id"
 EVERYTHING_SMALL_MODEL="your-small-model-id"
-EVERYTHING_HISTORY_TURNS="10"
+EVERYTHING_SESSION_SEARCH_WINDOW="5"
+EVERYTHING_SESSION_SCROLL_STEP="10"
+EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT="100"
+EVERYTHING_SESSION_RECALL_CHARACTER_LIMIT="50000"
+EVERYTHING_CONTEXT_CHARACTER_LIMIT="200000"
 EVERYTHING_BASE_URL=""
 ANTHROPIC_API_KEY=""
 OPENAI_API_KEY=""
@@ -53,8 +72,8 @@ Everything Agent 的目标是构建一个真正可长期使用的个人助理 Ag
 | 执行事件 | 基础能力完成 | observer 可接收生命周期、真实 wave 及节点自定义事件 |
 | Agent Loop | 基础能力完成 | 支持模型推理、工具调用、结果观察、流式文本、迭代限制、超时和取消 |
 | 模型客户端 | 基础能力完成 | 支持 Anthropic Messages 与 OpenAI Compatible，包含普通响应、SSE 流式响应和降级 |
-| Tool Registry | 基础能力完成 | 注册 `get_current_time` 与受控 `manage_memory`，支持参数验证、删除确认和取消 |
-| Session / Memory | 基础闭环完成 | SQLite Session、结构化 Chat Log、FTS5 + BM25、gated retrieval 与 Session 增量 consolidation |
+| Tool Registry | 基础能力完成 | 注册 `get_current_time`、Semantic-only `manage_memory`、只读 `session_search` 与 `session_read` |
+| Session / Memory | 基础闭环完成 | SQLite Session、结构化 Chat Log、消息级 FTS5 + BM25 Session Recall、基于 RetrievalIntent 的 gated retrieval 与 Semantic consolidation |
 | Graph 前端 | 本地闭环完成 | 浏览器读写本地 TypeScript 工作流，消费真实 describe 与 observer 事件，并展示 wave、耗时和结果 |
 | Agent Harness 前端 | 基础闭环完成 | 真实 Agent Loop、动态 SVG、流式 Reply、持久多轮 Session、停止与 60 秒超时 |
 | 完整可视化界面 | 进行中 | 已有 Memory 管理与按 Session / 回合分组的持久 trace 时间线；状态差异和更丰富的工具仍待补充 |
@@ -128,7 +147,7 @@ everything-agent/
 │   │   └── test/      # Harness 与 Runtime 集成行为测试
 │   ├── memory/        # SQLite、FTS5、Session、检索和 consolidation
 │   ├── tracing/       # classic loop 与 memory 的 JSONL 运行记录
-│   ├── tools/         # 本地工具注册表与 manage_memory
+│   ├── tools/         # 本地工具注册表、manage_memory 与 Session Recall
 │   ├── model/         # 模型协议适配与配置接口
 │   └── workflows/     # 可由本地控制台编辑、执行的真实工作流
 │       └── test/      # 工作流行为测试，不参与控制台文件枚举
@@ -136,18 +155,7 @@ everything-agent/
     └── test/          # Web 行为测试
 ```
 
-## 快速开始
-
-环境要求：Node.js 24.12 或更高版本。后端通过 Node.js 原生 TypeScript 类型擦除直接运行 `src/`，前端仍由 Vite 处理。Memory 使用 Node.js 内置 `node:sqlite`，启动时会验证 FTS5 可用性。
-
-```bash
-npm install
-npm run typecheck
-npm test
-npm run example
-```
-
-最小工作流：
+## 最小工作流
 
 ```ts
 import { END, START, Graph, node, runGraph } from "everything-agent";
@@ -238,6 +246,8 @@ npm run build
 ## 当前边界
 
 - 当前 Session 和 Memory 是单用户、本地实现，不包含多租户或云同步。
+- 当前 Session 的全部完整回合进入 Working Memory，并完全排除在 Session Recall 之外。完整模型输入使用可配置字符上限；零运行时依赖和多模型支持使项目无法可靠使用单一 tokenizer，因此 Context Limit 不以 token 为单位。
+- Session Recall 当前只有 FTS5 + BM25 词法召回；Embedding 和多路融合尚未实现。工具结果不参与索引，但恢复命中窗口时会随完整 run 返回。
 - JSONL trace 只覆盖 classic loop 与 memory；Workflow 继续使用实时 observer，不写入该目录。记录按 `.everything/traces/YYYY-MM-DD/<sessionId>.jsonl` 存放，无 Session 的事件写入同日期的 `system.jsonl`，不读取旧版根目录 JSONL。V2 记录为每个事件生成 `eventId` 和 run 内递增的 `sequence`；`model_request` 保存每次调用实际使用的 System Prompt、messages、工具 schema 和生成参数，`model_response` 保存完整标准化响应，工具事件保存结构化参数与结果，内容不做长度截断。常见凭证字段与 Bearer token 仍会在写入前移除。`context_assembled` 只记录上下文的组装数量与记忆来源，模型请求才是 eval 的权威输入快照。
 - `State.snapshot()` 是顶层复制；节点应把收到的状态视为只读对象。
 - 当前没有内置鉴权、密钥管理或个人数据加密能力。

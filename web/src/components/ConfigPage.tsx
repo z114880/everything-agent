@@ -1,9 +1,10 @@
-import { AlertTriangle, FileText, KeyRound, Save, Server, ShieldCheck, Trash2 } from "lucide-react";
+import { AlertTriangle, FileText, KeyRound, RotateCcw, Save, Server, ShieldCheck, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   loadAgent,
   clearAllAgentData,
   saveAgentConfig,
+  resetRuntimeConfig,
   saveSystemPrompt,
   type AgentProvider,
   type AgentSettings,
@@ -14,7 +15,11 @@ export function ConfigPage() {
   const [provider, setProvider] = useState<AgentProvider>("anthropic");
   const [model, setModel] = useState("");
   const [smallModel, setSmallModel] = useState("");
-  const [historyTurns, setHistoryTurns] = useState(10);
+  const [sessionSearchWindow, setSessionSearchWindow] = useState(5);
+  const [sessionScrollStep, setSessionScrollStep] = useState(10);
+  const [sessionRecallMessageLimit, setSessionRecallMessageLimit] = useState(100);
+  const [sessionRecallCharacterLimit, setSessionRecallCharacterLimit] = useState(50_000);
+  const [contextCharacterLimit, setContextCharacterLimit] = useState(200_000);
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [clearApiKey, setClearApiKey] = useState(false);
@@ -35,7 +40,7 @@ export function ConfigPage() {
       setProvider(value.settings.provider);
       setModel(value.settings.model);
       setSmallModel(value.settings.smallModel);
-      setHistoryTurns(value.settings.historyTurns);
+      applyRuntimeSettings(value.settings);
       setBaseUrl(value.settings.baseUrl);
       setSystemPrompt(value.systemPrompt);
     }).catch((error: unknown) => setModelMessage(error instanceof Error ? error.message : String(error)));
@@ -46,7 +51,11 @@ export function ConfigPage() {
     setModelMessage(force ? "正在强制保存…" : "正在保存并按需测试连接…");
     setForceAvailable(false);
     try {
-      const result = await saveAgentConfig({ provider, model, smallModel, historyTurns, baseUrl, apiKey, clearApiKey, force });
+      const result = await saveAgentConfig({
+        provider, model, smallModel, baseUrl, apiKey, clearApiKey, force,
+        sessionSearchWindow, sessionScrollStep, sessionRecallMessageLimit,
+        sessionRecallCharacterLimit, contextCharacterLimit,
+      });
       setSettings(result.settings);
       setModels(result.models);
       setApiKey("");
@@ -58,6 +67,25 @@ export function ConfigPage() {
       setForceAvailable(Boolean(value.canForce));
     } finally {
       setSavingModel(false);
+    }
+  }
+
+  function applyRuntimeSettings(value: AgentSettings) {
+    setSessionSearchWindow(value.sessionSearchWindow);
+    setSessionScrollStep(value.sessionScrollStep);
+    setSessionRecallMessageLimit(value.sessionRecallMessageLimit);
+    setSessionRecallCharacterLimit(value.sessionRecallCharacterLimit);
+    setContextCharacterLimit(value.contextCharacterLimit);
+  }
+
+  async function resetRuntime() {
+    try {
+      const result = await resetRuntimeConfig();
+      setSettings(result.settings);
+      applyRuntimeSettings(result.settings);
+      setModelMessage("运行配置已恢复默认值；模型连接和 EVERYTHING.md 未修改。");
+    } catch (error) {
+      setModelMessage(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -118,9 +146,25 @@ export function ConfigPage() {
               <input value={smallModel} onChange={(event) => setSmallModel(event.target.value)} list="agent-model-list" placeholder="留空时使用主模型" />
               <span className="field-help">用于 retrieval gate 与 consolidation，复用当前 Provider 和密钥。</span>
             </label>
-            <label className="config-field">History Turns
-              <input type="number" min={1} max={50} value={historyTurns} onChange={(event) => setHistoryTurns(Number(event.target.value))} />
-              <span className="field-help">每次发送当前 Session 最近 1–50 个完整回合，默认 10。</span>
+            <label className="config-field">Session Search Window
+              <input type="number" min={settings?.limits.sessionSearchWindow?.min ?? 1} max={settings?.limits.sessionSearchWindow?.max ?? 20} value={sessionSearchWindow} onChange={(event) => setSessionSearchWindow(Number(event.target.value))} />
+              <span className="field-help">命中点初始单侧窗口，默认 5。</span>
+            </label>
+            <label className="config-field">Session Scroll Step
+              <input type="number" min={settings?.limits.sessionScrollStep?.min ?? 1} max={settings?.limits.sessionScrollStep?.max ?? 50} value={sessionScrollStep} onChange={(event) => setSessionScrollStep(Number(event.target.value))} />
+              <span className="field-help">每次完整扩窗的单侧增量，默认 10。</span>
+            </label>
+            <label className="config-field">Session Recall Message Limit
+              <input type="number" min={settings?.limits.sessionRecallMessageLimit?.min ?? 1} max={settings?.limits.sessionRecallMessageLimit?.max ?? 200} value={sessionRecallMessageLimit} onChange={(event) => setSessionRecallMessageLimit(Number(event.target.value))} />
+              <span className="field-help">单次 Session Recall 最多返回条目数，默认 100。</span>
+            </label>
+            <label className="config-field">Session Recall Character Limit
+              <input type="number" min={settings?.limits.sessionRecallCharacterLimit?.min ?? 1000} max={settings?.limits.sessionRecallCharacterLimit?.max ?? 100000} value={sessionRecallCharacterLimit} onChange={(event) => setSessionRecallCharacterLimit(Number(event.target.value))} />
+              <span className="field-help">单次 Session Recall 最多返回字符数，默认 50,000。</span>
+            </label>
+            <label className="config-field">Context Limit（字符）
+              <input type="number" min={settings?.limits.contextCharacterLimit?.min ?? 10000} max={settings?.limits.contextCharacterLimit?.max ?? 1000000} value={contextCharacterLimit} onChange={(event) => setContextCharacterLimit(Number(event.target.value))} />
+              <span className="field-help">限制每次模型请求的完整输入。项目保持零运行时依赖且支持不同模型，无法可靠复用某一家模型的 tokenizer，因此不使用 token 作为限制单位。</span>
             </label>
             {provider === "openai-compatible" && (
               <label className="config-field">Base URL
@@ -136,6 +180,7 @@ export function ConfigPage() {
             )}
             <div className="config-actions">
               <button className="primary-action" onClick={() => void saveModel(false)} disabled={savingModel || !model.trim()}><Save size={14} /> 保存模型配置</button>
+              <button className="ghost-action" onClick={() => void resetRuntime()}><RotateCcw size={14} /> 恢复运行默认值</button>
               {forceAvailable && <button className="danger-ghost" onClick={() => void saveModel(true)} disabled={savingModel}>仍然保存</button>}
               <span>{modelMessage}</span>
             </div>
@@ -157,7 +202,7 @@ export function ConfigPage() {
         <section className="panel config-card config-danger-card">
           <div className="panel-header"><span><AlertTriangle size={15} /> 数据清理</span><span className="status-pill">不可撤销</span></div>
           <div className="config-card-body config-danger-body">
-            <div><strong>清除全部本地数据</strong><p>删除数据库、Session、Chat Log、Semantic / Episodic Memory 和全部运行记录，仅保留 <code>.everything/EVERYTHING.md</code>。</p></div>
+            <div><strong>清除全部本地数据</strong><p>删除数据库、Session、Chat Log、Semantic Memory、Session Recall 索引和全部运行记录，仅保留 <code>.everything/EVERYTHING.md</code>。</p></div>
             <div className="config-danger-actions"><button className="danger-ghost" disabled={clearingData} onClick={() => void clearAllData()}><Trash2 size={14} /> {clearingData ? "正在清理…" : "一键清理"}</button>{clearMessage && <span>{clearMessage}</span>}</div>
           </div>
         </section>

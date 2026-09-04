@@ -150,10 +150,10 @@ async function validateJsonl(path: string): Promise<void> {
 function traceEventFields(type: string, event: Record<string, unknown>): Record<string, unknown> {
   const payloadFields: Record<string, string[]> = {
     run_started: ["userInput", "provider", "model", "settings", "runtime"],
-    context_assembled: ["messageCount", "historyTurnLimit", "historyMessageCount", "hasSystemPrompt", "semanticMemoryIds", "episodicMemoryIds"],
+    context_assembled: ["messageCount", "historyMessageCount", "hasSystemPrompt", "semanticMemoryIds", "sessionRecallSessionIds", "sessionRecallRanges", "sessionRecallEntryCount", "sessionRecallCharacterCount", "sessionRecallTruncated"],
     gate_start: [],
-    gate_end: ["decision", "reason", "fallback", "errorType"],
-    retrieval: ["query", "semantic", "episodic"],
+    gate_end: ["intent", "semantic", "sessionRecallMode", "reason", "fallback", "errorType"],
+    retrieval: ["semantic", "sessionRecall"],
     model_request: ["provider", "model", "request"],
     model_response: ["provider", "model", "response", "stopReason", "usage", "ms"],
     model_failed: ["provider", "model", "errorType", "errorMessage", "ms"],
@@ -164,7 +164,7 @@ function traceEventFields(type: string, event: Record<string, unknown>): Record<
     run_completed: ["reply", "iterations", "stopReason", "toolCallCount", "ms"],
     run_failed: ["errorType", "errorMessage", "iterations", "ms"],
     consolidation_start: ["trigger", "throughMessageId"],
-    consolidation_end: ["throughMessageId", "factsCreated", "factsUpdated", "factsSkipped", "episodeChanged"],
+    consolidation_end: ["throughMessageId", "factsCreated", "factsUpdated", "factsSkipped"],
     consolidation_error: ["throughMessageId", "errorType"],
     user_feedback: ["rating", "correction"],
     eval_judgment: ["evaluator", "evaluatorVersion", "scores", "reason"],

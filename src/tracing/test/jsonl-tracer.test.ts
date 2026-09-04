@@ -126,16 +126,15 @@ describe("JSONL 运行记录", () => {
     const tracer = new JsonlTracer(home, { now: () => new Date("2026-09-03T08:09:10Z") });
     await tracer.record("retrieval", {
       sessionId: "s1",
-      query: "Bearer abc.def token-12345678",
-      semantic: [{ id: 1, score: -1 }],
-      episodic: [],
+      semantic: { query: "Bearer abc.def token-12345678", hits: [{ id: 1, bm25: -1 }] },
+      sessionRecall: { mode: "none", sessions: [] },
       rawPrompt: "不能出现",
     });
     await tracer.flush();
     const [record] = await readTraceRecords(home, 0);
 
     expect(record?.runId).toEqual(expect.any(String));
-    expect(record?.payload?.query).toContain("凭证已移除");
+    expect(JSON.stringify(record?.payload?.semantic)).toContain("凭证已移除");
     expect(JSON.stringify(record)).not.toContain("不能出现");
   });
 

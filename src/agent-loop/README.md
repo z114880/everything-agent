@@ -63,6 +63,8 @@ console.log(result.reply);
 
 传入的 `messages` 会原地追加模型响应和工具结果，使下一次推理可以观察本轮已执行的动作。
 
+可选的 `contextCharacterLimit` 会在每次模型调用前统计 System Prompt、messages 与工具 schema 的完整 JSON 字符数。超过限制时 Loop 明确失败，不会静默裁剪历史或工具结果。该限制使用字符而不是 token，因为核心 Loop 保持 Provider 与 tokenizer 无关。
+
 ## 结束条件与事件
 
 - 模型不再请求工具时，`stopReason` 为 `completed`。

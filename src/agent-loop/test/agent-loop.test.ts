@@ -207,6 +207,19 @@ describe("runAgentLoop", () => {
     });
   });
 
+  it("每次模型调用前拒绝超过字符 Context Limit 的完整输入", async () => {
+    const client = scriptedClient([textResponse("不应调用")]);
+    await expect(runAgentLoop({
+      client,
+      model: "test-model",
+      system: "系统规则",
+      messages: [{ role: "user", content: "x".repeat(100) }],
+      tools: fakeTools(),
+      contextCharacterLimit: 20,
+    })).rejects.toThrow("超过配置上限");
+    expect(client.messages.create).not.toHaveBeenCalled();
+  });
+
   it("把工具异常作为可观察结果交回模型，而不是中断整个循环", async () => {
     const client = scriptedClient([
       toolResponse("lookup", {}),
@@ -370,6 +383,7 @@ describe("runAgentLoop", () => {
     [{ client: scriptedClient([]), model: "x", messages: [], tools: {} }, "tools"],
     [{ client: scriptedClient([]), model: "x", messages: [], tools: fakeTools(), maxIterations: 0 }, "maxIterations"],
     [{ client: scriptedClient([]), model: "x", messages: [], tools: fakeTools(), maxTokens: 0 }, "maxTokens"],
+    [{ client: scriptedClient([]), model: "x", messages: [], tools: fakeTools(), contextCharacterLimit: 0 }, "contextCharacterLimit"],
     [{ client: scriptedClient([]), model: "x", messages: [], tools: fakeTools(), timeoutMs: 0 }, "timeoutMs"],
     [{ client: scriptedClient([]), model: "x", messages: [], tools: fakeTools(), observer: null }, "observer"],
     [{ client: scriptedClient([]), model: "x", messages: [], tools: fakeTools(), serializeToolEvent: null }, "serializeToolEvent"],

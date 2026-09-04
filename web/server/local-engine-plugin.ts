@@ -12,6 +12,7 @@ import {
   loadTraceDashboard,
   runLocalAgent,
   saveAgentSettings,
+  resetRuntimeSettings,
   saveSystemPrompt,
 } from "./agent-service.ts";
 
@@ -149,6 +150,11 @@ async function handleAgentRequest(
   if (request.method === "PUT" && pathname === `${agentApiPrefix}/config`) {
     const body = await readJsonBody(request);
     sendJson(response, 200, { ok: true, ...await saveAgentSettings(body) });
+    return;
+  }
+
+  if (request.method === "POST" && pathname === `${agentApiPrefix}/config/reset-runtime`) {
+    sendJson(response, 200, { ok: true, ...await resetRuntimeSettings() });
     return;
   }
 

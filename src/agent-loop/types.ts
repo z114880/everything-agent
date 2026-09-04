@@ -101,6 +101,8 @@ export interface AgentLoopOptions {
   tools: ToolRegistry;
   maxIterations?: number;
   maxTokens?: number;
+  /** 每次模型请求的完整输入字符硬预算；超过时明确失败，不裁剪。 */
+  contextCharacterLimit?: number;
   observer?: AgentObserver;
   stream?: boolean;
   signal?: AbortSignal;

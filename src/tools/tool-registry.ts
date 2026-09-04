@@ -5,15 +5,28 @@ import type {
 } from "../agent-loop/agent-loop.ts";
 import type { MemoryRuntime } from "../memory/index.ts";
 import { MANAGE_MEMORY_TOOL, ManageMemoryTool, manageMemorySchema } from "./manage-memory.ts";
+import {
+  SESSION_READ_TOOL,
+  SESSION_SEARCH_TOOL,
+  SessionRecallTools,
+  sessionReadSchema,
+  sessionSearchSchema,
+} from "./session-recall.ts";
 
 const TIME_TOOL = "get_current_time";
 
 /** 注册本地受控工具，并在执行前统一检查取消信号和参数。 */
 export class LocalToolRegistry implements ToolRegistry {
   private readonly manageMemory: ManageMemoryTool | null;
+  private readonly sessionRecall: SessionRecallTools | null;
 
-  constructor(memory?: MemoryRuntime, manageMemory?: ManageMemoryTool) {
+  constructor(
+    memory?: MemoryRuntime,
+    manageMemory?: ManageMemoryTool,
+    recall?: { currentSessionId: string; settings: import("../memory/index.ts").SessionRecallSettings },
+  ) {
     this.manageMemory = manageMemory ?? (memory ? new ManageMemoryTool(memory) : null);
+    this.sessionRecall = memory && recall ? new SessionRecallTools(memory, recall.currentSessionId, recall.settings) : null;
   }
 
   schemas(): unknown {
@@ -27,6 +40,7 @@ export class LocalToolRegistry implements ToolRegistry {
       },
     }];
     if (this.manageMemory) schemas.push(manageMemorySchema);
+    if (this.sessionRecall) schemas.push(sessionSearchSchema, sessionReadSchema);
     return schemas;
   }
 
@@ -38,6 +52,9 @@ export class LocalToolRegistry implements ToolRegistry {
   ): unknown {
     if (context.signal?.aborted) throw context.signal.reason;
     if (name === MANAGE_MEMORY_TOOL && this.manageMemory) return this.manageMemory.execute(args);
+    if ((name === SESSION_SEARCH_TOOL || name === SESSION_READ_TOOL) && this.sessionRecall) {
+      return this.sessionRecall.execute(name, args);
+    }
     if (name !== TIME_TOOL) throw new Error(`工具未注册：${name}`);
     if (!isEmptyObject(args)) throw new TypeError(`${TIME_TOOL} 不接受参数`);
 

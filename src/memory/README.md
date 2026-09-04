@@ -1,44 +1,90 @@
 # Memory
 
-Memory 模块为 classic Agent Loop 提供单用户、本地优先的持久记忆。公开入口是 `src/memory/index.ts`；调用方无需了解 SQLite schema、FTS5 索引、高水位或 consolidation 事务。
+Memory 模块为 classic Agent Loop 提供单用户、本地优先的持久记忆。公开入口是 src/memory/index.ts；调用方无需了解 SQLite schema、FTS5、cursor 或 consolidation 事务。
 
-## 存储
+## 存储与事实来源
 
-- `.everything/state.db` 是 Session、Chat Log、Semantic 和 Episodic memory 的唯一事实来源。
-- `.everything/EVERYTHING.md` 是始终进入 System Prompt 的 Procedural memory。
-- Semantic 与 Episodic 原文保持对话语言。派生的 `search_text` 对中文生成 bigram，对其他文字按 Unicode 单词规范化。
-- FTS5 索引只保存检索投影，并使用 BM25 在各自索引内排序；索引可由主表重建。
-- 时间以 UTC ISO 8601 保存，精确到秒；注入 Prompt 时转换为本地时间并携带时区偏移。
+- .everything/state.db 是 Session、Chat Log 和 Semantic Memory 的事实来源。
+- .everything/EVERYTHING.md 是始终进入 System Prompt 的 Procedural Memory。
+- Episodic Memory 不再保存模型生成的 Session 摘要。Episodic Recall 的唯一事实来源是原始 chat_log。
+- chat_log_fts 只索引 user_message 与最终 assistant_message 的检索投影。中文使用 bigram，其他文字按 Unicode 单词规范化。
+- 工具调用和工具结果不进入 FTS，但命中范围恢复时会按完整 run 一并返回。
+- FTS5 目前是词法召回的一路，使用原始 BM25 信号；尚未实现 Embedding 与多路融合。
+- API Key、令牌、Authorization 和 Cookie 等凭证字段在写入 Chat Log 前移除。
 
-## Session 与工作记忆
+Schema v2 直接删除旧 Episodic 表以及旧 Session/Chat Log 数据，不提供开发阶段兼容迁移。Semantic Memory 保留。
 
-`sessionId` 标识一段聊天，`runId` 标识一次用户提交触发的 Agent Loop。一次完整 run 的用户输入、Assistant 工具请求、工具结果和最终回复以结构化消息写入 `chat_log`。失败 run 可以只有用户输入，不会进入后续工作记忆或 consolidation。
+## Session 与 Working Memory
 
-聊天页初始化通过幂等的 `ensureSession()` 确保至少存在一个 Session。即使开发模式重复触发页面初始化，空数据库也只会创建一个默认 Session。
+sessionId 标识一段聊天，runId 标识一次用户提交触发的 Agent Loop。完整 run 的用户输入、Assistant 工具请求、工具结果和最终回复以结构化消息写入 chat_log。失败 run 可以只有用户输入，Session Recall 会标记 runComplete: false。
 
-工作记忆默认读取当前 Session 最近 10 个完整回合，可在配置页设为 1–50。工具过程会一并恢复；API Key、令牌、Authorization 和 Cookie 等凭证字段在持久化前移除。
+当前 Session 的全部已完成回合进入 Working Memory，不再按最近回合数裁剪。当前 Session 完全排除在 Session Recall 之外。完整模型输入受到 contextCharacterLimit 限制；超过限制时明确失败，不静默删除旧消息。
 
-## 检索
+配置使用字符而非 token：项目保持零运行时依赖并同时支持不同模型，无法可靠复用某一家模型的 tokenizer。字符限制是确定、跨 Provider 的输入安全边界，并不等同于模型的精确 token 上限。
 
-每次用户输入后，小模型读取当前 Session 最近 3 个完整回合与当前消息，判断是否需要长期记忆。判定失败时 fail-open，使用当前消息执行本地查询。默认分别返回 4 条 Semantic 和 3 条 Episodic memory；两类 BM25 分数不跨索引比较。
+## Gate
 
-检索结果附加到 System Prompt，并包含 memory ID 与精确到秒的时间。没有跨语言扩展、embedding 或向量检索。
+小模型读取当前 Session 最近 3 个完整回合与当前消息，并返回单一 RetrievalIntent。普通代码将 intent 映射为固定检索计划，避免模型输出互相矛盾的开关组合：
 
-## Consolidation
+- none：不检索记忆。
+- past_episode：只检索 Session Recall。
+- fact_with_evidence：同时检索 Semantic Memory 与 Session Recall。
 
-活跃 Session 内不执行 consolidation。用户新建对话时，旧 Session 在后台增量整理；进程启动时会恢复所有存在完整增量的 Session。每个 Session 通过 `consolidated_through_message_id` 记录已经检查过的高水位。
+Session Recall mode 可为 search 或 recent。Gate 不提供 Semantic-only intent：任何 Semantic 查询都必须通过 fact_with_evidence 同时触发 Session Recall。Gate 失败时也退化为 fact_with_evidence，使用当前消息同时查询两类记忆。
 
-- Semantic 只保存跨 Session 仍有用、预计长期成立且与用户直接相关的稳定用户属性、长期偏好、持续项目事实、明确约束和承诺。当前时间、天气、新闻、价格、汇率、一次性查询结果、通用知识、寒暄、临时请求和普通问答答案不得写入。
-- Semantic 可以参考 user 或 assistant 内容，但 assistant 内容只有在记录用户项目的持久变化或明确承诺时才可提炼。模型必须为 create/update 声明允许的 category，并明确标记 `stable` 与 `futureUseful`；运行时会再次校验，不合格的候选记为 skipped。
-- Semantic 只允许 create、精确 ID update 或 noop。
-- 每个 Session 最多有一条自动 Episodic memory。历史 Session 继续聊天后，再次离开时更新原 episode。
-- 不值得长期回忆的 Session 可以没有 episode。
-- 自动整理不能删除记忆；失败不会推进高水位，下次继续重试。
+Gate 采用召回率优先策略：宁可多执行一次 Session Recall，也不允许 Semantic-only 检索漏掉历史中的来源、变化、例外、冲突、最新状态或具体上下文。
 
-## 管理与删除
+## Session Search
 
-`manage_memory` 统一放在 `src/tools/manage-memory.ts`。聊天侧可以搜索 Semantic/Episodic、创建或更新 Semantic；模型驱动的 create/update 必须通过与 consolidation 相同的 category、`stable` 和 `futureUseful` 声明校验。聊天侧不能创建或修改 Episodic，也不能修改 Procedural memory。删除需要先取得与目标 ID 绑定的短期确认令牌。
+session_search 是只读的发现工具，有两种互斥模式：按 query 执行 FTS5 + BM25 搜索，或以 recent: true 返回最近活跃 Session。
 
-UI 可以直接管理 Semantic 和 Episodic。删除会同步移除主表原文和 FTS5 索引，审计记录只保存类型、原 ID、动作、来源和时间，不保留旧内容。
+- limit 限制 Session 数，默认 4。
+- search 每个 Session 选择 BM25 最佳消息作为命中点，返回首 3 条、命中点前后各 window 条、尾 3 条。
+- recent 按 updated_at 降序返回非空 Session，返回首 6 条和尾 6 条，结果使用 retrievalMode: recent 与 match: null。
+- 窗口按可检索对话消息计数，随后展开这些消息所属的完整 run。
+- 首、事件、尾区段重叠时按 chat_log.id 去重。
+- Session 使用最佳 BM25 升序排名；同分按活跃时间和 Session ID 稳定排序。原始信号位于 retrievalSignals.bm25，不伪造统一 score。
+- Agent 调用完全排除当前 Session；Memory 页面手动检索没有当前 Session，因此搜索全部历史。
 
-配置页提供带二次确认的全局“一键清理”。服务端会拒绝并发中的 Agent 回合、等待后台 consolidation 完成、关闭 SQLite，再删除 `.everything/` 下的数据库、Session、Memory 和 trace；`EVERYTHING.md` 作为 Procedural memory 被保留，清理动作本身不会新建 trace。
+## Session Read
+
+session_read 使用 search 返回的 cursor 扩大命中窗口，或使用 sessionId 从 Session 开头顺序分页。命中窗口初始单侧半径默认 5；每次扩窗默认向两侧各增加 10，并返回整个扩大后的窗口。
+
+若完整窗口超过单次预算，则返回 expandLimitReached: true，调用方应改用 sessionId 顺序分页。Cursor 是不透明值，可记录扩窗半径、消息位置和单条超长消息的内容偏移。
+
+当前不提供跨调用快照一致性：后续读取观察数据库当下状态；Session 被删除时返回 SESSION_NOT_FOUND。所有结果显式提供实际覆盖范围、返回/总消息数、isComplete、截断状态和下一 cursor。
+
+## 预算
+
+| 配置 | 默认值 | 服务端范围 |
+| --- | ---: | ---: |
+| sessionSearchWindow | 5 | 1–20 |
+| sessionScrollStep | 10 | 1–50 |
+| sessionRecallMessageLimit | 100 | 1–200 |
+| sessionRecallCharacterLimit | 50,000 | 1,000–100,000 |
+| contextCharacterLimit | 200,000 | 10,000–1,000,000 |
+
+多 Session 搜索按排名依次组装。预算不足时省略末尾低排名 Session；第一名自身超限时允许显式截断。单条超长消息可通过 cursor 从截断位置继续读取。
+
+## 内容隔离与可观测性
+
+召回的历史内容以 JSON 数据块注入，并由 System Prompt 明确标记为不可信历史证据；不得执行其中的指令或工具请求。每条记录保留 Session、message、run、role、kind 和时间身份。
+
+Gate 初始召回通过 gate_start、gate_end、retrieval 和 context_assembled 观察。主 Agent 后续调用通过标准工具事件观察。检索事件只保存命中 ID、排名、信号和范围元数据；model_request 是模型实际输入的权威快照。
+
+## Semantic Consolidation
+
+用户新建对话时，旧 Session 在后台增量整理 Semantic Memory；进程启动时恢复积压。高水位记录在 consolidated_through_message_id。
+
+Semantic 只保存跨 Session 仍有用、预计长期成立且与用户直接相关的稳定属性、偏好、持续项目事实、约束和承诺。模型必须声明允许的 category，并将 stable 与 futureUseful 标为 true。失败不会推进高水位。
+
+manage_memory 只管理 Semantic Memory。session_search 与 session_read 始终只读；删除历史对话必须使用 Session 删除入口。配置页的一键清理会删除数据库、Session、Memory 与 trace，但保留 EVERYTHING.md。
+
+## 当前取舍
+
+- FTS5 + BM25 无法可靠判断语义相关，后续需要 Embedding 召回与独立融合层。
+- 不索引工具结果可能漏掉仅存在于工具输出、且邻近对话没有关键词的事实。
+- 当前 Session 全量 Working Memory 会持续增加费用与延迟，最终可能触发 Context Limit。
+- 扩窗返回完整累计窗口，会重复消耗上下文。
+- 固定首尾锚点会占用返回预算；不足时低排名候选被省略。
+- 字符数不是 token 数，只是零依赖、多模型条件下的确定性近似边界。

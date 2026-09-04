@@ -54,6 +54,7 @@ function validateOptions(options: AgentLoopOptions): void {
     tools,
     maxIterations = DEFAULT_MAX_ITERATIONS,
     maxTokens = DEFAULT_MAX_TOKENS,
+    contextCharacterLimit,
     observer = () => {},
     timeoutMs,
     serializeToolEvent = defaultToolEvent,
@@ -61,6 +62,7 @@ function validateOptions(options: AgentLoopOptions): void {
 
   assertPositiveInteger(maxIterations, "maxIterations");
   assertPositiveInteger(maxTokens, "maxTokens");
+  if (contextCharacterLimit !== undefined) assertPositiveInteger(contextCharacterLimit, "contextCharacterLimit");
   if (timeoutMs !== undefined) assertPositiveInteger(timeoutMs, "timeoutMs");
   if (!client?.messages || typeof client.messages.create !== "function") {
     throw new TypeError("client.messages.create 必须是函数");
@@ -102,6 +104,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
     tools,
     maxIterations = DEFAULT_MAX_ITERATIONS,
     maxTokens = DEFAULT_MAX_TOKENS,
+    contextCharacterLimit,
     observer = () => {},
     stream = false,
     signal,
@@ -135,6 +138,14 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
         max_tokens: maxTokens,
         signal,
       };
+      const contextCharacters = JSON.stringify({
+        system: request.system,
+        messages: request.messages,
+        tools: request.tools,
+      }).length;
+      if (contextCharacterLimit !== undefined && contextCharacters > contextCharacterLimit) {
+        throw new Error(`模型输入上下文为 ${contextCharacters} 字符，超过配置上限 ${contextCharacterLimit}；请新建 Session 或调高 Context Limit`);
+      }
 
       const modelCallId = crypto.randomUUID();
       await notify("model_request", {
