@@ -22,7 +22,7 @@ describe("本地记忆工具", () => {
       client: { messages: { create: () => ({ content: [{ type: "text", text: JSON.stringify({ action: "create", reason: "新偏好", evidenceMessageIds: [evidence.id], subject: "饮品偏好", content: "喜欢红茶", category: "preference", stable: true, futureUseful: true }) }], stop_reason: "end_turn" }) } },
     });
     const registry = new LocalToolRegistry(runtime, tool);
-    await expect(registry.execute("manage_memory", { action: "submit", intent: "remember", subject: "用户", attribute: "饮品偏好", content: "喜欢红茶" }, () => {}, { signal: new AbortController().signal, deadline: null, iteration: 1, toolUseId: "t1" })).resolves.toMatchObject({ status: "queued" });
+    await expect(registry.execute("manage_memory", { action: "submit", intent: "remember", subject: "用户", attribute: "饮品偏好", content: "喜欢红茶" }, () => {}, { signal: new AbortController().signal, deadline: null, iteration: 1, toolUseId: "t1" })).toMatchObject({ status: "queued" });
     await runtime.waitForBackgroundTasks();
     await expect(tool.execute({ action: "search", query: "红茶" })).resolves.toHaveLength(1);
     expect(runtime.listSemantic()[0]?.sources).toEqual([{ sessionId: session.id, messageId: evidence.id, createdAt: evidence.createdAt }]);
