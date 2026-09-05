@@ -21,6 +21,10 @@ Session Recall 的 `recent` 模式只按时间读取；`session_read` 只按 Ses
 src/memory/retrieve/
 ├── index.ts
 ├── types.ts
+├── embedding-index.ts
+├── memory-search.ts
+├── session-recall.ts
+├── retrieval-gate.ts
 ├── lexical/
 │   ├── search-text.ts
 │   ├── semantic-search.ts
@@ -36,8 +40,11 @@ src/memory/retrieve/
 │   └── mmr.ts
 └── test/
     ├── retrieval-algorithms.test.ts
-    └── memory-retrieval-integration.test.ts
+    ├── memory-retrieval-integration.test.ts
+    └── vector-store.test.ts
 ```
+
+本目录根层负责索引生命周期、候选检索编排、Session 召回分页与 Gate 意图判断；底层算法分别位于 `lexical/`、`dense/` 和 `fusion/`。这些编排服务保持内部使用，不从 `retrieve/index.ts` 导出。
 
 `MemoryRuntime` 保持主要公开门面。调用方不需要了解远程 Embedding 协议、token 估算、向量存储、候选聚合、RRF 或 MMR。
 

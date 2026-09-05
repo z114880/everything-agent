@@ -82,3 +82,7 @@ observer 会收到 `context_assembled`、`loop_start`、`model_request`、`model
 - Agent 回合同时受到迭代上限、整轮超时和客户端取消信号约束。
 - Loop 不记录模型密钥。工具参数和输出会进入 observer；持久化或向外发送前由调用方移除凭证字段。
 - 外部写操作的确认和审计策略由注入的工具注册表执行。
+
+## 与 Agent Runtime 的关系
+
+`src/agent-runtime/` 组合真实模型、Memory、工具和 Tracer，并管理回合前后的检索、持久化与会话锁。本模块保持模型与工具无关，不读取本地配置文件，也不承担 Web 请求或资源初始化。集成入口见 [Agent Runtime](../agent-runtime/README.md)。

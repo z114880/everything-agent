@@ -9,6 +9,7 @@ export default defineConfig({
       include: [
         "src/engine/src/**/*.ts",
         "src/agent-loop/agent-loop.ts",
+        "src/agent-runtime/**/*.ts",
         "src/memory/**/*.ts",
         "src/tools/manage-memory.ts",
         "src/tools/tool-registry.ts",

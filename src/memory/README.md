@@ -2,6 +2,27 @@
 
 Memory 模块为 classic Agent Loop 提供单用户、本地优先的持久记忆。公开入口是 src/memory/index.ts；调用方无需了解 SQLite schema、FTS5、cursor 或 consolidation 事务。
 
+## 内部模块划分
+
+`MemoryRuntime` 保持既有公开接口，负责依赖组装、Gate 检索计划、历史上下文隔离与概览。内部服务不从 `index.ts` 导出，测试继续通过公开入口验证行为。
+
+| 模块 | 职责 |
+| --- | --- |
+| `storage/schema.ts` | SQLite 表、索引与 Schema 版本声明 |
+| `storage/database.ts` | SQLite 连接、Schema 初始化、FTS5 检查与同步事务 |
+| `storage/session-store.ts` | Session、Chat Log、完整回合读取及检索投影写入 |
+| `storage/semantic-store.ts` | 语义事实增删改查与事务内审计 |
+| `retrieve/embedding-index.ts` | Embedding 配置、文档/查询向量、重建生命周期及写入保护 |
+| `retrieve/memory-search.ts` | Lexical/Dense 候选检索、RRF/MMR 排序与 Session 去重 |
+| `retrieve/retrieval-gate.ts` | 小模型检索意图判断及失败回退 |
+| `retrieve/session-recall.ts` | 召回窗口、预算截断与游标分页 |
+| `consolidation.ts` | 后台串行队列、模型事实筛选、整理记录与高水位推进 |
+| `storage/records.ts` | 数据库记录转换、消息分类与凭证字段移除 |
+
+根目录保留公开入口 `index.ts`、公共类型 `types.ts`、运行时编排 `memory-runtime.ts` 和后台整理 `consolidation.ts`。`storage/` 集中管理持久化与记录转换；`retrieve/` 集中管理检索策略、索引和召回，并按 `lexical/`、`dense/`、`fusion/` 划分底层算法。测试保留在 `test/` 和 `retrieve/test/`，通过公开入口验证行为。
+
+各服务共享同一个数据库连接和向量索引实例。存储服务先完成远程嵌入，再在同一事务内提交原文、FTS 投影、向量与审计；索引服务集中维护重建状态和语料变更版本，防止并发写入后激活过期索引。检索排序与召回分页分别维护候选相关性和内容预算，后台整理复用现有检索与事实写入服务。
+
 ## 存储与事实来源
 
 - .everything/database/state.db 是 Session、Chat Log 和 Semantic Memory 的事实来源；SQLite 生成的 WAL 和 SHM 文件也位于该目录。

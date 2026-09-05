@@ -85,7 +85,7 @@ flowchart LR
     U[用户] --> C[会话入口]
     C --> R[Agent Runtime]
     R --> L[Agent Loop]
-    R --> G[Graph Engine]
+    C --> G[Graph Engine]
     L --> M[模型客户端]
     L --> T[工具注册表]
     R --> ME[SQLite Memory]
@@ -96,6 +96,8 @@ flowchart LR
     D --> V
     V --> U
 ```
+
+当前 `src/agent-runtime/` 已承担个人助理回合编排、配置持久化和本地资源生命周期；Web 层负责请求校验与页面数据组装。Agent Runtime 调用 Agent Loop，Graph 工作流仍由独立入口运行。
 
 其中：
 
@@ -142,6 +144,7 @@ everything-agent/
 │   │   ├── src/       # State、Node、Graph、Describe、runGraph
 │   │   ├── test/      # Vitest 行为测试
 │   │   └── examples/  # 命令行使用示例
+│   ├── agent-runtime/ # 个人助理集成、配置、资源生命周期及测试
 │   ├── agent-loop/    # 模型与工具无关的 Agent 回合循环及文档
 │   ├── agent-graph/    # Agent Harness 静态拓扑及文档
 │   │   └── test/      # Harness 与 Runtime 集成行为测试
@@ -183,7 +186,7 @@ console.log(events);
 console.log(result.state.reply);
 ```
 
-完整的引擎接口和执行语义请查看 [Engine 文档](./src/engine/README.md)，Agent 回合接口请查看 [Agent Loop 文档](./src/agent-loop/README.md)，静态 Harness 拓扑请查看 [Agent Graph 文档](./src/agent-graph/README.md)，持久记忆语义请查看 [Memory 文档](./src/memory/README.md)。
+完整的引擎接口和执行语义请查看 [Engine 文档](./src/engine/README.md)，本地集成接口请查看 [Agent Runtime 文档](./src/agent-runtime/README.md)，Agent 回合接口请查看 [Agent Loop 文档](./src/agent-loop/README.md)，静态 Harness 拓扑请查看 [Agent Graph 文档](./src/agent-graph/README.md)，持久记忆语义请查看 [Memory 文档](./src/memory/README.md)。
 
 ## 设计原则
 
@@ -240,7 +243,7 @@ npm run typecheck
 npm run build
 ```
 
-当前测试通过公开接口验证行为，不依赖私有实现。覆盖率门槛为：行、函数和语句 90%，分支 85%。
+当前测试通过公开接口验证行为，不依赖私有实现。覆盖率门槛为：行、函数和语句 85%，分支 80%。
 `npm run build` 会先严格检查后端 TypeScript，再由 Vite 检查并构建前端到 `dist-web/`。后端不生成 `dist/`；Node.js 直接加载 `.ts` 源码。`tsconfig.json` 只服务于静态类型检查，Node.js 运行时不会读取它。
 
 ## 当前边界

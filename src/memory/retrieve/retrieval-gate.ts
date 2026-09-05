@@ -1,5 +1,5 @@
-import type { AgentMessage, AgentModelClient, AgentObserver } from "../agent-loop/agent-loop.ts";
-import type { RetrievalIntent } from "./types.ts";
+import type { AgentMessage, AgentModelClient, AgentObserver } from "../../agent-loop/agent-loop.ts";
+import type { RetrievalIntent } from "../types.ts";
 
 const GATE_SYSTEM = `你是个人助理记忆检索判定器。Semantic Memory 保存稳定、跨会话有用的用户事实；Session Recall 用于寻找过去对话中的具体事件和过程。
 只输出 JSON：{"intent":"none|past_episode|fact_with_evidence","semanticQuery":"Semantic 检索词","sessionRecall":{"mode":"search|recent","query":"search 时的检索词"},"reason":"简短原因"}。

@@ -76,4 +76,4 @@ npm run example
 
 测试通过包的公开导出验证行为，分别覆盖 `State`、`Node`、`Graph/describe`
 和 `runGraph`。覆盖率报告生成在 `coverage/index.html`，配置的最低门槛为：行、
-函数和语句 90%，分支 85%。
+函数和语句 85%，分支 80%。

@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { clearEverythingData } from "../server/local-data.ts";
+import { clearEverythingData } from "../index.ts";
 
 describe("本地 Agent 数据清理", () => {
   it("删除数据库、会话附件和全部 trace，仅保留 EVERYTHING.md", async () => {

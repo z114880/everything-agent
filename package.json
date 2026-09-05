@@ -34,6 +34,10 @@
     "./model": {
       "types": "./src/model/model-client.ts",
       "default": "./src/model/model-client.ts"
+    },
+    "./agent-runtime": {
+      "types": "./src/agent-runtime/index.ts",
+      "default": "./src/agent-runtime/index.ts"
     }
   },
   "scripts": {
