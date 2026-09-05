@@ -172,10 +172,12 @@ describe("Memory Runtime", () => {
   it("consolidation 只整理 Semantic Memory，并在失败时保留高水位", async () => {
     const memory = await createMemory(); const session = memory.createSession();
     await addCompletedRun(memory, session.id, "r1", "我喜欢红茶", "收到");
-    memory.scheduleConsolidation(session.id, "new_session", options(memory, scriptedClient([
-      response('{"facts":[{"action":"create","category":"preference","stable":true,"futureUseful":true,"subject":"用户","content":"用户喜欢红茶"}]}'),
+    memory.startBackgroundTasks(async () => options(memory, scriptedClient([
+      response('{"candidates":[{"intent":"remember","subject":"用户","attribute":"饮品偏好","content":"用户喜欢红茶","evidenceMessageIds":[1]}]}'),
+      response('{"action":"create","reason":"新的偏好","evidenceMessageIds":[1],"category":"preference","stable":true,"futureUseful":true,"subject":"用户","content":"用户喜欢红茶"}'),
     ]), session.id));
-    await memory.waitForConsolidation();
+    memory.createConversation(session.id, 1);
+    await memory.waitForBackgroundTasks();
     expect(memory.listSemantic()[0]).toMatchObject({ content: "用户喜欢红茶" });
     expect(memory.listConsolidations()[0]).not.toHaveProperty("episodeChanged");
     expect(memory.overview().pendingSessionCount).toBe(0);

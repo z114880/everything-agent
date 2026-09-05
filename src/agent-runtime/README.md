@@ -41,6 +41,8 @@ try {
 
 ## 执行与可观察性
 
+`manage_memory submit` 每回合绑定当前用户消息证据，使用 `smallModel`（留空时回退主模型）进入统一记忆管理流程。后台提取与决策也使用此模型。删除无需确认令牌，合并与其他变更通过 `memory_*` observer 事件和 JSONL 元数据回放。每条操作最多 30 秒，并受 Loop 剩余截止时间和取消信号约束。
+
 同一会话的回合串行执行，后续回合读取前一回合保存的工作记忆。不同会话可以并行。Loop 仍限制 10 次迭代和 60 秒超时，并接收宿主取消信号；检索与排队阶段不在 Loop 超时范围内。
 
 沿用现有 AgentObserver 事件名称和含义，为转发事件关联 `runId`、`sessionId`，补充上下文来源元数据。工具事件在共享执行层进行凭证移除，Session Recall 工具只公开检索元数据。JSONL Tracer 保留既有回合开始、完成、失败及模型/工具追踪语义。静态 Harness 拓扑仍由 `agentHarnessGraph.describe()` 提供，Web 负责转换为画布格式；Runtime 不伪造 Graph 执行事件。

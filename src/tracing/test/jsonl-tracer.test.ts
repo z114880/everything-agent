@@ -196,3 +196,16 @@ describe("JSONL 运行记录", () => {
     expect(JSON.stringify(records)).not.toContain("vector");
   });
 });
+
+it("记忆管理事件可回放决策及合并结果，不记录自由文本理由和事实正文", async () => {
+  const home = await mkdtemp(join(tmpdir(), "memory-trace-"));
+  const tracer = new JsonlTracer(home);
+  await tracer.record("memory_search_completed", { runId: "run", sessionId: "session", candidateId: "candidate", attempt: 1, revision: 2, candidateIds: [12, 35], query: "私人查询" });
+  await tracer.record("memory_decision_completed", { runId: "run", sessionId: "session", candidateId: "candidate", action: "merge", reasonCode: "redundant", targetId: 12, sourceIds: [35], evidenceMessageIds: [1], reason: "私人理由", content: "私人内容" });
+  await tracer.record("memory_change_completed", { runId: "run", sessionId: "session", candidateId: "candidate", action: "merge", reasonCode: "redundant", targetId: 12, deletedIds: [35], durationMs: 8 });
+  const records = await readTraceRecords(home);
+  expect(records.map((item) => item.sequence)).toEqual([1, 2, 3]);
+  expect(records[1]?.payload).toMatchObject({ action: "merge", targetId: 12, sourceIds: [35], reasonCode: "redundant" });
+  expect(records[2]?.payload).toMatchObject({ deletedIds: [35], durationMs: 8 });
+  expect(JSON.stringify(records)).not.toContain("私人");
+});

@@ -1,4 +1,4 @@
-export const MEMORY_SCHEMA_VERSION = 4;
+export const MEMORY_SCHEMA_VERSION = 6;
 
 export const MEMORY_SCHEMA = `
 PRAGMA foreign_keys = ON;
@@ -75,6 +75,19 @@ CREATE TRIGGER IF NOT EXISTS semantic_memory_au AFTER UPDATE ON semantic_memory 
   INSERT INTO semantic_memory_fts(rowid, subject, search_text) VALUES (new.id, new.subject, new.search_text);
 END;
 
+CREATE TABLE IF NOT EXISTS memory_tasks (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK(kind IN ('memory_write', 'consolidation')),
+  status TEXT NOT NULL CHECK(status IN ('pending', 'running', 'completed', 'failed')),
+  payload_json TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at INTEGER NOT NULL DEFAULT 0,
+  error_type TEXT,
+  created_at TEXT NOT NULL,
+  completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS memory_tasks_status ON memory_tasks(status, next_attempt_at);
+
 CREATE TABLE IF NOT EXISTS consolidation_runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   run_id TEXT NOT NULL UNIQUE,
@@ -141,4 +154,39 @@ CREATE TABLE IF NOT EXISTS embedding_rebuilds (
   started_at TEXT NOT NULL,
   completed_at TEXT
 );
+
+-- 全库单调版本覆盖新增与删除，避免检索后并发新增造成重复；所有写入入口均由触发器递增。
+CREATE TABLE IF NOT EXISTS semantic_clock (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL);
+INSERT OR IGNORE INTO semantic_clock VALUES (1, 0);
+CREATE TRIGGER IF NOT EXISTS semantic_clock_ai AFTER INSERT ON semantic_memory BEGIN
+  UPDATE semantic_clock SET version=version+1 WHERE id=1;
+END;
+CREATE TRIGGER IF NOT EXISTS semantic_clock_au AFTER UPDATE ON semantic_memory BEGIN
+  UPDATE semantic_clock SET version=version+1 WHERE id=1;
+END;
+CREATE TRIGGER IF NOT EXISTS semantic_clock_ad AFTER DELETE ON semantic_memory BEGIN
+  UPDATE semantic_clock SET version=version+1 WHERE id=1;
+END;
+CREATE TABLE IF NOT EXISTS semantic_sources (
+  memory_id INTEGER NOT NULL REFERENCES semantic_memory(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL,
+  message_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY(memory_id, session_id, message_id)
+);
+CREATE TABLE IF NOT EXISTS memory_changes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id TEXT NOT NULL,
+  candidate_id TEXT NOT NULL,
+  action TEXT NOT NULL,
+  target_id INTEGER,
+  reason_code TEXT NOT NULL,
+  deleted_ids TEXT NOT NULL,
+  evidence_ids TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  source TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS memory_changes_operation ON memory_changes(run_id, candidate_id);
+CREATE INDEX IF NOT EXISTS memory_changes_run_action ON memory_changes(run_id, action);
 `;

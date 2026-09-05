@@ -13,10 +13,11 @@ export interface MmrResult<T> {
   excludedAsDuplicate: Array<{ id: string; duplicateOf: string }>;
 }
 
-/** 使用固定 λ=0.7 执行 MMR，并在 MMR 内排除 cosine >= 0.999 的候选。 */
+/** 使用固定 λ=0.7 执行 MMR，默认排除 cosine >= 0.999 的候选；记忆管理可保留重复项以供合并判断。 */
 export function maximalMarginalRelevance<T>(
   candidates: readonly RankedCandidate<T>[],
   limit: number,
+  options: { excludeDuplicates?: boolean } = {},
 ): MmrResult<T> {
   if (!Number.isInteger(limit) || limit < 1) throw new TypeError("MMR limit 必须是正整数");
   const maxRelevance = Math.max(...candidates.map((item) => item.score), 0);
@@ -26,7 +27,7 @@ export function maximalMarginalRelevance<T>(
   while (remaining.length && selected.length < limit) {
     for (let index = remaining.length - 1; index >= 0; index -= 1) {
       const candidate = remaining[index]!;
-      const duplicate = selected.find((item) => candidateSimilarity(candidate, item) >= 0.999);
+      const duplicate = options.excludeDuplicates === false ? undefined : selected.find((item) => candidateSimilarity(candidate, item) >= 0.999);
       if (duplicate) {
         excludedAsDuplicate.push({ id: candidate.id, duplicateOf: duplicate.id });
         remaining.splice(index, 1);

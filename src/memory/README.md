@@ -4,7 +4,7 @@ Memory 模块为 classic Agent Loop 提供单用户、本地优先的持久记�
 
 ## 内部模块划分
 
-`MemoryRuntime` 保持既有公开接口，负责依赖组装、Gate 检索计划、历史上下文隔离与概览。内部服务不从 `index.ts` 导出，测试继续通过公开入口验证行为。
+`MemoryRuntime` 提供公开接口，负责依赖组装、Gate 检索计划、历史上下文隔离与概览。内部服务不从 `index.ts` 导出，测试继续通过公开入口验证行为。
 
 | 模块 | 职责 |
 | --- | --- |
@@ -16,10 +16,11 @@ Memory 模块为 classic Agent Loop 提供单用户、本地优先的持久记�
 | `retrieve/memory-search.ts` | Lexical/Dense 候选检索、RRF/MMR 排序与 Session 去重 |
 | `retrieve/retrieval-gate.ts` | 小模型检索意图判断及失败回退 |
 | `retrieve/session-recall.ts` | 召回窗口、预算截断与游标分页 |
+| `management.ts` | 逐条检索、小模型五类决策、证据校验与版本冲突重试 |
 | `consolidation.ts` | 后台串行队列、模型事实筛选、整理记录与高水位推进 |
 | `storage/records.ts` | 数据库记录转换、消息分类与凭证字段移除 |
 
-根目录保留公开入口 `index.ts`、公共类型 `types.ts`、运行时编排 `memory-runtime.ts` 和后台整理 `consolidation.ts`。`storage/` 集中管理持久化与记录转换；`retrieve/` 集中管理检索策略、索引和召回，并按 `lexical/`、`dense/`、`fusion/` 划分底层算法。测试保留在 `test/` 和 `retrieve/test/`，通过公开入口验证行为。
+根目录保留公开入口 `index.ts`、公共类型 `types.ts`、运行时编排 `memory-runtime.ts` 、统一变更流程 `management.ts` 和后台整理 `consolidation.ts`。`storage/` 集中管理持久化与记录转换；`retrieve/` 集中管理检索策略、索引和召回，并按 `lexical/`、`dense/`、`fusion/` 划分底层算法。测试保留在 `test/` 和 `retrieve/test/`，通过公开入口验证行为。
 
 各服务共享同一个数据库连接和向量索引实例。存储服务先完成远程嵌入，再在同一事务内提交原文、FTS 投影、向量与审计；索引服务集中维护重建状态和语料变更版本，防止并发写入后激活过期索引。检索排序与召回分页分别维护候选相关性和内容预算，后台整理复用现有检索与事实写入服务。
 
@@ -33,7 +34,7 @@ Memory 模块为 classic Agent Loop 提供单用户、本地优先的持久记�
 - FTS5 + BM25 与 Dense 是相互独立的召回路线；Hybrid 使用固定等权 RRF，再用 MMR 去除近似重复结果。
 - API Key、令牌、Authorization 和 Cookie 等凭证字段在写入 Chat Log 前移除。
 
-Schema v4 增加向量 generation、chunk 与 rebuild 状态，并使用 `chunkingVersion` 标识估算切块规则。向量使用标准化 Float32 little-endian BLOB 保存；旧索引可由原始事实和 Chat Log 重建。
+Schema v5 新增语义语料单调版本、来源引用和变更审计表；保留向量 generation、chunk 与 rebuild 状态，并使用 `chunkingVersion` 标识估算切块规则。向量使用标准化 Float32 little-endian BLOB 保存；旧索引可由原始事实和 Chat Log 重建。
 
 ## Session 与 Working Memory
 
@@ -91,13 +92,61 @@ session_read 使用 search 返回的 cursor 扩大命中窗口，或使用 sessi
 
 Gate 初始召回通过 gate_start、gate_end、retrieval 和 context_assembled 观察。主 Agent 后续调用通过标准工具事件观察。检索事件只保存命中 ID、排名、信号和范围元数据；model_request 是模型实际输入的权威快照。
 
-## Semantic Consolidation
+## 统一 Semantic Memory 管理
 
-用户新建对话时，旧 Session 在后台增量整理 Semantic Memory；进程启动时恢复积压。高水位记录在 consolidated_through_message_id。
+聊天写入与后台 consolidation 共用 `MemoryRuntime.manageMemory(candidate, options)`：
 
-Semantic 只保存跨 Session 仍有用、预计长期成立且与用户直接相关的稳定属性、偏好、持续项目事实、约束和承诺。模型必须声明允许的 category，并将 stable 与 futureUseful 标为 true。失败不会推进高水位。
+1. 提交独立事实或明确忘记意图，携带 `subject`、`attribute`、`content`、`intent: remember | forget` 和 `evidenceMessageIds`。
+2. 校验证据属于当前 Session 的有效用户消息。聊天允许本次运行已落库的用户消息；后台仅允许已完成回合的用户消息。Assistant 和工具结果不能作为事实证据。
+3. 按“主体 + 属性 + 内容”逐条检索最多 12 条相关旧记忆，使用全局 `lexical_only / dense_only / hybrid`。管理检索保留 MMR 原本会隐藏的重复候选，供小模型判断合并；普通回答召回继续去重。
+4. 将用户原文、旧记忆内容、ID、来源时间和语料版本交给配置的小模型，生成一项决策。
+5. 代码校验决策、证据引用、目标候选、长期价值声明和版本，提交后返回操作结果。
 
-manage_memory 只管理 Semantic Memory。session_search 与 session_read 始终只读；删除历史对话必须使用 Session 删除入口。配置页的一键清理会删除数据库、Session、Memory 与 trace，但保留 EVERYTHING.md。
+| 决策 | 执行语义 |
+| --- | --- |
+| `create` | 未找到对应旧事实时新增；只是主题相关的命中不阻止保存独立事实 |
+| `update` | 明确纠正或补充一条旧事实，保留 ID 和仍有效的信息 |
+| `delete` | 根据明确忘记意图直接删除已定位的记忆，无需确认令牌 |
+| `merge` | 至少两条旧记忆描述同一事实且重复或互补；保留 `targetId`，删除 `sourceIds` |
+| `noop` | 重复、不值得长期保存、证据不足或目标不明确，本次不修改 |
+
+没有 `clarify` 操作。小模型返回简短 `reason` 供聊天主模型判断是否追问；后台直接跳过。`reasonCode` 为可持久化的固定原因代码（如 `duplicate`、`uncertain`），未提供时使用对应操作的通用代码。
+
+`create/update/merge` 必须声明允许的 `category`、`stable=true`、`futureUseful=true`。语义判断由小模型负责；代码强制引用范围和写入约束。删除仅接受 `forget` 候选；事实变化通常是 `update`。矛盾且缺少可靠证据时应 `noop`，不能直接拼接为 `merge`。
+
+合并在单个 SQLite 事务中更新保留项、合并来源引用、维护 FTS/向量、删除冗余项并写入审计，任一步失败整体回滚。`semantic_sources` 只保存 Session、消息 ID 和时间，不复制原文。全库单调版本由数据库触发器维护，覆盖手动及自动新增、更新和删除。检索或模型判断后发生并发变更时，重新检索和判断，最多尝试 3 次（含首次）；持续冲突、检索失败或模型失败均报错，不降级为新增。
+
+每条管理操作最多 30 秒，支持取消；聊天同时受 Loop 剩余截止时间约束。模型、查询及提交均检查取消，迟到响应不能提交写入。同一后台批次按顺序处理，后续候选能够看到前面的已提交变更。
+
+### 聊天工具
+
+`manage_memory` 只开放 `search` 与 `submit`，移除了直接 `create/update/delete` 和 `request_delete`、确认令牌参数。Runtime 为每个回合绑定当前用户消息 ID、小模型与 observer，主模型不能提供或伪造证据 ID。
+
+```json
+{"action":"submit","intent":"remember","subject":"用户","attribute":"饮品偏好","content":"喜欢红茶，通常上午喝"}
+```
+
+忘记请求使用 `intent: "forget"`，`content` 描述用户明确要求删除的内容。`search` 继续使用 `query`，只读返回相关记忆。手动管理页使用的显式 CRUD 接口继续可用。
+
+### 后台 consolidation
+
+用户新建对话时，旧 Session 后台增量整理；启动时恢复积压。每批最多读取 16 条已完成回合的用户消息，小模型提取最多 32 条独立候选，再逐条进入统一管理流程。提取无有效事实时可返回空列表；结构错误或候选超限则报错。
+
+高水位保存在 `consolidated_through_message_id`，仅在全部处理成功后推进。单条变更原子提交，整次 consolidation 不跨远程模型调用保持事务：中途失败时，已提交事实保留，高水位不推进；重试会重新检索这些事实，再判断是否跳过。界面显示新增、更新、删除、合并和跳过计数。
+
+### 事件与隐私
+
+每条候选按以下顺序产生 observer 事件：
+
+- `memory_candidate_extracted`：候选 ID、意图、证据 ID。
+- `memory_search_completed`：候选 ID、检索结果 ID、语料版本和重试次数。
+- `memory_model_started/completed/failed`：模型调用 ID、模型名称、耗时或错误类型；后台提取也产生这些事件。
+- `memory_decision_completed` → `memory_validation_completed` → `memory_change_completed`：操作、固定原因代码、目标和被删除的 ID、耗时。
+- 版本冲突产生 `memory_conflict` 并重新检索；失败产生 `memory_change_failed`。
+
+事件关联 `runId`、`sessionId` 和 `candidateId`；JSONL 为事件添加时间戳与 sequence。新增管理事件与聊天记忆工具摘要不默认记录事实正文、查询或自由文本理由。`memory_changes` 保存来源、目标、证据引用和固定原因代码，不保留删除正文。模型判断必须读取相关原文；现有主模型请求 trace 的内容策略不由此流程改变。
+
+`manage_memory` 只管理 Semantic Memory；历史对话通过只读 `session_search/session_read` 访问，删除 Session 使用 Session 入口。全库定期去重尚未实现，`merge` 只处理本次检索发现的重复记录。
 
 ## 当前取舍
 

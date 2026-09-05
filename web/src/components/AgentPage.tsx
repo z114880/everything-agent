@@ -23,6 +23,8 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
   const [loadError, setLoadError] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
+  const creatingSessionRef = useRef(false);
+  const [creatingSession, setCreatingSession] = useState(false);
   const [running, setRunning] = useState(false);
   const [nodeStates, setNodeStates] = useState<Record<string, VisualNodeState>>(idleStates);
   const [activeEdges, setActiveEdges] = useState<Set<string>>(new Set());
@@ -52,7 +54,7 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
   }
 
   async function selectSession(sessionId: string, knownSessions = sessions) {
-    if (running) return;
+    if (running || creatingSessionRef.current) return;
     const result = await memoryAction<{ messages: ChatLogEntry[]; sessions: SessionSummary[] }>({ action: "select_session", sessionId });
     setActiveSessionId(sessionId);
     setSessions(result.sessions.length ? result.sessions : knownSessions);
@@ -61,10 +63,14 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
   }
 
   async function createSession() {
-    if (running) return;
-    const result = await memoryAction<{ session: SessionSummary; sessions: SessionSummary[] }>({ action: "create_session", previousSessionId: activeSessionId });
-    setSessions(result.sessions); setActiveSessionId(result.session.id); setMessages([]);
-    window.localStorage.setItem("everything.activeSessionId", result.session.id);
+    if (running || creatingSessionRef.current || !activeSessionId || messages.length === 0) return;
+    creatingSessionRef.current = true; setCreatingSession(true);
+    try {
+      const result = await memoryAction<{ session: SessionSummary; sessions: SessionSummary[] }>({ action: "create_session", previousSessionId: activeSessionId });
+      setSessions(result.sessions); setActiveSessionId(result.session.id); setMessages([]);
+      window.localStorage.setItem("everything.activeSessionId", result.session.id);
+    } catch (error) { window.alert(error instanceof Error ? error.message : String(error)); }
+    finally { creatingSessionRef.current = false; setCreatingSession(false); }
   }
 
   async function renameActiveSession() {
@@ -87,7 +93,7 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
 
   async function send() {
     const prompt = input.trim();
-    if (!prompt || running || !bootstrap || !activeSessionId) return;
+    if (!prompt || running || creatingSessionRef.current || !bootstrap || !activeSessionId) return;
     const assistantId = crypto.randomUUID();
     const controller = new AbortController();
     abortRef.current = controller; setInput(""); setRunning(true); setTick((value) => value + 1); edgePlayback.reset();
@@ -111,7 +117,7 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
   if (!bootstrap) return <div className="content-wrap"><div className="panel loading-panel">正在加载 Agent Harness…</div></div>;
   return <div className="agent-page-layout">
     <div className="agent-main-column"><div className="agent-page-intro"><div><div className="eyebrow">个人助理 / 实时执行</div><h1>Agent</h1><p>发送消息，并观察 Working Memory、LLM、Tools 与 Reply 的真实运行状态。</p></div>{!bootstrap.settings.keyConfigured && <button className="config-warning" onClick={onOpenConfig}><Settings2 size={14} /> 配置模型后开始</button>}</div><AgentHarnessCanvas workflow={bootstrap.workflow} nodeStates={nodeStates} activeEdges={activeEdges} historyCount={messages.length} systemPromptLength={bootstrap.systemPrompt.length} /></div>
-    <aside className="agent-chat-dock"><div className="session-rail"><button className="new-session" onClick={() => void createSession()}><MessageSquarePlus size={14} /> 新建对话</button><div className="session-list">{sessions.map((session) => <button key={session.id} className={session.id === activeSessionId ? "active" : ""} onClick={() => void selectSession(session.id)}><strong>{session.title}</strong><span>{session.messageCount} 条记录</span></button>)}</div></div>
+    <aside className="agent-chat-dock"><div className="session-rail"><button className="new-session" disabled={running || creatingSession || !activeSessionId || messages.length === 0} onClick={() => void createSession()}><MessageSquarePlus size={14} /> 新建对话</button><div className="session-list">{sessions.map((session) => <button key={session.id} className={session.id === activeSessionId ? "active" : ""} onClick={() => void selectSession(session.id)}><strong>{session.title}</strong><span>{session.messageCount} 条记录</span></button>)}</div></div>
       <div className="chat-pane"><div className="agent-dock-header"><div className="agent-avatar"><Bot size={16} /></div><div><strong>{sessions.find((item) => item.id === activeSessionId)?.title ?? "当前会话"}</strong><span>当前 Session 全部完整回合进入上下文</span></div><button className="session-icon" onClick={() => void renameActiveSession()} title="重命名"><Pencil size={13} /></button><button className="session-icon danger" onClick={() => void deleteActiveSession()} title="删除 Session"><Trash2 size={13} /></button><button className="model-chip" onClick={onOpenConfig} title="打开模型配置"><span className={bootstrap.settings.keyConfigured ? "model-dot ready" : "model-dot"} />{bootstrap.settings.model || bootstrap.settings.provider}</button></div>
         <div className="agent-chat-log" ref={chatLogRef}>{messages.length === 0 && <div className="agent-chat-empty"><Bot size={24} /><strong>开始这段对话</strong><span>消息会保存在本地 Session 中。</span></div>}{messages.map((message) => message.role === "user" ? <div key={message.id} className="user-bubble">{message.content}</div> : <AssistantCard key={message.id} message={message} tick={tick} />)}</div>
         <div className="agent-composer"><textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (shouldSubmitAgentComposer(event)) { event.preventDefault(); void send(); } }} placeholder={bootstrap.settings.keyConfigured ? "给 Everything Agent 发消息…" : "请先配置模型 API Key"} disabled={running || !bootstrap.settings.keyConfigured} rows={2} /><div className="agent-composer-actions">{running ? <button className="stop-agent" onClick={() => abortRef.current?.abort()}><CircleStop size={15} /> 停止</button> : <button className="send-agent" onClick={() => void send()} disabled={!input.trim() || !bootstrap.settings.keyConfigured}><Send size={15} /> 发送</button>}</div></div>

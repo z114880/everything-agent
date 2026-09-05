@@ -35,7 +35,7 @@ export async function handleMemoryAction(body: Record<string, unknown>): Promise
   if (action === "bootstrap") return memoryDashboard(memory);
   if (action === "create_session") {
     const previousSessionId = optionalText(body.previousSessionId, "Previous Session ID", 200);
-    const session = runtime.createSession(previousSessionId);
+    const session = await runtime.createSession(previousSessionId);
     return { session, sessions: memory.listSessions() };
   }
   if (action === "ensure_session") {

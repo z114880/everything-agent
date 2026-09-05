@@ -1,14 +1,16 @@
 import type { AgentMessage } from "../agent-loop/agent-loop.ts";
 import { decideRetrieval } from "./retrieve/retrieval-gate.ts";
 import type { EmbeddingProfile } from "./retrieve/index.ts";
-import type { ChatLogEntry, ConsolidationRun, MemoryModelOptions, MemoryOverview, MemoryRetrievalConfiguration, RetrievalResult, SemanticMemory, SessionReadResult, SessionRecallSettings, SessionSearchResult, SessionSummary } from "./types.ts";
+import type { ChatLogEntry, MemoryCandidate, MemoryManagementOptions, MemoryManagementResult, ConsolidationRun, MemoryModelOptions, MemoryOverview, MemoryRetrievalConfiguration, RetrievalResult, SemanticMemory, SessionReadResult, SessionRecallSettings, SessionSearchResult, SessionSummary } from "./types.ts";
 import type { Row } from "./storage/records.ts";
 import { SemanticStore } from "./storage/semantic-store.ts";
 import { MemorySearch } from "./retrieve/memory-search.ts";
 import { MemoryDatabase } from "./storage/database.ts";
 import { SessionRecall } from "./retrieve/session-recall.ts";
 import { SessionStore } from "./storage/session-store.ts";
-import { MemoryConsolidation } from "./consolidation.ts";
+import { MemoryManagement } from "./management.ts";
+import { MemoryBackgroundTasks, type BackgroundOptions } from "./background-tasks.ts";
+import { consolidationFromRow } from "./storage/records.ts";
 import { EmbeddingIndex } from "./retrieve/embedding-index.ts";
 
 /** 本地记忆公开入口，组装存储、索引、召回与后台整理。 */
@@ -19,37 +21,34 @@ export class MemoryRuntime {
   private readonly semantic: SemanticStore;
   private readonly search: MemorySearch;
   private readonly recall: SessionRecall;
-  private readonly consolidation: MemoryConsolidation;
+  private readonly management: MemoryManagement;
+  private readonly background: MemoryBackgroundTasks;
   readonly databasePath: string;
 
   constructor(home: string) {
     this.storage = new MemoryDatabase(home);
     this.databasePath = this.storage.databasePath;
     this.embedding = new EmbeddingIndex(this.storage);
-    this.sessions = new SessionStore(this.storage, this.embedding);
+    this.sessions = new SessionStore(this.storage);
     this.semantic = new SemanticStore(this.storage, this.embedding);
     this.search = new MemorySearch(this.storage, this.embedding, this.semantic);
     this.recall = new SessionRecall(this.embedding, this.sessions, this.search);
-    this.consolidation = new MemoryConsolidation(this.storage, this.sessions, this.semantic, this.search);
+    this.management = new MemoryManagement(this.storage, this.semantic, this.search);
+    this.background = new MemoryBackgroundTasks(this.storage, this.management);
   }
 
   /** 分别检索 Semantic Memory 与历史 Session，并生成隔离的不可信历史数据块。 */
   async retrieve(message: string, gateHistory: AgentMessage[], options: MemoryModelOptions): Promise<RetrievalResult> {
     const observer = options.observer ?? (() => {});
     const decision = await decideRetrieval(options.client, options.model, message, gateHistory, observer);
-    const canShareQueryVector = decision.intent === "fact_with_evidence"
-      && decision.sessionRecall?.mode === "search"
-      && decision.semanticQuery === decision.sessionRecall.query
-      && this.embedding.retrieval.mode !== "lexical_only";
-    const sharedQueryVector = canShareQueryVector ? await this.embedding.embedQuery(decision.semanticQuery, options.runId, options.observer) : undefined;
     const semantic = decision.intent === "fact_with_evidence"
-      ? await this.search.searchSemantic(decision.semanticQuery, DEFAULT_SEMANTIC_LIMIT, sharedQueryVector, options.runId, options.observer)
+      ? await this.search.searchSemantic(decision.semanticQuery, DEFAULT_SEMANTIC_LIMIT, undefined, options.runId, options.observer)
       : [];
     const recallDecision = decision.intent === "past_episode" || decision.intent === "fact_with_evidence"
       ? decision.sessionRecall
       : null;
     const sessionRecall = recallDecision?.mode === "search"
-      ? await this.recall.searchSessions({ query: recallDecision.query, currentSessionId: options.currentSessionId }, options.recall, sharedQueryVector, options.runId, options.observer)
+      ? await this.recall.searchSessions({ query: recallDecision.query, currentSessionId: options.currentSessionId }, options.recall, undefined, options.runId, options.observer)
       : recallDecision?.mode === "recent"
         ? await this.recall.searchSessions({ recent: true, currentSessionId: options.currentSessionId }, options.recall)
         : null;
@@ -76,11 +75,11 @@ export class MemoryRuntime {
       semanticCount: count("semantic_memory"), indexedSessionCount,
       indexedMessageCount: Number((this.storage.connection.prepare("SELECT COUNT(*) AS count FROM chat_log WHERE search_text <> ''").get() as Row).count),
       sessionCount: count("sessions"), pendingSessionCount: this.sessions.listSessions().filter((session) => session.pendingMessages > 0).length,
-      databasePath: this.storage.databasePath, latestConsolidation: this.consolidation.listConsolidations(1)[0] ?? null,
+      databasePath: this.storage.databasePath, latestConsolidation: this.listConsolidations(1)[0] ?? null,
     };
   }
 
-  close(): void { this.storage.connection.close() }
+  close(): void { this.background.stop(); this.storage.connection.close() }
 
   /** 设置相关性检索模式及远程 Embedding 依赖。 */
   configureRetrieval(configuration: MemoryRetrievalConfiguration): void {
@@ -146,7 +145,7 @@ export class MemoryRuntime {
     return this.sessions.startRun(sessionId, runId, prompt);
   }
 
-  /** 保存成功 run；远程向量先完成，随后原文、FTS 与 active generation 原子提交。 */
+  /** 保存成功 run；仅在本地事务中提交原文与 FTS。 */
   completeRun(sessionId: string, runId: string, messages: AgentMessage[]): Promise<void> {
     return this.sessions.completeRun(sessionId, runId, messages);
   }
@@ -204,22 +203,42 @@ export class MemoryRuntime {
     return this.semantic.deleteSemantic(id, source);
   }
 
-  /** 将一个 Session 的增量 Semantic consolidation 加入单一后台队列。 */
-  scheduleConsolidation(sessionId: string, trigger: "new_session" | "startup", options: MemoryModelOptions): void {
-    return this.consolidation.scheduleConsolidation(sessionId, trigger, options);
+  /** 强制检索后由小模型判断记忆变更；证据、模型或提交失败时抛错，不降级新增。 */
+  manageMemory(candidate: MemoryCandidate, options: MemoryManagementOptions): Promise<MemoryManagementResult> {
+    return this.management.manage(candidate, options);
   }
 
-  schedulePendingConsolidations(options: MemoryModelOptions): void {
-    return this.consolidation.schedulePendingConsolidations(options);
+  /** 注入后台依赖并恢复已入队任务，不触发未满阈值的整理。 */
+  startBackgroundTasks(options: BackgroundOptions): void { this.background.start(options); }
+
+  enqueueMemory(candidate: MemoryCandidate, options: MemoryManagementOptions) {
+    return this.background.enqueueMemory(candidate, options);
   }
 
-  waitForConsolidation(): Promise<void> {
-    return this.consolidation.waitForConsolidation();
+  /** 新建对话时复用空 Session，防止重复点击产生空记录；批次任务与会话一起入库。 */
+  createConversation(previousSessionId?: string, threshold = 6): SessionSummary {
+    return this.storage.transaction(() => {
+      const sessions = this.sessions.listSessions();
+      if (previousSessionId && !sessions.some((session) => session.id === previousSessionId)) throw new Error("Session 不存在");
+      const empty = sessions.find((session) => session.messageCount === 0);
+      if (empty) return empty;
+      const session = this.sessions.createSession();
+      if (previousSessionId) this.background.enqueueConsolidations(session.id, threshold);
+      return session;
+    });
   }
+
+  waitForBackgroundTasks(): Promise<void> { return this.background.wait(); }
+  stopBackgroundTasks(): void { this.background.stop(); }
+  listBackgroundTasks() { return this.background.list(); }
 
   listConsolidations(limit = 100): ConsolidationRun[] {
-    return this.consolidation.listConsolidations(limit);
+    return (this.storage.connection.prepare(`SELECT r.*,
+      (SELECT COUNT(*) FROM memory_changes c WHERE (c.run_id=r.run_id OR c.run_id || ':' || c.session_id=r.run_id) AND c.action='delete') AS facts_deleted,
+      (SELECT COUNT(*) FROM memory_changes c WHERE (c.run_id=r.run_id OR c.run_id || ':' || c.session_id=r.run_id) AND c.action='merge') AS facts_merged
+      FROM consolidation_runs r ORDER BY r.id DESC LIMIT ?`).all(limit) as Row[]).map(consolidationFromRow);
   }
+
 }
 
 const DEFAULT_SEMANTIC_LIMIT = 4;

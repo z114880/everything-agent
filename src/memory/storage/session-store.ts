@@ -4,16 +4,13 @@ import type { ChatLogEntry, SessionSummary } from "../types.ts";
 import type { Row } from "./records.ts";
 import { nowUtc, parseJson, messageKind, removeCredentials, plainText, sessionFromRow, chatFromRow } from "./records.ts";
 import type { MemoryDatabase } from "./database.ts";
-import type { EmbeddingIndex } from "../retrieve/embedding-index.ts";
 
 /** Session 与 Chat Log 存储，保证完整回合和检索投影同步写入。 */
 export class SessionStore {
   private readonly storage: MemoryDatabase;
-  private readonly embedding: EmbeddingIndex;
 
-  constructor(storage: MemoryDatabase, embedding: EmbeddingIndex) {
+  constructor(storage: MemoryDatabase) {
     this.storage = storage;
-    this.embedding = embedding;
   }
 
   /** 创建一个空 Session。 */
@@ -42,18 +39,14 @@ export class SessionStore {
 
   /** 删除完整 Session；Chat Log 与 FTS 投影同步级联删除。 */
   deleteSession(sessionId: string): void {
-    this.embedding.assertNoEmbeddingRebuild();
-    this.embedding.markCorpusMutation();
     this.storage.transaction(() => {
       const result = this.storage.connection.prepare("DELETE FROM sessions WHERE id = ?").run(sessionId);
       if (Number(result.changes) === 0) throw new Error("Session 不存在");
-      this.embedding.vectors.deleteActiveSession(sessionId);
     });
   }
 
   /** 保存一次运行的用户输入；失败运行只保留在 Chat Log，不进入检索。 */
   startRun(sessionId: string, runId: string, prompt: string): ChatLogEntry {
-    this.embedding.assertNoEmbeddingRebuild();
     if (!this.getSession(sessionId)) throw new Error("Session 不存在");
     const timestamp = nowUtc();
     const result = this.storage.connection.prepare(`
@@ -67,10 +60,8 @@ export class SessionStore {
     return this.getChatEntry(Number(result.lastInsertRowid));
   }
 
-  /** 保存成功 run；远程向量先完成，随后原文、FTS 与 active generation 原子提交。 */
+  /** 保存成功 run；原文与 FTS 在本地事务中原子提交，不依赖远程服务。 */
   async completeRun(sessionId: string, runId: string, messages: AgentMessage[]): Promise<void> {
-    this.embedding.assertNoEmbeddingRebuild();
-    this.embedding.markCorpusMutation();
     const promptRow = this.storage.connection.prepare(`
       SELECT id, content_json FROM chat_log
       WHERE session_id = ? AND run_id = ? AND kind = 'user_message'
@@ -80,13 +71,10 @@ export class SessionStore {
     const finalMessage = [...messages].reverse().find((message) => messageKind(message) === "assistant_message");
     if (!finalMessage) throw new Error("成功 Run 必须包含最终 Assistant 回复");
     const prompt = plainText(parseJson(String(promptRow.content_json)));
-    const answer = plainText(removeCredentials(finalMessage.content));
-    const dense = await this.embedding.embedDocument(`用户：${prompt}\n助手：${answer}`, "run_complete", undefined, undefined, runId);
     const insert = this.storage.connection.prepare(`
       INSERT INTO chat_log(session_id, run_id, role, kind, content_json, search_text, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
-    this.embedding.assertNoEmbeddingRebuild();
     this.storage.transaction(() => {
       this.storage.connection.prepare("UPDATE chat_log SET search_text = ? WHERE id = ?")
         .run(toSearchText(prompt), Number(promptRow.id));
@@ -97,9 +85,6 @@ export class SessionStore {
         const searchText = kind === "user_message" || kind === "assistant_message" ? toSearchText(plainText(content)) : "";
         insert.run(sessionId, runId, role, kind, JSON.stringify(content), searchText, nowUtc());
       }
-      if (this.embedding.retrieval.embedding) this.embedding.vectors.replaceActiveSource("session", runId, dense.map((chunk) => ({
-        ...chunk, corpus: "session", sourceId: runId, sessionId, anchorMessageId: Number(promptRow.id),
-      })));
       this.storage.connection.prepare("UPDATE sessions SET updated_at = ? WHERE id = ?").run(nowUtc(), sessionId);
     });
   }

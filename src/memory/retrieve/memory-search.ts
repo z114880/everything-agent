@@ -19,17 +19,19 @@ export class MemorySearch {
   }
 
   /** 按全局模式搜索 Semantic Memory；Dense 与 Lexical 始终在独立候选池中执行。 */
-  async searchSemantic(query: string, limit = 100, providedQueryVector?: Float32Array, runId?: string, observer = this.embedding.retrieval.observer): Promise<SemanticMemory[]> {
+  async searchSemantic(query: string, limit = 100, providedQueryVector?: Float32Array, runId?: string, observer = this.embedding.retrieval.observer, options: { purpose?: "recall" | "management"; signal?: AbortSignal } = {}): Promise<SemanticMemory[]> {
+    options.signal?.throwIfAborted();
     const clean = query.trim(); if (!clean) return [];
     const lexical = searchSemanticLexical(this.storage.connection, clean, 50);
     await observer?.("lexical_retrieval_completed", { corpus: "semantic", candidateCount: lexical.length });
     if (this.embedding.retrieval.mode === "lexical_only") return lexical.slice(0, limit);
-    const queryVector = providedQueryVector ?? await this.embedding.embedQuery(clean, runId, observer);
+    const queryVector = providedQueryVector ?? await this.embedding.embedQuery(clean, runId, observer, options.signal);
+    options.signal?.throwIfAborted();
     const stored = this.embedding.vectors.listActive("semantic");
     const dense = rankDenseSources(queryVector, stored, this.embedding.retrieval.embedding!.profile.minimumSimilarity);
     await observer?.("dense_retrieval_completed", { corpus: "semantic", candidateCount: dense.length });
     if (this.embedding.retrieval.mode === "dense_only") {
-      const selected = maximalMarginalRelevance(dense, limit);
+      const selected = maximalMarginalRelevance(dense, limit, { excludeDuplicates: options.purpose !== "management" });
       await observer?.("mmr_completed", mmrEvent("semantic", selected));
       return selected.selected.flatMap((item) => {
         const memory = this.semantic.getSemantic(Number(item.id)); return memory ? [{ ...memory, score: item.score }] : [];
@@ -46,7 +48,7 @@ export class MemorySearch {
     }));
     const fused = reciprocalRankFusion(dense as RankedCandidate<unknown>[], lexicalCandidates);
     await observer?.("rrf_completed", { corpus: "semantic", candidateCount: fused.length });
-    const selected = maximalMarginalRelevance(fused, limit);
+    const selected = maximalMarginalRelevance(fused, limit, { excludeDuplicates: options.purpose !== "management" });
     await observer?.("mmr_completed", mmrEvent("semantic", selected));
     return selected.selected.flatMap((item) => {
       const memory = this.semantic.getSemantic(Number(item.id)); return memory ? [{ ...memory, score: item.score }] : [];
@@ -56,53 +58,10 @@ export class MemorySearch {
   async sessionSearchCandidates(query: string, currentSessionId?: string, providedQueryVector?: Float32Array, runId?: string, observer = this.embedding.retrieval.observer): Promise<SearchCandidate[]> {
     const lexical = this.searchCandidates(query, currentSessionId).slice(0, 50);
     await observer?.("lexical_retrieval_completed", { corpus: "session", candidateCount: lexical.length });
-    if (this.embedding.retrieval.mode === "lexical_only") {
-      // Lexical 先按 run 排名；对外返回前必须保留每个 Session 的最佳 run，避免单个长会话挤占名额。
-      const unique = new Map<string, SearchCandidate>();
-      for (const item of lexical) if (!unique.has(item.sessionId)) unique.set(item.sessionId, item);
-      return [...unique.values()];
-    }
-    const queryVector = providedQueryVector ?? await this.embedding.embedQuery(query, runId, observer);
-    const stored = this.embedding.vectors.listActive("session").filter((item) => item.sessionId !== currentSessionId);
-    const denseRanked = rankDenseSources(queryVector, stored, this.embedding.retrieval.embedding!.profile.minimumSimilarity);
-    const dense: RankedCandidate<SearchCandidate>[] = denseRanked.flatMap((item) => item.value.sessionId ? [{
-      ...item,
-      value: {
-        sourceId: item.id, sessionId: item.value.sessionId,
-        ...(item.value.anchorMessageId === undefined ? {} : { messageId: item.value.anchorMessageId }),
-        score: item.score, vectors: [...item.vectors], totalMatches: 1,
-      },
-    }] : []);
-    await observer?.("dense_retrieval_completed", { corpus: "session", candidateCount: dense.length });
-    const ranked = this.embedding.retrieval.mode === "dense_only"
-      ? dense
-      : reciprocalRankFusion(
-        dense,
-        lexical.map((item, index) => ({
-          id: item.sourceId, value: item, rank: index + 1, score: -(item.bm25 ?? 0),
-          vectors: stored.filter((chunk) => chunk.sourceId === item.sourceId).map((chunk) => chunk.vector),
-        })),
-      );
-    if (this.embedding.retrieval.mode === "hybrid") {
-      await observer?.("rrf_completed", { corpus: "session", candidateCount: ranked.length });
-    }
-    // Session Recall 对外返回不同 Session；同一 Session 的次优 run 不再竞争名额。
-    const unique = new Map<string, RankedCandidate<SearchCandidate>>();
-    for (const item of ranked) if (!unique.has(item.value.sessionId)) unique.set(item.value.sessionId, item);
-    const selected = maximalMarginalRelevance([...unique.values()], SEARCH_SESSION_LIMIT);
-    await observer?.("mmr_completed", mmrEvent("session", selected));
-    const denseScores = new Map(dense.map((item) => [item.id, item.score]));
-    return selected.selected.map((item) => {
-      const denseScore = denseScores.get(item.id);
-      return {
-        ...item.value,
-        ...(denseScore === undefined ? {} : { dense: denseScore }),
-        ...(this.embedding.retrieval.mode === "hybrid" ? { fused: item.score } : {}),
-        mmr: item.mmrScore,
-        score: item.score,
-        vectors: [...item.vectors],
-      };
-    });
+    // Session 始终使用 FTS；全局检索模式只控制 Semantic Memory。
+    const unique = new Map<string, SearchCandidate>();
+    for (const item of lexical) if (!unique.has(item.sessionId)) unique.set(item.sessionId, item);
+    return [...unique.values()];
   }
 
   private searchCandidates(query: string, currentSessionId?: string): SearchCandidate[] {

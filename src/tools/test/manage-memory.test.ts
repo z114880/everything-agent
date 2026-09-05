@@ -14,35 +14,39 @@ const recall: SessionRecallSettings = {
 afterEach(() => memories.splice(0).forEach((memory) => memory.close()));
 
 describe("本地记忆工具", () => {
-  it("manage_memory 只管理 Semantic Memory 并校验长期价值声明", async () => {
-    const tool = new ManageMemoryTool(await memory());
-    expect(() => tool.execute({ action: "create", subject: "当前时间", content: "七点" })).toThrow("category");
-    await expect(tool.execute({
-      action: "create", category: "preference", stable: true, futureUseful: true,
-      subject: "用户", content: "喜欢茶",
-    })).resolves.toMatchObject({ subject: "用户", content: "喜欢茶" });
-    await expect(tool.execute({ action: "search", query: "喜欢茶" })).resolves.toHaveLength(1);
+  it("submit 绑定当前用户证据并由小模型选择写入，search 仍只读", async () => {
+    const runtime = await memory(); const session = runtime.createSession();
+    const evidence = runtime.startRun(session.id, "r1", "我喜欢红茶");
+    const tool = new ManageMemoryTool(runtime, {
+      currentSessionId: session.id, runId: "r1", evidenceMessageId: evidence.id, model: "small",
+      client: { messages: { create: () => ({ content: [{ type: "text", text: JSON.stringify({ action: "create", reason: "新偏好", evidenceMessageIds: [evidence.id], subject: "饮品偏好", content: "喜欢红茶", category: "preference", stable: true, futureUseful: true }) }], stop_reason: "end_turn" }) } },
+    });
+    const registry = new LocalToolRegistry(runtime, tool);
+    await expect(registry.execute("manage_memory", { action: "submit", intent: "remember", subject: "用户", attribute: "饮品偏好", content: "喜欢红茶" }, () => {}, { signal: new AbortController().signal, deadline: null, iteration: 1, toolUseId: "t1" })).resolves.toMatchObject({ status: "queued" });
+    await runtime.waitForBackgroundTasks();
+    await expect(tool.execute({ action: "search", query: "红茶" })).resolves.toHaveLength(1);
+    expect(runtime.listSemantic()[0]?.sources).toEqual([{ sessionId: session.id, messageId: evidence.id, createdAt: evidence.createdAt }]);
   });
 
-  it("删除 Semantic Memory 前必须取得同一目标的确认令牌", async () => {
-    const runtime = await memory(); const item = await runtime.createSemantic("用户", "喜欢茶"); const tool = new ManageMemoryTool(runtime);
-    const pending = tool.execute({ action: "request_delete", id: item.id }) as { confirmation: string };
-    expect(tool.execute({ action: "delete", id: item.id, confirmation: pending.confirmation })).toEqual({ deleted: true, id: item.id });
+  it("提交忘记意图后直接删除，不需要确认令牌", async () => {
+    const runtime = await memory(); const item = await runtime.createSemantic("饮品偏好", "喜欢红茶");
+    const session = runtime.createSession(); const evidence = runtime.startRun(session.id, "r1", "忘记我的饮品偏好");
+    const tool = new ManageMemoryTool(runtime, { currentSessionId: session.id, runId: "r1", evidenceMessageId: evidence.id, model: "small",
+      client: { messages: { create: () => ({ content: [{ type: "text", text: JSON.stringify({ action: "delete", targetId: item.id, reason: "用户明确要求忘记", evidenceMessageIds: [evidence.id] }) }], stop_reason: "end_turn" }) } },
+    });
+    expect(tool.execute({ action: "submit", intent: "forget", subject: "用户", attribute: "饮品偏好", content: "忘记饮品偏好" })).toMatchObject({ status: "queued" });
+    await runtime.waitForBackgroundTasks();
     expect(runtime.listSemantic()).toEqual([]);
-    expect(() => tool.execute({ action: "delete", id: item.id, confirmation: "wrong" })).toThrow("确认无效");
   });
 
-  it("支持更新并拒绝无效 Semantic 操作参数", async () => {
-    const runtime = await memory(); const item = await runtime.createSemantic("用户", "喜欢茶"); const tool = new ManageMemoryTool(runtime);
-    await expect(tool.execute({
-      action: "update", id: item.id, category: "preference", stable: true, futureUseful: true,
-      subject: "用户", content: "喜欢绿茶",
-    })).resolves.toMatchObject({ content: "喜欢绿茶" });
+  it("拒绝绕过检索的旧操作、伪造证据及未绑定模型的提交", async () => {
+    const tool = new ManageMemoryTool(await memory());
     expect(() => tool.execute(null)).toThrow("参数必须是对象");
-    expect(() => tool.execute({ action: "unknown" })).toThrow("未知");
-    expect(() => tool.execute({ action: "update", id: 0, category: "preference", stable: true, futureUseful: true, subject: "x", content: "y" })).toThrow("正整数");
-    expect(() => tool.execute({ action: "create", category: "unknown", stable: true, futureUseful: true, subject: "x", content: "y" })).toThrow("category");
-    expect(() => tool.execute({ action: "create", category: "preference", stable: false, futureUseful: true, subject: "x", content: "y" })).toThrow("stable");
+    expect(() => tool.execute({ action: "create" })).toThrow("未知");
+    expect(() => tool.execute({ action: "request_delete" })).toThrow("未知");
+    expect(() => tool.execute({ action: "submit", evidenceMessageIds: [1] })).toThrow("不支持");
+    expect(() => tool.execute({ action: "submit" })).toThrow("模型与证据");
+    expect(() => tool.execute({ action: "search", query: " " })).toThrow("query");
   });
 
   it("注册 Session Search 与 Session Read，并绑定当前 Session 排除规则", async () => {

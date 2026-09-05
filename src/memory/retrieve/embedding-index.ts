@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import { estimateTextTokens } from "../../model/token-estimator.ts";
 import { CHUNKING_VERSION, chunkText, SqliteVectorStore } from "./index.ts";
+import type { AgentObserver } from "../../agent-loop/agent-loop.ts";
 import type { EmbeddingProfile, StoredChunk } from "./index.ts";
 import type { MemoryRetrievalConfiguration } from "../types.ts";
 import type { Row } from "../storage/records.ts";
-import { nowUtc, parseJson, plainText, semanticFromRow } from "../storage/records.ts";
+import { nowUtc, semanticFromRow } from "../storage/records.ts";
 import type { MemoryDatabase } from "../storage/database.ts";
 
 /** 向量配置、增量嵌入和可取消的影子索引重建。 */
@@ -145,40 +146,16 @@ export class EmbeddingIndex {
     const semantic = (this.storage.connection.prepare("SELECT * FROM semantic_memory ORDER BY updated_at DESC, id DESC").all() as Row[]).map(semanticFromRow).map((item) => ({
       corpus: "semantic" as const, sourceId: String(item.id), text: `主题：${item.subject}\n内容：${item.content}`,
     }));
-    const rows = this.storage.connection.prepare(`
-      SELECT * FROM chat_log c
-      WHERE EXISTS (
-        SELECT 1 FROM chat_log done WHERE done.session_id = c.session_id
-          AND done.run_id = c.run_id AND done.kind = 'assistant_message'
-      )
-      ORDER BY c.session_id, c.run_id, c.id
-    `).all() as Row[];
-    const grouped = new Map<string, Row[]>();
-    for (const row of rows) {
-      const key = `${row.session_id}\0${row.run_id}`;
-      const group = grouped.get(key) ?? [];
-      group.push(row); grouped.set(key, group);
-    }
-    const sessions: EmbeddingDocument[] = [];
-    for (const group of grouped.values()) {
-      const user = group.find((row) => row.kind === "user_message");
-      const assistant = [...group].reverse().find((row) => row.kind === "assistant_message");
-      if (!user || !assistant) continue;
-      sessions.push({
-        corpus: "session", sourceId: String(user.run_id), sessionId: String(user.session_id),
-        anchorMessageId: Number(user.id),
-        text: `用户：${plainText(parseJson(String(user.content_json)))}\n助手：${plainText(parseJson(String(assistant.content_json)))}`,
-      });
-    }
-    return [...semantic, ...sessions];
+    return semantic;
   }
 
   async embedDocument(
     text: string,
-    purpose: "memory_create" | "run_complete" | "rebuild",
+    purpose: "memory_create" | "rebuild",
     rebuildId?: string,
     signal?: AbortSignal,
     runId?: string,
+    observer: AgentObserver | undefined = this.retrieval.observer,
   ): Promise<PendingStoredChunk[]> {
     const embedding = this.retrieval.embedding;
     if (!embedding) return [];
@@ -189,7 +166,7 @@ export class EmbeddingIndex {
       chunks.map((chunk) => chunk.text), chunks.map((chunk) => chunk.estimatedTokens),
       {
         purpose,
-        ...(this.retrieval.observer ? { observer: this.retrieval.observer } : {}),
+        ...(observer ? { observer } : {}),
         ...(rebuildId ? { rebuildId } : {}),
         ...(signal ? { signal } : {}),
         ...(runId ? { runId } : {}),
@@ -206,14 +183,14 @@ export class EmbeddingIndex {
     });
   }
 
-  async embedQuery(query: string, runId?: string, observer = this.retrieval.observer): Promise<Float32Array> {
+  async embedQuery(query: string, runId?: string, observer = this.retrieval.observer, signal?: AbortSignal): Promise<Float32Array> {
     const embedding = this.retrieval.embedding;
     if (!embedding) throw new Error("尚未配置 Embedding");
     const text = applyTemplate(embedding.profile.queryTemplate, query);
     const estimatedTokens = estimateTextTokens(text);
     if (estimatedTokens < 1 || estimatedTokens > 512) throw new Error("Embedding Query 估算量必须为 1–512 tokens");
     const [result] = await embedding.client.embed([text], [estimatedTokens], {
-      purpose: "query", ...(observer ? { observer } : {}),
+      purpose: "query", ...(observer ? { observer } : {}), ...(signal ? { signal } : {}),
       ...(runId ? { runId } : {}),
     });
     if (!result) throw new Error("Embedding Query 未返回向量");

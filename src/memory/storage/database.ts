@@ -47,6 +47,9 @@ export class MemoryDatabase {
       `);
       this.connection.exec(MEMORY_SCHEMA);
     }
+    // Session 不再进入向量语料库，清除旧派生向量；事实和原始聊天记录保留。
+    this.connection.prepare("DELETE FROM embedding_chunks WHERE corpus='session'").run();
+    this.connection.prepare("UPDATE memory_tasks SET status='pending', attempts=MAX(0, attempts-1) WHERE status='running'").run();
     // 进程重启后不可能继续持有旧 HTTP 状态，未完成的影子任务明确标为 interrupted。
     this.connection.prepare(`
       UPDATE embedding_rebuilds SET status='interrupted', completed_at=? WHERE status='running'

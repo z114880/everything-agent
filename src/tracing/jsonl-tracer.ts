@@ -72,9 +72,9 @@ export class JsonlTracer {
   }
 
   private async write(record: TraceRecord): Promise<void> {
-    const dateDirectory = join(this.traceDirectory, record.timestamp.slice(0, 10));
+    const dateDirectory = join(this.traceDirectory, (typeof record.taskCreatedAt === "string" ? record.taskCreatedAt : record.timestamp).slice(0, 10));
     await mkdir(dateDirectory, { recursive: true });
-    const sessionFile = traceFileName(record.sessionId);
+    const sessionFile = traceFileName(typeof record.taskId === "string" ? `${record.taskKind}-${record.taskId}` : record.sessionId);
     const primaryPath = await numberedTracePath(dateDirectory, sessionFile);
     let path = this.recoveryPaths.get(primaryPath) ?? primaryPath;
     if (!this.checkedPaths.has(path)) {
@@ -207,7 +207,22 @@ function traceEventFields(type: string, event: Record<string, unknown>): Record<
     run_completed: ["reply", "iterations", "stopReason", "toolCallCount", "ms"],
     run_failed: ["errorType", "errorMessage", "iterations", "ms"],
     consolidation_start: ["trigger", "throughMessageId"],
-    consolidation_end: ["throughMessageId", "factsCreated", "factsUpdated", "factsSkipped"],
+    consolidation_end: ["throughMessageId", "factsCreated", "factsUpdated", "factsSkipped", "factsDeleted", "factsMerged"],
+    memory_task_started: ["attempt"],
+    memory_task_completed: ["attempt"],
+    memory_task_retry: ["attempt", "errorType", "nextAttemptAt"],
+    memory_task_failed: ["attempt", "errorType", "nextAttemptAt"],
+    memory_change_replayed: ["candidateId", "action", "targetId"],
+    memory_candidate_extracted: ["candidateId", "intent", "evidenceMessageIds"],
+    memory_search_completed: ["candidateId", "attempt", "revision", "candidateIds"],
+    memory_model_started: ["candidateId", "model"],
+    memory_model_completed: ["candidateId", "model", "durationMs"],
+    memory_model_failed: ["candidateId", "model", "errorType"],
+    memory_decision_completed: ["candidateId", "attempt", "action", "reasonCode", "targetId", "sourceIds", "evidenceMessageIds"],
+    memory_validation_completed: ["candidateId", "attempt", "action"],
+    memory_conflict: ["candidateId", "attempt"],
+    memory_change_completed: ["candidateId", "action", "reasonCode", "targetId", "deletedIds", "durationMs"],
+    memory_change_failed: ["candidateId", "errorType", "durationMs"],
     consolidation_error: ["throughMessageId", "errorType"],
     embedding_started: ["purpose", "batchIndex", "itemCount", "estimatedTokens", "rebuildId"],
     embedding_completed: ["purpose", "batchIndex", "itemCount", "estimatedTokens", "tokenUsage", "dimensions", "ms", "rebuildId"],
@@ -228,6 +243,7 @@ function traceEventFields(type: string, event: Record<string, unknown>): Record<
     trace_read_error: ["file"],
   };
   const output: Record<string, unknown> = {};
+  for (const key of ["taskId", "taskKind", "taskCreatedAt", "sourceRunId"]) if (typeof event[key] === "string") output[key] = event[key];
   if (typeof event.sessionId === "string") output.sessionId = event.sessionId;
   if (typeof event.iteration === "number") output.iteration = event.iteration;
   if (typeof event.modelCallId === "string") output.modelCallId = event.modelCallId;

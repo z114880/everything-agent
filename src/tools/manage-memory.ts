@@ -1,65 +1,50 @@
-import type { MemoryRuntime } from "../memory/index.ts";
+import type { MemoryManagementOptions, MemoryRuntime } from "../memory/index.ts";
+import { readMemoryCandidate } from "../memory/index.ts";
+import type { ToolExecutionContext } from "../agent-loop/agent-loop.ts";
 
 export const MANAGE_MEMORY_TOOL = "manage_memory";
 export const manageMemorySchema = {
   name: MANAGE_MEMORY_TOOL,
-  description: "搜索、创建、更新或删除稳定且跨会话有用的 Semantic Memory。过去对话请使用 session_search/session_read。删除前必须先请求确认令牌。",
+  description: "搜索长期记忆，或提交一个独立事实/明确忘记意图。submit 返回 queued 表示已接收，后台强制检索并由小模型判断新增、更新、删除、合并或跳过；不等待结果，不得声称已保存成功，不要自行指定操作或目标 ID。仅提交当前用户原文支持的信息；删除无需确认。历史对话使用 session_search/session_read。",
   input_schema: {
     type: "object",
     properties: {
-      action: { type: "string", enum: ["search", "create", "update", "request_delete", "delete"] },
-      query: { type: "string" }, id: { type: "integer", minimum: 1 }, subject: { type: "string" },
-      content: { type: "string" },
-      category: { type: "string", enum: ["user_attribute", "preference", "ongoing_project", "constraint", "commitment"] },
-      stable: { type: "boolean" }, futureUseful: { type: "boolean" }, confirmation: { type: "string" },
+      action: { type: "string", enum: ["search", "submit"] },
+      query: { type: "string" },
+      intent: { type: "string", enum: ["remember", "forget"] },
+      subject: { type: "string" }, attribute: { type: "string" }, content: { type: "string" },
     },
     required: ["action"], additionalProperties: false,
   },
 };
 
-/** 管理聊天侧 Semantic Memory，并在工具内部强制写入与删除权限。 */
+/** 将当前回合的可信证据绑定在工具外部，主模型不能伪造证据 ID 或绕过检索写入。 */
 export class ManageMemoryTool {
-  private readonly confirmations = new Map<string, { id: number; expiresAt: number }>();
   private readonly memory: MemoryRuntime;
-  constructor(memory: MemoryRuntime) { this.memory = memory }
-  execute(value: unknown): unknown {
-    const args = record(value); const action = text(args.action, "action");
-    if (action === "search") return this.memory.searchSemantic(text(args.query, "query"), 20);
-    if (action === "create") {
-      validateDeclaration(args);
-      return this.memory.createSemantic(text(args.subject, "subject"), text(args.content, "content"), "agent");
-    }
-    if (action === "update") {
-      validateDeclaration(args);
-      return this.memory.updateSemantic(idValue(args.id), text(args.subject, "subject"), text(args.content, "content"), "agent");
-    }
-    if (action === "request_delete") {
-      const id = idValue(args.id); const token = crypto.randomUUID();
-      this.confirmations.set(token, { id, expiresAt: Date.now() + 60_000 });
-      return { confirmation: token, expiresInMs: 60_000, message: `确认删除 Semantic Memory #${id}` };
-    }
-    if (action === "delete") {
-      const id = idValue(args.id); const token = text(args.confirmation, "confirmation"); const pending = this.confirmations.get(token);
-      this.confirmations.delete(token);
-      if (!pending || pending.id !== id || pending.expiresAt < Date.now()) throw new Error("删除确认无效或已过期");
-      this.memory.deleteSemantic(id, "agent"); return { deleted: true, id };
-    }
-    throw new TypeError("未知的 memory action");
+  private readonly options: (MemoryManagementOptions & { evidenceMessageId: number }) | undefined;
+
+  constructor(memory: MemoryRuntime, options?: MemoryManagementOptions & { evidenceMessageId: number }) {
+    this.memory = memory; this.options = options;
   }
-}
-function validateDeclaration(args: Record<string, unknown>): void {
-  const allowed = new Set(["user_attribute", "preference", "ongoing_project", "constraint", "commitment"]);
-  if (!allowed.has(text(args.category, "category"))) throw new TypeError("category 不属于允许的 Semantic Memory 范围");
-  if (args.stable !== true || args.futureUseful !== true) throw new TypeError("Semantic Memory 必须明确声明 stable 和 futureUseful 为 true");
-}
-function record(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("工具参数必须是对象");
-  return value as Record<string, unknown>;
-}
-function text(value: unknown, field: string): string {
-  if (typeof value !== "string" || !value.trim()) throw new TypeError(`${field} 不能为空`);
-  return value.trim();
-}
-function idValue(value: unknown): number {
-  const id = Number(value); if (!Number.isInteger(id) || id < 1) throw new TypeError("id 必须是正整数"); return id;
+
+  /** 提交落库后立即返回 queued；未绑定当前用户证据时仅允许搜索。 */
+  execute(value: unknown, context?: ToolExecutionContext): unknown {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("参数必须是对象");
+    const args = value as Record<string, unknown>;
+    if (Object.keys(args).some((key) => !["action", "query", "intent", "subject", "attribute", "content"].includes(key))) throw new TypeError("不支持的记忆参数");
+    if (args.action === "search") {
+      if (typeof args.query !== "string" || !args.query.trim()) throw new TypeError("query 不能为空");
+      return this.memory.searchSemantic(args.query, 20);
+    }
+    if (args.action !== "submit") throw new TypeError("未知的 memory action");
+    if (!this.options) throw new Error("记忆提交缺少当前回合的模型与证据");
+    const candidate = readMemoryCandidate({ ...args, evidenceMessageIds: [this.options.evidenceMessageId] });
+    const signals = [this.options.signal, context?.signal].filter((signal): signal is AbortSignal => Boolean(signal));
+    if (context?.deadline !== undefined && context.deadline !== null) {
+      if (context.deadline <= Date.now()) throw new Error("记忆提交已超过回合截止时间");
+      signals.push(AbortSignal.timeout(Math.ceil(context.deadline - Date.now())));
+    }
+    for (const signal of signals) signal.throwIfAborted();
+    return this.memory.enqueueMemory(candidate, this.options);
+  }
 }

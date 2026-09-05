@@ -18,6 +18,7 @@ export function ConfigPage() {
   const [settings, setSettings] = useState<AgentSettings | null>(null);
   const [provider, setProvider] = useState<AgentProvider>("anthropic");
   const [model, setModel] = useState("");
+  const [consolidationSessionInterval, setConsolidationSessionInterval] = useState(6);
   const [smallModel, setSmallModel] = useState("");
   const [sessionSearchWindow, setSessionSearchWindow] = useState(5);
   const [sessionScrollStep, setSessionScrollStep] = useState(10);
@@ -61,7 +62,7 @@ export function ConfigPage() {
     try {
       const result = await saveAgentConfig({
         provider, model, smallModel, baseUrl, apiKey, clearApiKey: false, force,
-        sessionSearchWindow, sessionScrollStep, sessionRecallMessageLimit,
+        consolidationSessionInterval, sessionSearchWindow, sessionScrollStep, sessionRecallMessageLimit,
         sessionRecallTokenLimit, modelContextWindow,
         retrievalMode, embeddingBaseUrl, embeddingModel,
         embeddingQueryTemplate, embeddingDocumentTemplate, embeddingMinimumSimilarity,
@@ -99,6 +100,7 @@ export function ConfigPage() {
 
   function applyRuntimeSettings(value: AgentSettings) {
     setSessionSearchWindow(value.sessionSearchWindow);
+    setConsolidationSessionInterval(value.consolidationSessionInterval);
     setSessionScrollStep(value.sessionScrollStep);
     setSessionRecallMessageLimit(value.sessionRecallMessageLimit);
     setSessionRecallTokenLimit(value.sessionRecallTokenLimit);
@@ -252,6 +254,10 @@ export function ConfigPage() {
               <label className="config-field">Session Search Window
                 <input type="number" min={settings?.limits.sessionSearchWindow?.min ?? 1} max={settings?.limits.sessionSearchWindow?.max ?? 20} value={sessionSearchWindow} onChange={(event) => setSessionSearchWindow(Number(event.target.value))} />
                 <span className="field-help">命中点初始单侧窗口，默认 5。</span>
+              </label>
+              <label>后台整理间隔（Session 数）
+                <input type="number" min={1} max={100} value={consolidationSessionInterval} onChange={(event) => setConsolidationSessionInterval(Number(event.target.value))} />
+                <small>默认积攒 6 个对话，在新建下一个对话时后台整理。</small>
               </label>
               <label className="config-field">Session Scroll Step
                 <input type="number" min={settings?.limits.sessionScrollStep?.min ?? 1} max={settings?.limits.sessionScrollStep?.max ?? 50} value={sessionScrollStep} onChange={(event) => setSessionScrollStep(Number(event.target.value))} />

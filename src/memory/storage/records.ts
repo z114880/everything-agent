@@ -70,6 +70,7 @@ export function consolidationFromRow(row: Row): ConsolidationRun {
     id: Number(row.id), runId: String(row.run_id), sessionId: String(row.session_id), trigger: String(row.trigger),
     status: String(row.status), throughMessageId: Number(row.through_message_id), factsCreated: Number(row.facts_created),
     factsUpdated: Number(row.facts_updated), factsSkipped: Number(row.facts_skipped),
+    factsDeleted: Number(row.facts_deleted ?? 0), factsMerged: Number(row.facts_merged ?? 0),
     errorType: row.error_type === null || row.error_type === undefined ? null : String(row.error_type),
     startedAt: String(row.started_at), completedAt: row.completed_at === null || row.completed_at === undefined ? null : String(row.completed_at),
   };

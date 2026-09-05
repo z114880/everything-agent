@@ -51,7 +51,7 @@ export class LocalToolRegistry implements ToolRegistry {
     context: ToolExecutionContext,
   ): unknown {
     if (context.signal?.aborted) throw context.signal.reason;
-    if (name === MANAGE_MEMORY_TOOL && this.manageMemory) return this.manageMemory.execute(args);
+    if (name === MANAGE_MEMORY_TOOL && this.manageMemory) return this.manageMemory.execute(args, context);
     if ((name === SESSION_SEARCH_TOOL || name === SESSION_READ_TOOL) && this.sessionRecall) {
       return this.sessionRecall.execute(name, args);
     }

@@ -7,6 +7,7 @@ export interface AgentSettings {
   provider: AgentProvider;
   model: string;
   smallModel: string;
+  consolidationSessionInterval: number;
   sessionSearchWindow: number;
   sessionScrollStep: number;
   sessionRecallMessageLimit: number;
@@ -102,7 +103,7 @@ export interface SemanticMemory {
 
 export interface ConsolidationRun {
   id: number; runId: string; sessionId: string; trigger: string; status: string; throughMessageId: number;
-  factsCreated: number; factsUpdated: number; factsSkipped: number;
+  factsCreated: number; factsUpdated: number; factsSkipped: number; factsDeleted: number; factsMerged: number;
   errorType: string | null; startedAt: string; completedAt: string | null;
 }
 
@@ -177,6 +178,7 @@ export function saveAgentConfig(value: {
   apiKey: string;
   clearApiKey: boolean;
   smallModel: string;
+  consolidationSessionInterval: number;
   sessionSearchWindow: number;
   sessionScrollStep: number;
   sessionRecallMessageLimit: number;

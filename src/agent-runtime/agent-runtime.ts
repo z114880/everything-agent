@@ -14,6 +14,7 @@ const VALID_PROVIDERS = new Set<AgentProvider>(["anthropic", "openai-compatible"
 const VALID_RETRIEVAL_MODES = new Set<RetrievalMode>(["lexical_only", "dense_only", "hybrid"]);
 const DEFAULT_TIMEOUT_MS = 60_000;
 export const RUNTIME_DEFAULTS = {
+  consolidationSessionInterval: 6,
   sessionSearchWindow: 5,
   sessionScrollStep: 10,
   sessionRecallMessageLimit: 100,
@@ -26,6 +27,7 @@ interface RuntimeSettings {
   provider: AgentProvider;
   model: string;
   smallModel: string;
+  consolidationSessionInterval: number;
   sessionSearchWindow: number;
   sessionScrollStep: number;
   sessionRecallMessageLimit: number;
@@ -54,6 +56,7 @@ export interface PublicAgentSettings {
   provider: AgentProvider;
   model: string;
   smallModel: string;
+  consolidationSessionInterval: number;
   sessionSearchWindow: number;
   sessionScrollStep: number;
   sessionRecallMessageLimit: number;
@@ -75,6 +78,7 @@ export interface PublicAgentSettings {
 }
 
 const SETTING_LIMITS = {
+  consolidationSessionInterval: { min: 1, max: 100 },
   sessionSearchWindow: { min: 1, max: 20 },
   sessionScrollStep: { min: 1, max: 50 },
   sessionRecallMessageLimit: { min: 1, max: 200 },
@@ -110,7 +114,6 @@ export function createAgentRuntime(paths: import("./local-config.ts").LocalConfi
   let closed = false;
   let memoryRuntime: MemoryRuntime | null = null;
   let tracer: JsonlTracer | null = null;
-  let manageMemoryTool: ManageMemoryTool | null = null;
   let recoveryScheduled = false;
   let dataClearing = false;
   const sessionLocks = new Map<string, Promise<void>>();
@@ -161,6 +164,7 @@ export function createAgentRuntime(paths: import("./local-config.ts").LocalConfi
       EVERYTHING_MODEL: model,
       EVERYTHING_SMALL_MODEL: smallModel,
       EVERYTHING_SESSION_SEARCH_WINDOW: String(runtime.sessionSearchWindow),
+      EVERYTHING_CONSOLIDATION_SESSION_INTERVAL: String(runtime.consolidationSessionInterval),
       EVERYTHING_SESSION_SCROLL_STEP: String(runtime.sessionScrollStep),
       EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT: String(runtime.sessionRecallMessageLimit),
       EVERYTHING_SESSION_RECALL_TOKEN_LIMIT: String(runtime.sessionRecallTokenLimit),
@@ -211,6 +215,7 @@ export function createAgentRuntime(paths: import("./local-config.ts").LocalConfi
     assertOpen();
     await updateEnvFile({
       EVERYTHING_SESSION_SEARCH_WINDOW: String(RUNTIME_DEFAULTS.sessionSearchWindow),
+      EVERYTHING_CONSOLIDATION_SESSION_INTERVAL: String(RUNTIME_DEFAULTS.consolidationSessionInterval),
       EVERYTHING_SESSION_SCROLL_STEP: String(RUNTIME_DEFAULTS.sessionScrollStep),
       EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT: String(RUNTIME_DEFAULTS.sessionRecallMessageLimit),
       EVERYTHING_SESSION_RECALL_TOKEN_LIMIT: String(RUNTIME_DEFAULTS.sessionRecallTokenLimit),
@@ -232,6 +237,7 @@ export function createAgentRuntime(paths: import("./local-config.ts").LocalConfi
       // 无论成功、失败还是取消，都退出 allowIncompleteIndex 临时状态。
       // 失败时普通运行会重新绑定旧 active generation，避免影子索引语义名存实亡。
       await configureMemoryRuntime(memory, settings);
+      scheduleStartupRecovery(memory, settings);
     }
   }
 
@@ -264,11 +270,12 @@ export function createAgentRuntime(paths: import("./local-config.ts").LocalConfi
     return withSessionLock(sessionId, async () => {
       const memory = getMemoryRuntime();
       await configureMemoryRuntime(memory, settings);
+      scheduleStartupRecovery(memory, settings);
       const trace = getTracer();
       const client = createRuntimeClient(settings, tokenEstimator);
       const runId = crypto.randomUUID();
       const startedAt = performance.now();
-      memory.startRun(sessionId, runId, prompt);
+      const userEvidence = memory.startRun(sessionId, runId, prompt);
       await trace.record("run_started", {
         runId,
         sessionId,
@@ -295,7 +302,7 @@ export function createAgentRuntime(paths: import("./local-config.ts").LocalConfi
           "dense_retrieval_completed", "lexical_retrieval_completed", "rrf_completed", "mmr_completed",
           "model_request", "model_response", "model_failed", "stream_fallback",
           "tool_started", "tool_completed", "tool_failed",
-        ].includes(kind)) {
+        ].includes(kind) || kind.startsWith("memory_")) {
           const modelFields = kind.startsWith("model_") ? { provider: settings.provider, model: settings.model } : {};
           await trace.record(kind, { ...enriched, ...modelFields });
         }
@@ -330,7 +337,10 @@ export function createAgentRuntime(paths: import("./local-config.ts").LocalConfi
           model: settings.model,
           system: [baseSystem, retrieval.context].filter(Boolean).join("\n\n"),
           messages,
-          tools: new LocalToolRegistry(memory, getManageMemoryTool(memory), {
+          tools: new LocalToolRegistry(memory, new ManageMemoryTool(memory, {
+            client, model: settings.smallModel || settings.model, currentSessionId: sessionId,
+            runId, evidenceMessageId: userEvidence.id, observer: emit,
+          }), {
             currentSessionId: sessionId,
             settings: recallSettings(settings, tokenEstimator),
           }),
@@ -395,12 +405,11 @@ export function createAgentRuntime(paths: import("./local-config.ts").LocalConfi
     if (memoryRuntime?.isEmbeddingRebuildRunning()) throw new Error("Embedding 索引正在重建，请等待完成或先取消重建");
     dataClearing = true;
     try {
-      if (memoryRuntime) await memoryRuntime.waitForConsolidation();
+      if (memoryRuntime) { memoryRuntime.stopBackgroundTasks(); await memoryRuntime.waitForBackgroundTasks(); }
       if (tracer) await tracer.flush();
       memoryRuntime?.close();
       memoryRuntime = null;
       tracer = null;
-      manageMemoryTool = null;
       recoveryScheduled = false;
       await clearEverythingData(everythingHome);
       return { cleared: true };
@@ -417,6 +426,7 @@ export function createAgentRuntime(paths: import("./local-config.ts").LocalConfi
       provider,
       model: values.EVERYTHING_MODEL ?? "",
       smallModel: values.EVERYTHING_SMALL_MODEL ?? "",
+      consolidationSessionInterval: parseSetting(values.EVERYTHING_CONSOLIDATION_SESSION_INTERVAL, "整理 Session 间隔", RUNTIME_DEFAULTS.consolidationSessionInterval, SETTING_LIMITS.consolidationSessionInterval),
       sessionSearchWindow: parseSetting(values.EVERYTHING_SESSION_SEARCH_WINDOW, "Session Search Window", RUNTIME_DEFAULTS.sessionSearchWindow, SETTING_LIMITS.sessionSearchWindow),
       sessionScrollStep: parseSetting(values.EVERYTHING_SESSION_SCROLL_STEP, "Session Scroll Step", RUNTIME_DEFAULTS.sessionScrollStep, SETTING_LIMITS.sessionScrollStep),
       sessionRecallMessageLimit: parseSetting(values.EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT, "Session Recall Message Limit", RUNTIME_DEFAULTS.sessionRecallMessageLimit, SETTING_LIMITS.sessionRecallMessageLimit),
@@ -458,17 +468,24 @@ export function createAgentRuntime(paths: import("./local-config.ts").LocalConfi
   function publicToolEvent(call: ToolCallRecord): Record<string, unknown> {
     const result = call.tool === "session_search" || call.tool === "session_read"
       ? sessionRecallToolMetadata(call.result)
-      : removeCredentials(call.result);
+      : call.tool === "manage_memory" ? memoryToolMetadata(call.result) : removeCredentials(call.result);
     return {
       tool: call.tool,
       toolCallId: call.toolUseId,
       iteration: call.iteration,
       isError: call.isError,
-      arguments: removeCredentials(call.args),
+      arguments: call.tool === "manage_memory" ? memoryToolMetadata(call.args) : removeCredentials(call.args),
       result,
       outputLength: call.output.length,
       summary: call.isError ? "工具执行失败" : "工具执行完成",
     };
+  }
+
+  function memoryToolMetadata(value: unknown): unknown {
+    if (Array.isArray(value)) return { count: value.length, ids: value.map((item) => item?.id).filter((id) => typeof id === "number") };
+    if (!value || typeof value !== "object") return { redacted: true };
+    const item = value as Record<string, unknown>;
+    return Object.fromEntries(["action", "intent", "reasonCode", "targetId", "deletedIds"].filter((key) => item[key] !== undefined).map((key) => [key, item[key]]));
   }
 
   function sessionRecallToolMetadata(value: unknown): unknown {
@@ -524,6 +541,7 @@ export function createAgentRuntime(paths: import("./local-config.ts").LocalConfi
       provider: settings.provider,
       model: settings.model,
       smallModel: settings.smallModel,
+      consolidationSessionInterval: settings.consolidationSessionInterval,
       sessionSearchWindow: settings.sessionSearchWindow,
       sessionScrollStep: settings.sessionScrollStep,
       sessionRecallMessageLimit: settings.sessionRecallMessageLimit,
@@ -547,6 +565,7 @@ export function createAgentRuntime(paths: import("./local-config.ts").LocalConfi
 
   function parseRuntimeSettingBody(body: AgentSettingsInput) {
     return {
+      consolidationSessionInterval: parseSetting(body.consolidationSessionInterval, "整理 Session 间隔", RUNTIME_DEFAULTS.consolidationSessionInterval, SETTING_LIMITS.consolidationSessionInterval),
       sessionSearchWindow: parseSetting(body.sessionSearchWindow, "Session Search Window", RUNTIME_DEFAULTS.sessionSearchWindow, SETTING_LIMITS.sessionSearchWindow),
       sessionScrollStep: parseSetting(body.sessionScrollStep, "Session Scroll Step", RUNTIME_DEFAULTS.sessionScrollStep, SETTING_LIMITS.sessionScrollStep),
       sessionRecallMessageLimit: parseSetting(body.sessionRecallMessageLimit, "Session Recall Message Limit", RUNTIME_DEFAULTS.sessionRecallMessageLimit, SETTING_LIMITS.sessionRecallMessageLimit),
@@ -580,43 +599,17 @@ export function createAgentRuntime(paths: import("./local-config.ts").LocalConfi
     return tracer;
   }
 
-  function getManageMemoryTool(memory: MemoryRuntime): ManageMemoryTool {
-    manageMemoryTool ??= new ManageMemoryTool(memory);
-    return manageMemoryTool;
-  }
-
   function scheduleStartupRecovery(memory: MemoryRuntime, settings: RuntimeSettings): void {
     if (recoveryScheduled || !settings.apiKey || !(settings.smallModel || settings.model)) return;
     recoveryScheduled = true;
-    void configureMemoryRuntime(memory, settings)
-      .then(() => consolidationOptions(settings))
-      .then((options) => memory.schedulePendingConsolidations(options))
-      .catch((error: unknown) => getTracer().record("consolidation_error", {
-        errorType: error instanceof Error ? error.name : "UnknownError",
-      }));
-  }
-
-  function scheduleSessionConsolidation(memory: MemoryRuntime, sessionId: string, trigger: "new_session" | "startup"): void {
-    void loadRuntimeSettings().then((settings) => {
-      if (!closed && !dataClearing && memoryRuntime === memory && settings.apiKey && (settings.smallModel || settings.model)) {
-        void configureMemoryRuntime(memory, settings)
-          .then(() => consolidationOptions(settings))
-          .then((options) => memory.scheduleConsolidation(sessionId, trigger, options))
-          .catch((error: unknown) => getTracer().record("consolidation_error", {
-            sessionId, errorType: error instanceof Error ? error.name : "UnknownError",
-          }));
-      }
+    memory.startBackgroundTasks(async () => {
+      const current = await loadRuntimeSettings();
+      await configureMemoryRuntime(memory, current);
+      return {
+        client: createRuntimeClient(current, tokenEstimator), model: current.smallModel || current.model,
+        currentSessionId: "", observer: (kind, event) => getTracer().record(kind, event),
+      };
     });
-  }
-
-  async function consolidationOptions(settings: RuntimeSettings) {
-    return {
-      client: createRuntimeClient(settings, tokenEstimator),
-      model: settings.smallModel || settings.model,
-      currentSessionId: "",
-      recall: recallSettings(settings, tokenEstimator),
-      observer: (kind: string, event: Record<string, unknown>) => getTracer().record(kind, event),
-    };
   }
 
   /** 创建真实模型客户端；非 Loop 调用也使用同一估算预算。 */
@@ -799,7 +792,7 @@ export function createAgentRuntime(paths: import("./local-config.ts").LocalConfi
     }
     dataClearing = true;
     try {
-      if (memoryRuntime) await memoryRuntime.waitForConsolidation();
+      if (memoryRuntime) { memoryRuntime.stopBackgroundTasks(); await memoryRuntime.waitForBackgroundTasks(); }
       if (tracer) await tracer.flush();
       memoryRuntime?.close();
       closed = true;
@@ -823,13 +816,15 @@ export function createAgentRuntime(paths: import("./local-config.ts").LocalConfi
       const memory = getMemoryRuntime();
       const settings = await loadRuntimeSettings();
       await configureMemoryRuntime(memory, settings);
+      scheduleStartupRecovery(memory, settings);
       return recallSettings(settings, tokenEstimator);
     },
-    createSession(previousSessionId?: string) {
+    async createSession(previousSessionId?: string) {
+      const settings = await loadRuntimeSettings();
       const memory = getMemoryRuntime();
-      const session = memory.createSession();
-      if (previousSessionId) scheduleSessionConsolidation(memory, previousSessionId, "new_session");
-      return session;
+      if (previousSessionId && sessionLocks.has(previousSessionId)) throw new Error("当前对话仍在运行");
+      scheduleStartupRecovery(memory, settings);
+      return memory.createConversation(previousSessionId, settings.consolidationSessionInterval);
     },
   };
 }

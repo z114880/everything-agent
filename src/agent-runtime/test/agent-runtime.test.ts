@@ -49,7 +49,7 @@ describe("个人助理 Runtime", () => {
 
   it("通过公开接口执行回合，保存工作记忆并关联可观察事件", async () => {
     model();
-    const runtime = await setup(); const session = runtime.createSession();
+    const runtime = await setup(); const session = await runtime.createSession();
     const events: Array<{ kind: string; event: Record<string, unknown> }> = [];
     const result = await runtime.run({ sessionId: session.id, prompt: "你好" }, {
       ...options(), observer: (kind, event) => { events.push({ kind, event }); },
@@ -72,7 +72,7 @@ describe("个人助理 Runtime", () => {
       if (++calls === 1) { entered.resolve(); await release.promise; }
       return response("完成");
     });
-    const runtime = await setup(); const session = runtime.createSession();
+    const runtime = await setup(); const session = await runtime.createSession();
     const first = runtime.run({ sessionId: session.id, prompt: "第一问" }, options());
     await entered.promise;
     const second = runtime.run({ sessionId: session.id, prompt: "第二问" }, options());
@@ -90,7 +90,7 @@ describe("个人助理 Runtime", () => {
   });
 
   it("失败回合释放会话锁，后续回合仍能完成；关闭后拒绝重新创建资源", async () => {
-    const runtime = await setup(); const session = runtime.createSession();
+    const runtime = await setup(); const session = await runtime.createSession();
     await expect(runtime.run({ sessionId: session.id, prompt: "" }, options())).rejects.toThrow("不能为空");
     model();
     await expect(runtime.run({ sessionId: session.id, prompt: "失败回合" }, {
@@ -176,4 +176,35 @@ it("独立 Embedding 配置可重建空索引，并在更换模型后继续使�
     expect((await runtime.getSettings()).embeddingIndex.ready).toBe(false);
     await runtime.prepareMemory();
   } finally { fetchMock.mockRestore(); }
+});
+
+it("聊天记忆使用配置的小模型与当前证据，事件和工具摘要不暴露记忆正文", async () => {
+  const runtime = await setup();
+  await runtime.saveAgentSettings({ provider: "openai-compatible", model: "main", smallModel: "memory-small" });
+  const session = await runtime.createSession();
+  let mainCalls = 0;
+  create.mockImplementation(async (request) => {
+    if (request.system?.includes("你是个人助理的记忆管理模型")) {
+      expect(request.model).toBe("memory-small");
+      const payload = JSON.parse(String(request.messages[0]?.content));
+      expect(payload.evidence[0].text).toBe("请记住我喜欢红茶");
+      return response(JSON.stringify({ action: "create", reason: "私人理由：喜欢红茶", evidenceMessageIds: payload.candidate.evidenceMessageIds, subject: "饮品偏好", content: "喜欢红茶", category: "preference", stable: true, futureUseful: true }));
+    }
+    if (Array.isArray(request.tools) && request.tools.length > 0) {
+      expect(request.model).toBe("main");
+      if (++mainCalls === 1) return { content: [{ type: "tool_use", id: "memory-tool", name: "manage_memory", input: { action: "submit", intent: "remember", subject: "用户", attribute: "饮品偏好", content: "喜欢红茶" } }], stop_reason: "tool_use" };
+      return response("已记住");
+    }
+    return response('{"intent":"none"}');
+  });
+  const events: Array<{ kind: string; event: Record<string, unknown> }> = [];
+  await runtime.run({ sessionId: session.id, prompt: "请记住我喜欢红茶" }, { ...options(), observer: (kind, event) => { events.push({ kind, event }) } });
+  expect(runtime.memory.listSemantic()).toMatchObject([{ content: "喜欢红茶" }]);
+  const memoryEvents = events.filter((item) => item.kind.startsWith("memory_") || item.kind === "tool_completed");
+  expect(memoryEvents.some((item) => item.kind === "memory_change_completed")).toBe(true);
+  expect(JSON.stringify(memoryEvents)).not.toContain("红茶");
+  const traces = (await runtime.readTraces()).flatMap((file) => file.records).filter((record) => record.type.startsWith("memory_") || record.type === "tool_completed");
+  expect(traces.find((record) => record.type === "memory_model_completed")?.payload).toMatchObject({ model: "memory-small" });
+  expect(traces.find((record) => record.type === "memory_change_completed")?.payload).toMatchObject({ action: "create", reasonCode: "new_fact", targetId: expect.any(Number) });
+  expect(JSON.stringify(traces)).not.toContain("红茶");
 });

@@ -48,7 +48,7 @@ export interface ChatLogEntry {
   runComplete?: boolean; contentTruncated?: boolean; contentFragment?: boolean; contentOffset?: number;
 }
 export interface SemanticMemory {
-  id: number; subject: string; content: string; source: string; createdAt: string; updatedAt: string; score?: number;
+  id: number; subject: string; content: string; source: string; createdAt: string; updatedAt: string; score?: number; sources?: MemorySource[];
 }
 export interface RecallRange { fromMessageId: number; toMessageId: number }
 export interface SessionRecallResult {
@@ -68,7 +68,7 @@ export interface SessionReadResult {
 }
 export interface ConsolidationRun {
   id: number; runId: string; sessionId: string; trigger: string; status: string; throughMessageId: number;
-  factsCreated: number; factsUpdated: number; factsSkipped: number; errorType: string | null;
+  factsCreated: number; factsUpdated: number; factsSkipped: number; factsDeleted: number; factsMerged: number; errorType: string | null;
   startedAt: string; completedAt: string | null;
 }
 export interface MemoryOverview {
@@ -79,3 +79,52 @@ export interface RetrievalResult {
   context: string; retrieved: boolean; semantic: SemanticMemory[]; sessionRecall: SessionSearchResult | null;
 }
 export interface StoredRun { sessionId: string; runId: string; prompt: string; messages: AgentMessage[] }
+
+/** 主模型只提交事实或忘记意图，不能直接选择数据库操作。 */
+export interface MemoryCandidate {
+  intent: "remember" | "forget";
+  subject: string;
+  attribute: string;
+  content: string;
+  evidenceMessageIds: number[];
+}
+/** 事实证据仅保存位置与时间，不复制私人正文。 */
+export interface MemorySource {
+  sessionId: string;
+  messageId: number;
+  createdAt: string;
+}
+export type MemoryAction = "create" | "update" | "delete" | "merge" | "noop";
+export type MemoryReasonCode = "new_fact" | "correction" | "explicit_forget" | "redundant" | "duplicate" | "not_durable" | "uncertain" | "no_change";
+export interface MemoryDecision {
+  action: MemoryAction;
+  reason: string;
+  reasonCode: MemoryReasonCode;
+  evidenceMessageIds: number[];
+  targetId?: number;
+  sourceIds?: number[];
+  subject?: string;
+  content?: string;
+  category?: SemanticMemoryCategory;
+  stable?: boolean;
+  futureUseful?: boolean;
+}
+export interface MemoryManagementResult {
+  action: MemoryAction;
+  reason: string;
+  reasonCode: MemoryReasonCode;
+  targetId?: number;
+  deletedIds: number[];
+}
+export interface MemoryManagementOptions {
+  /** 持久任务的稳定操作标识，用于恢复时查询已提交结果。 */
+  candidateId?: string;
+  sourceRunId?: string;
+  client: AgentModelClient;
+  model: string;
+  currentSessionId: string;
+  runId?: string;
+  observer?: AgentObserver;
+  signal?: AbortSignal;
+  source?: "agent" | "consolidation";
+}
