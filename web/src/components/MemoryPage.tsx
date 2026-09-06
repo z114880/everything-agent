@@ -86,8 +86,8 @@ export function MemoryPage() {
       {recall?.sessions.map((result) => <RecallCard key={result.session.id} result={result} read={read} />)}
     </div>}
     {tab === "procedural" && <section className="panel procedural-editor"><div className="panel-header"><span><FileText size={15} /> System Prompt</span><code>.everything/EVERYTHING.md</code></div><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} /><button className="primary-action" onClick={() => void saveSystemPrompt(prompt).then(() => setMessage("EVERYTHING.md 已保存"))}>保存 Procedural Memory</button></section>}
-    {tab === "chat" && <div className="panel table-scroll"><table><thead><tr><th>ID</th><th>Task ID</th><th>Run ID</th><th>Role / Kind</th><th>内容</th><th>时间</th></tr></thead><tbody>{data.chatLog.map((item) => <tr key={item.id}><td>{item.id}</td><td><code>{short(item.runId)}</code></td><td><code>{short(item.runId)}</code></td><td>{item.role}<br /><small>{item.kind}</small></td><td><pre>{contentText(item.content)}</pre></td><td>{local(item.createdAt)}</td></tr>)}</tbody></table></div>}
-    {tab === "consolidation" && <div className="panel table-scroll"><table><thead><tr><th>Status</th><th>Task ID</th><th>Trigger</th><th>批次 / 未解决冲突</th><th>Facts</th><th>时间</th></tr></thead><tbody>{data.consolidations.map((item) => <tr key={item.id}><td><span className={"status-pill " + item.status}>{item.status}</span>{item.errorType && <small>{item.errorType}</small>}</td><td><code>{short(item.runId)}</code></td><td>{item.trigger}</td><td>{item.completedBatches} / {item.totalBatches} · 冲突 {item.unresolvedConflicts}</td><td>新增 {item.factsCreated} / 更新 {item.factsUpdated} / 删除 {item.factsDeleted} / 合并 {item.factsMerged} / 跳过 {item.factsSkipped}</td><td>{local(item.startedAt)}</td></tr>)}</tbody></table></div>}
+    {tab === "chat" && (<div className="panel table-scroll"><table><thead><tr><th>ID</th><th>Session ID</th><th>Run ID</th><th>Role</th><th>Kind</th><th>内容</th><th>时间</th></tr></thead><tbody>{data.chatLog.map((item) => (<tr key={item.id}><td>{item.id}</td><td><code>{short(item.sessionId)}</code></td><td><code>{short(item.runId)}</code></td><td>{item.role}</td><td>{item.kind}</td><td><pre>{contentText(item.content)}</pre></td><td>{local(item.createdAt)}</td></tr>))}</tbody></table></div>)}
+    {tab === "consolidation" && <div className="panel table-scroll"><table><thead><tr><th>Status</th><th>Run ID</th><th>Trigger</th><th>批次 / 未解决冲突</th><th>Facts</th><th>时间</th></tr></thead><tbody>{data.consolidations.map((item) => <tr key={item.id}><td><span className={"status-pill " + item.status}>{item.status}</span>{item.errorType && <small>{item.errorType}</small>}</td><td><code>{short(item.runId)}</code></td><td>{item.trigger}</td><td>{item.completedBatches} / {item.totalBatches} · 冲突 {item.unresolvedConflicts}</td><td>新增 {item.factsCreated} / 更新 {item.factsUpdated} / 删除 {item.factsDeleted} / 合并 {item.factsMerged} / 跳过 {item.factsSkipped}</td><td>{local(item.startedAt)}</td></tr>)}</tbody></table></div>}
   </div>;
 }
 
@@ -99,9 +99,9 @@ function RecallCard({ result, read }: { result: SessionRecallResult; read(result
     {result.expandLimitReached && <small>完整扩窗已达到预算，请从头分页读取。</small>}
     <pre>{result.entries.map((entry) => "[" + entry.id + " · " + entry.kind + " · " + (entry.runComplete ? "完整" : "未完成") + "] " + contentText(entry.content)).join("\\n\\n")}</pre>
   </div><div>
-    {result.nextCursor && !result.isComplete && <button onClick={() => void read(result)}>扩大 / 继续</button>}
-    {!result.isComplete && <button onClick={() => void read(result, true)}>从头读取</button>}
-  </div></article>;
+      {result.nextCursor && !result.isComplete && <button onClick={() => void read(result)}>扩大 / 继续</button>}
+      {!result.isComplete && <button onClick={() => void read(result, true)}>从头读取</button>}
+    </div></article>;
 }
 function retrievalScoreLabel(result: SessionRecallResult): string {
   const signals = result.retrievalSignals;
