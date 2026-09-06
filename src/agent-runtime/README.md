@@ -2,6 +2,28 @@
 
 已实现的本地个人助理集成模块，组合 Agent Loop、真实模型客户端、工具注册表、Memory 与 JSONL Tracer。它不依赖 Web、HTTP 或 Graph 调度器；`agent-loop` 继续负责模型与工具无关的迭代语义。
 
+## 文件组织
+
+```text
+agent-runtime/
+├── index.ts                  # 模块公开入口
+├── agent-runtime.ts          # 回合执行、事件转发、后台任务启动、会话锁与资源生命周期
+├── types.ts                  # 回合输入、选项与结果类型
+├── configuration/
+│   ├── schema.ts             # 配置类型、默认值、边界校验与配置错误
+│   └── settings.ts           # 配置读写流程、模型连接探测与公开配置投影
+├── integrations/
+│   ├── model.ts              # 模型客户端接入与请求预算检查
+│   └── memory.ts             # 召回预算、Embedding 客户端与索引绑定
+├── events/
+│   └── tool-events.ts        # 工具事件脱敏与记忆元数据投影
+├── local-config.ts           # 本地配置与规则文件持久化
+├── local-data.ts             # 本地数据清理
+└── test/                     # 通过公开入口验证行为
+```
+
+`agent-runtime.ts` 持有实例状态，负责执行顺序和真实事件发布。配置模块不持有 Memory 或 Tracer 的生命周期；接入模块通过参数接收依赖和事件接收器；工具事件模块只转换事件数据。内部辅助模块不从 `index.ts` 导出，宿主继续通过统一公开入口使用 Runtime。
+
 ## 公开接口
 
 通过 `src/index.ts` 或 `everything-agent/agent-runtime` 导入：
