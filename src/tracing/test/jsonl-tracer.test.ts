@@ -152,7 +152,7 @@ describe("JSONL 运行记录", () => {
   it("检索事件移除凭证并忽略未允许字段", async () => {
     const home = await mkdtemp(join(tmpdir(), "everything-trace-"));
     const tracer = new JsonlTracer(home, { now: () => new Date("2026-09-03T08:09:10Z") });
-    await tracer.record("retrieval", {
+    await tracer.record("retrieval_completed", {
       sessionId: "s1",
       semantic: { query: "Bearer abc.def token-12345678", hits: [{ id: 1, bm25: -1 }] },
       sessionRecall: { mode: "none", sessions: [] },

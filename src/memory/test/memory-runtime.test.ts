@@ -106,6 +106,29 @@ describe("Memory Runtime", () => {
     await expect(memory.readSession({ cursor: "bad" }, recall)).rejects.toThrow("cursor 无效");
   });
 
+  it("检索开始在 Gate 后和阶段事件前，完成事件包含命中结果", async () => {
+    const memory = await createMemory();
+    const created = await memory.createSemantic("项目", "项目安排在周五");
+    const events: { kind: string; data: Record<string, unknown> }[] = [];
+    await memory.retrieve("项目周五", [], {
+      ...options(memory, scriptedClient([
+        response('{"intent":"fact_with_evidence","semanticQuery":"项目周五","sessionRecall":{"mode":"search","query":"周五"},"reason":"测试"}'),
+      ]), "current"),
+      observer: (kind, data) => { events.push({ kind, data }) },
+    });
+    const kinds = events.map((event) => event.kind);
+    expect(kinds).not.toContain("retrieval");
+    expect(kinds.filter((kind) => kind === "retrieval_start")).toHaveLength(1);
+    expect(kinds.indexOf("retrieval_start")).toBe(kinds.indexOf("gate_end") + 1);
+    expect(kinds.indexOf("lexical_retrieval_completed")).toBeGreaterThan(kinds.indexOf("retrieval_start"));
+    expect(events.at(-1)).toMatchObject({
+      kind: "retrieval_completed",
+      data: { semanticCount: 1, sessionCount: 0, mode: "lexical_only",
+        semantic: { hits: [{ id: created.id, bm25: expect.any(Number) }] },
+        sessionRecall: { sessions: [] } },
+    });
+  });
+
   it("Gate 使用 fact_with_evidence 同时检索 Semantic 与 Session Recall，失败时也回退到两者", async () => {
     const memory = await createMemory(); const historical = memory.createSession();
     await addCompletedRun(memory, historical.id, "r1", "周五发布", "决定周五发布");

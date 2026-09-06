@@ -399,9 +399,12 @@ SQLite 不重复保存不必要的私人正文；chunk 优先保存原始事实�
 
 ## Observer 与 trace 事件
 
-实现使用以下分阶段事件，并暂时保留原有 `retrieval` 汇总事件：
+Gate 结束后、实际检索前发送 `retrieval_start`（mode、intent）；所有检索阶段结束后发送 `retrieval_completed`，包含 semantic 命中、sessionRecall 元数据和命中数量。无需检索时也发送开始和完成事件，结果为空。原有 `retrieval` 汇总事件已移除。
+
+实现使用以下分阶段事件：
 
 ```text
+retrieval_start
 embedding_started
 embedding_completed
 embedding_failed

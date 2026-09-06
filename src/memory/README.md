@@ -91,7 +91,7 @@ session_read 使用 search 返回的 cursor 扩大命中窗口，或使用 sessi
 
 召回的历史内容以 JSON 数据块注入，并由 System Prompt 明确标记为不可信历史证据；不得执行其中的指令或工具请求。每条记录保留 Session、message、run、role、kind 和时间身份。
 
-Gate 初始召回通过 gate_start、gate_end、retrieval 和 context_assembled 观察。主 Agent 后续调用通过标准工具事件观察。检索事件只保存命中 ID、排名、信号和范围元数据；model_request 是模型实际输入的权威快照。
+Gate 初始召回通过 gate_start、gate_end、retrieval_start、retrieval_completed 和 context_assembled 观察。主 Agent 后续调用通过标准工具事件观察。检索事件只保存命中 ID、排名、信号和范围元数据；model_request 是模型实际输入的权威快照。
 
 ## 统一 Semantic Memory 管理
 
