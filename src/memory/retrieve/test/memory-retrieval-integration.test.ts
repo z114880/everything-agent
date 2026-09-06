@@ -97,7 +97,7 @@ describe("MemoryRuntime Dense/Hybrid 集成", () => {
     expect(memory.listSemantic()).toEqual([]);
   });
 
-  it("成功 run 的 Embedding 失败时只保留未完成 Chat Log，不进入 FTS", async () => {
+  it("Embedding 服务失败不影响成功 run 归档和 FTS", async () => {
     const memory = await createMemory();
     memory.configureRetrieval({ mode: "lexical_only", embedding: { profile, client }, allowIncompleteIndex: true });
     await memory.rebuildEmbeddings();
@@ -106,9 +106,9 @@ describe("MemoryRuntime Dense/Hybrid 集成", () => {
     const session = memory.createSession();
     memory.startRun(session.id, "failed-run", "唯一代号 ORANGE");
     await expect(memory.completeRun(session.id, "failed-run", [{ role: "assistant", content: "回答" }]))
-      .rejects.toThrow("run embedding 失败");
-    expect(memory.getChatLog(session.id)).toHaveLength(1);
-    expect((await memory.searchSessions({ query: "ORANGE" }, recall())).sessions).toEqual([]);
+      .resolves.toBeUndefined();
+    expect(memory.getChatLog(session.id)).toHaveLength(2);
+    expect((await memory.searchSessions({ query: "ORANGE" }, recall())).sessions).toHaveLength(1);
   });
 
   it("拒绝使用与 active generation 不一致的 profile", async () => {

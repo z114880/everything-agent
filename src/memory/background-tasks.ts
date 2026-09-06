@@ -1,20 +1,16 @@
-import type { MemoryCandidate, MemoryManagementOptions, MemoryManagementResult } from "./types.ts";
+import { MemoryConsolidation, type ConsolidationProgress } from "./consolidation.ts";
+import type { SemanticStore } from "./storage/semantic-store.ts";
+import type { MemoryCandidate, MemoryManagementOptions } from "./types.ts";
 import type { MemoryDatabase } from "./storage/database.ts";
 import type { MemoryManagement } from "./management.ts";
 import type { Row } from "./storage/records.ts";
 import { nowUtc } from "./storage/records.ts";
 
-interface SessionProgress {
-  sessionId: string;
-  throughMessageId: number;
-  batches: Array<{ messageIds: number[]; candidates?: MemoryCandidate[] }>;
-  completed?: boolean;
-}
 interface TaskPayload {
   sessionId?: string;
   sourceRunId?: string;
   candidate?: MemoryCandidate;
-  sessions?: SessionProgress[];
+  consolidation?: ConsolidationProgress;
 }
 export interface BackgroundTask {
   id: string;
@@ -31,16 +27,18 @@ export type BackgroundOptions = (task: BackgroundTask) => Promise<MemoryManageme
 export class MemoryBackgroundTasks {
   private readonly storage: MemoryDatabase;
   private readonly management: MemoryManagement;
+  private readonly consolidation: MemoryConsolidation;
   private options: BackgroundOptions | undefined;
   private work: Promise<void> | undefined;
   private stopped = false;
   private wake: (() => void) | undefined;
 
-  constructor(storage: MemoryDatabase, management: MemoryManagement) {
+  constructor(storage: MemoryDatabase, management: MemoryManagement, semantic: SemanticStore) {
     this.storage = storage; this.management = management;
+    this.consolidation = new MemoryConsolidation(semantic, storage);
   }
 
-  /** 只恢复已经入库的任务，不因启动把不足阈值的 Session 入队。 */
+  /** 只恢复已经入库的任务，不因服务启动创建每日任务。 */
   start(options: BackgroundOptions): void { this.options = options; this.stopped = false; this.kick(); }
 
   /** 停止继续取任务；正在执行的单次操作由调用方等待后再关闭数据库。 */
@@ -62,30 +60,26 @@ export class MemoryBackgroundTasks {
     return { status: "queued", taskId: id };
   }
 
-  /** 新建对话边界按未入队 Session 数量分批；快照水位防止处理中新增消息被误标完成。 */
-  enqueueConsolidations(currentSessionId: string, threshold: number): void {
-    if (!Number.isInteger(threshold) || threshold < 1 || threshold > 100) throw new TypeError("整理间隔必须为 1 至 100 个 Session");
-    const reserved = new Map<string, number>();
-    for (const row of this.storage.connection.prepare("SELECT payload_json FROM memory_tasks WHERE kind='consolidation'").all() as Row[]) {
-      for (const session of (JSON.parse(String(row.payload_json)) as TaskPayload).sessions ?? []) reserved.set(session.sessionId, Math.max(reserved.get(session.sessionId) ?? 0, session.throughMessageId));
-    }
-    const rows = this.storage.connection.prepare(`SELECT s.id, s.consolidated_through_message_id AS watermark,
-      MAX(c.id) AS through_id FROM sessions s JOIN chat_log c ON c.session_id=s.id
-      WHERE s.id<>? AND EXISTS (SELECT 1 FROM chat_log done WHERE done.session_id=c.session_id AND done.run_id=c.run_id AND done.kind='assistant_message')
-      GROUP BY s.id ORDER BY MIN(c.id)`).all(currentSessionId) as Row[];
-    const pending: SessionProgress[] = [];
-    for (const row of rows) {
-      const sessionId = String(row.id);
-      const watermark = Math.max(Number(row.watermark), reserved.get(sessionId) ?? 0);
-      if (Number(row.through_id) <= watermark) continue;
-      const ids = (this.storage.connection.prepare(`SELECT c.id FROM chat_log c WHERE c.session_id=? AND c.id>? AND c.id<=? AND c.kind='user_message'
-        AND EXISTS (SELECT 1 FROM chat_log done WHERE done.session_id=c.session_id AND done.run_id=c.run_id AND done.kind='assistant_message') ORDER BY c.id`).all(sessionId, watermark, Number(row.through_id)) as Row[]).map((item) => Number(item.id));
-      const batches: SessionProgress["batches"] = [];
-      for (let offset = 0; offset < ids.length; offset += 16) batches.push({ messageIds: ids.slice(offset, offset + 16) });
-      if (batches.length) pending.push({ sessionId, throughMessageId: Number(row.through_id), batches });
-    }
-    while (pending.length >= threshold) this.insert("consolidation", { sessions: pending.splice(0, threshold) });
+  /** 持久化每日去重与任务互斥；手动执行不受每日自动配额限制。 */
+  enqueueConsolidation(trigger: "daily" | "manual") {
+    if (trigger !== "daily" && trigger !== "manual") throw new TypeError("Consolidate 触发来源无效");
+    const now = new Date();
+    const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const result = this.storage.transaction(() => {
+      const existing = this.storage.connection.prepare("SELECT id FROM memory_tasks WHERE kind='consolidation' AND status IN ('pending','running') LIMIT 1").get();
+      const daily = this.storage.connection.prepare("SELECT task_id FROM consolidation_days WHERE day=?").get(day);
+      if (existing) {
+        if (trigger === "daily") this.storage.connection.prepare("INSERT OR IGNORE INTO consolidation_days VALUES (?, ?)").run(day, String(existing.id));
+        return { status: "active" as const, taskId: String(existing.id) };
+      }
+      if (trigger === "daily" && daily) return { status: "already_ran" as const, taskId: String(daily.task_id) };
+      const taskId = this.insert("consolidation", { consolidation: { trigger, completed: 0 } });
+      if (trigger === "daily") this.storage.connection.prepare("INSERT INTO consolidation_days VALUES (?, ?)").run(day, taskId);
+      this.storage.connection.prepare("INSERT INTO consolidation_runs(run_id, trigger, status, started_at) VALUES (?, ?, 'pending', ?)").run(taskId, trigger, nowUtc());
+      return { status: "queued" as const, taskId };
+    });
     this.kick();
+    return result;
   }
 
   /** 等待当前队列排空，供测试与显式生命周期操作使用；聊天请求不调用。 */
@@ -126,65 +120,33 @@ export class MemoryBackgroundTasks {
       let options: MemoryManagementOptions | undefined;
       try {
         const { signal: _signal, ...base } = await this.options!(task);
-        options = { ...base, runId: task.id, ...(payload.sourceRunId ? { sourceRunId: payload.sourceRunId } : {}),
-          observer: async (kind, event) => base.observer?.(kind, { ...event, runId: task.id, taskId: task.id, taskKind: task.kind, taskCreatedAt: task.createdAt, sourceRunId: payload.sourceRunId }) };
-        await options.observer?.("memory_task_started", { attempt: task.attempts });
+        options = {
+          ...base, runId: task.id, ...(payload.sourceRunId ? { sourceRunId: payload.sourceRunId } : {}),
+          observer: async (kind, event) => base.observer?.(kind, { ...event, runId: task.id, ...(task.kind === "consolidation" ? { attempt: task.attempts } : { taskId: task.id, taskKind: task.kind, taskCreatedAt: task.createdAt, sourceRunId: payload.sourceRunId }) })
+        };
+        await options.observer?.(task.kind === "consolidation" ? "consolidation_started" : "memory_task_started", { attempt: task.attempts, ...(task.kind === "consolidation" ? { trigger: payload.consolidation!.trigger, createdAt: task.createdAt } : {}) });
         if (task.kind === "memory_write") {
           await this.management.manage(payload.candidate!, { ...options, currentSessionId: payload.sessionId!, source: "agent", candidateId: "write" });
         } else {
-          let failed = false;
-          for (const session of payload.sessions!) {
-            if (session.completed) continue;
-            try { await this.consolidate(task, payload, session, options); }
-            catch (error) {
-              failed = true;
-              await options.observer?.("consolidation_error", { sessionId: session.sessionId, errorType: error instanceof Error ? error.name : "UnknownError" });
-            }
-          }
-          if (failed) throw new Error("部分 Session 整理失败");
+          this.storage.connection.prepare("UPDATE consolidation_runs SET status='running', error_type=NULL WHERE run_id=?").run(task.id);
+          await this.consolidation.run(task.id, payload.consolidation!, options, () => this.save(task.id, payload));
+          this.storage.connection.prepare("UPDATE consolidation_runs SET status='completed', completed_at=? WHERE run_id=?").run(nowUtc(), task.id);
         }
         this.storage.connection.prepare("UPDATE memory_tasks SET status='completed', error_type=NULL, completed_at=? WHERE id=?").run(nowUtc(), task.id);
-        await options.observer?.("memory_task_completed", { attempt: task.attempts });
+        await options.observer?.(task.kind === "consolidation" ? "consolidation_completed" : "memory_task_completed", { attempt: task.attempts, ...(task.kind === "consolidation" ? { completedBatches: payload.consolidation!.completed } : {}) });
       } catch (error) {
         const retry = task.attempts < 3;
         const errorType = error instanceof Error ? error.name : "UnknownError";
         const nextAttemptAt = retry ? Date.now() + 1000 * 2 ** (task.attempts - 1) : 0;
         this.storage.connection.prepare("UPDATE memory_tasks SET status=?, error_type=?, next_attempt_at=? WHERE id=?").run(retry ? "pending" : "failed", errorType, nextAttemptAt, task.id);
-        await options?.observer?.(retry ? "memory_task_retry" : "memory_task_failed", { attempt: task.attempts, errorType, nextAttemptAt });
+        if (task.kind === "consolidation") this.storage.connection.prepare("UPDATE consolidation_runs SET status=?, error_type=? WHERE run_id=?").run(retry ? "pending" : "failed", errorType, task.id);
+        await options?.observer?.(task.kind === "consolidation" ? (retry ? "consolidation_retry" : "consolidation_failed") : (retry ? "memory_task_retry" : "memory_task_failed"), { attempt: task.attempts, errorType, nextAttemptAt });
       }
     }
   }
 
-  private async consolidate(task: BackgroundTask, payload: TaskPayload, session: SessionProgress, options: MemoryManagementOptions): Promise<void> {
-    const runId = `${task.id}:${session.sessionId}`;
-    this.storage.connection.prepare(`INSERT INTO consolidation_runs(run_id, session_id, trigger, status, through_message_id, started_at)
-      VALUES (?, ?, 'session_batch', 'running', ?, ?) ON CONFLICT(run_id) DO UPDATE SET status='running', error_type=NULL`).run(runId, session.sessionId, session.throughMessageId, nowUtc());
-    const local = { ...options, currentSessionId: session.sessionId, source: "consolidation" as const };
-    try {
-      await options.observer?.("consolidation_start", { sessionId: session.sessionId, throughMessageId: session.throughMessageId, trigger: "session_batch" });
-      for (const [batchIndex, batch] of session.batches.entries()) {
-        if (!batch.candidates) {
-          batch.candidates = await this.management.extract(batch.messageIds, local);
-          this.save(task.id, payload);
-        }
-        for (const [index, candidate] of batch.candidates.entries()) {
-          await this.management.manage(candidate, { ...local, candidateId: `${session.sessionId}:${batchIndex}:${index}` });
-        }
-      }
-      const changes = this.storage.connection.prepare("SELECT action, COUNT(*) AS count FROM memory_changes WHERE run_id=? AND session_id=? GROUP BY action").all(task.id, session.sessionId) as Row[];
-      const count = (action: MemoryManagementResult["action"]) => Number(changes.find((row) => row.action === action)?.count ?? 0);
-      this.storage.transaction(() => {
-        this.storage.connection.prepare("UPDATE sessions SET consolidated_through_message_id=MAX(consolidated_through_message_id, ?) WHERE id=?").run(session.throughMessageId, session.sessionId);
-        this.storage.connection.prepare("UPDATE consolidation_runs SET status='completed', facts_created=?, facts_updated=?, facts_skipped=?, completed_at=? WHERE run_id=?").run(count("create"), count("update"), count("noop"), nowUtc(), runId);
-        session.completed = true; this.save(task.id, payload);
-      });
-      await options.observer?.("consolidation_end", { sessionId: session.sessionId, throughMessageId: session.throughMessageId, factsCreated: count("create"), factsUpdated: count("update"), factsSkipped: count("noop"), factsDeleted: count("delete"), factsMerged: count("merge") });
-    } catch (error) {
-      this.storage.connection.prepare("UPDATE consolidation_runs SET status='failed', error_type=? WHERE run_id=?").run(error instanceof Error ? error.name : "UnknownError", runId);
-      throw error;
-    }
-  }
 }
+
 function taskFromRow(row: Row): BackgroundTask {
   return { id: String(row.id), kind: row.kind as BackgroundTask["kind"], status: row.status as BackgroundTask["status"], attempts: Number(row.attempts), createdAt: String(row.created_at), nextAttemptAt: Number(row.next_attempt_at), errorType: row.error_type === null ? null : String(row.error_type) };
 }

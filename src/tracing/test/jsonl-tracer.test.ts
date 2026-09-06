@@ -209,3 +209,27 @@ it("记忆管理事件可回放决策及合并结果，不记录自由文本理�
   expect(records[2]?.payload).toMatchObject({ deletedIds: [35], durationMs: 8 });
   expect(JSON.stringify(records)).not.toContain("私人");
 });
+
+it("一个 consolidation 批次跨 Session 和日期仍写入同一个独立 JSONL", async () => {
+  const home = await mkdtemp(join(tmpdir(), "trace-batch-"));
+  let date = new Date("2026-09-05T12:00:00+08:00");
+  const tracer = new JsonlTracer(home, { now: () => date });
+  const task = { runId: "batch-run", createdAt: "2026-09-05T12:00:00+08:00" };
+  await tracer.record("consolidation_started", { ...task, trigger: "manual", attempt: 1 });
+  for (let index = 0; index < 6; index++) {
+    date = new Date("2026-09-06T12:00:00+08:00");
+    await tracer.record("consolidation_batch_completed", { runId: task.runId, batchIndex: index, totalBatches: 6, completedBatches: index + 1 });
+  }
+  await tracer.record("embedding_completed", { runId: task.runId, batchIndex: 0, ms: 2 });
+  await tracer.record("tool_completed", { runId: "chat", sessionId: "session-0", result: { status: "queued", taskId: "write" } });
+  await tracer.record("memory_task_completed", { runId: "write", taskId: "write", taskKind: "memory_write", taskCreatedAt: task.createdAt, sessionId: "session-0", sourceRunId: "chat", attempt: 1 });
+  const files = await readTraceFiles(home);
+  expect(files).toHaveLength(3);
+  const batch = files.find((file) => file.path.includes("consolidation-batch-run"))!;
+  expect(batch.path).toContain("2026-09-05/");
+  expect(batch.records).toHaveLength(8);
+  expect(batch.records.at(-1)?.type).toBe("embedding_completed");
+  expect(batch.records.every((record) => !record.taskId && !record.taskKind && !record.taskCreatedAt)).toBe(true);
+  expect(batch.records[1]?.payload).toEqual({ batchIndex: 0, totalBatches: 6, completedBatches: 1 });
+  expect(files.find((file) => file.path.includes("memory_write-write"))?.records[0]).toMatchObject({ sourceRunId: "chat" });
+});

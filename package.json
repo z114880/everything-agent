@@ -41,7 +41,7 @@
     }
   },
   "scripts": {
-    "build": "npm run typecheck && npm run build:web",
+    "build": "pnpm run typecheck && pnpm run build:web",
     "dev:web": "vite --config web/vite.config.ts",
     "build:web": "tsc -p web/tsconfig.json && vite build --config web/vite.config.ts",
     "preview:web": "vite preview --config web/vite.config.ts",
@@ -69,6 +69,7 @@
   },
   "dependencies": {
     "lucide-react": "^1.34.0",
+    "nodejieba": "^3.5.8",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   }

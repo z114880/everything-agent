@@ -7,7 +7,6 @@ export interface AgentSettings {
   provider: AgentProvider;
   model: string;
   smallModel: string;
-  consolidationSessionInterval: number;
   sessionSearchWindow: number;
   sessionScrollStep: number;
   sessionRecallMessageLimit: number;
@@ -41,7 +40,7 @@ export interface SessionSummary {
   messageCount: number;
   createdAt: string;
   updatedAt: string;
-  pendingMessages: number;
+
   completedRunCount: number;
   incompleteRunCount: number;
 }
@@ -102,13 +101,13 @@ export interface SemanticMemory {
 }
 
 export interface ConsolidationRun {
-  id: number; runId: string; sessionId: string; trigger: string; status: string; throughMessageId: number;
+  id: number; runId: string; trigger: string; status: string; totalBatches: number; completedBatches: number; unresolvedConflicts: number;
   factsCreated: number; factsUpdated: number; factsSkipped: number; factsDeleted: number; factsMerged: number;
   errorType: string | null; startedAt: string; completedAt: string | null;
 }
 
 export interface MemoryDashboard {
-  overview: { semanticCount: number; indexedSessionCount: number; indexedMessageCount: number; sessionCount: number; pendingSessionCount: number; databasePath: string; latestConsolidation: ConsolidationRun | null };
+  overview: { semanticCount: number; indexedSessionCount: number; indexedMessageCount: number; sessionCount: number; databasePath: string; latestConsolidation: ConsolidationRun | null };
   sessions: SessionSummary[];
   semantic: SemanticMemory[];
   chatLog: ChatLogEntry[];
@@ -135,6 +134,11 @@ export interface ClientHistoryMessage {
 }
 
 export interface AgentEvent {
+  completedBatches?: number;
+  totalBatches?: number;
+  taskKind?: string;
+  taskId?: string;
+  intent?: "none" | "past_episode" | "fact_with_evidence";
   runId?: string;
   iteration?: number;
   delta?: string;
@@ -178,7 +182,6 @@ export function saveAgentConfig(value: {
   apiKey: string;
   clearApiKey: boolean;
   smallModel: string;
-  consolidationSessionInterval: number;
   sessionSearchWindow: number;
   sessionScrollStep: number;
   sessionRecallMessageLimit: number;
@@ -326,4 +329,14 @@ async function responseError(response: Response): Promise<string> {
     if (error instanceof Error && "canForce" in error) throw error;
     return text || `请求失败（${response.status}）`;
   }
+}
+
+/** 独立订阅后台记忆事件，聊天完成后仍保持连接。 */
+export function subscribeBackgroundEvents(onEvent: (kind: string, event: AgentEvent) => void): () => void {
+  const source = new EventSource(`${endpoint}/background-events`);
+  source.onmessage = (message) => {
+    const { kind, event } = JSON.parse(message.data) as { kind: string; event: AgentEvent };
+    onEvent(kind, event);
+  };
+  return () => source.close();
 }

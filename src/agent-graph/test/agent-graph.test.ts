@@ -6,24 +6,27 @@ import {
 } from "../../index.ts";
 
 describe("Agent Harness", () => {
-  it("通过公开接口描述从 Working Memory 开始的工具循环", () => {
-    expect(agentHarnessGraph.describe()).toEqual({
-      name: "agent-harness",
-      nodes: [
-        { name: "working_memory", kind: "fn", maxVisits: 1 },
-        { name: "llm", kind: "llm", maxVisits: 10 },
-        { name: "tools", kind: "tool", maxVisits: 10 },
-        { name: "reply", kind: "fn", maxVisits: 1 },
-      ],
-      edges: [
-        { source: "START", target: "working_memory", conditional: false },
-        { source: "working_memory", target: "llm", conditional: false },
-        { source: "tools", target: "llm", conditional: false },
-        { source: "reply", target: "END", conditional: false },
-        { source: "llm", target: "tools", conditional: true },
-        { source: "llm", target: "reply", conditional: true },
-      ],
-    });
+  it("业务拓扑从用户输入开始并包含召回和独立后台记忆关系", () => {
+    const graph = agentHarnessGraph.describe();
+    expect(graph.nodes.map((node) => node.name)).toEqual(expect.arrayContaining([
+      "user_prompt", "session_chat_history", "system_prompt", "procedural_memory",
+      "retrieval_gate", "semantic_recall", "session_recall", "working_memory",
+      "memory_queue", "consolidate_trigger", "consolidation", "memory_review", "memory_commit", "semantic_store",
+    ]));
+    const edges = graph.edges.map((edge) => `${edge.source}->${edge.target}`);
+    expect(edges).toContain("START->user_prompt");
+    expect(edges).not.toContain("START->working_memory");
+    expect(edges).toEqual(expect.arrayContaining([
+      "retrieval_gate->working_memory", "retrieval_gate->semantic_recall", "retrieval_gate->session_recall",
+      "llm->tools", "tools->llm", "llm->reply", "tools->memory_queue",
+      "consolidate_trigger->consolidate_snapshot", "consolidation->consolidate_commit", "memory_queue->memory_review",
+      "memory_review->memory_commit", "memory_commit->semantic_store",
+    ]));
+    const isolated = new Set(["consolidate_trigger", "consolidate_snapshot", "consolidation", "consolidate_commit", "consolidate_result"]);
+    expect(graph.edges.every((edge) => isolated.has(edge.source) === isolated.has(edge.target))).toBe(true);
+    expect(edges).not.toContain("reply->consolidation");
+    expect(edges).not.toContain("memory_commit->reply");
+    expect(graph.edges.find((edge) => edge.source === "llm" && edge.target === "tools")?.conditional).toBe(true);
   });
 
   it("只执行已注册的只读时间工具", async () => {

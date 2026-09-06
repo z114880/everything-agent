@@ -71,10 +71,16 @@ export class JsonlTracer {
     };
   }
 
+  private readonly consolidationDates = new Map<string, string>();
+
   private async write(record: TraceRecord): Promise<void> {
-    const dateDirectory = join(this.traceDirectory, (typeof record.taskCreatedAt === "string" ? record.taskCreatedAt : record.timestamp).slice(0, 10));
+    const consolidation = record.type.startsWith("consolidation_") || this.consolidationDates.has(record.runId);
+    if (consolidation && !this.consolidationDates.has(record.runId)) {
+      this.consolidationDates.set(record.runId, typeof record.payload?.createdAt === "string" ? record.payload.createdAt : record.timestamp);
+    }
+    const dateDirectory = join(this.traceDirectory, (this.consolidationDates.get(record.runId) ?? (typeof record.taskCreatedAt === "string" ? record.taskCreatedAt : record.timestamp)).slice(0, 10));
     await mkdir(dateDirectory, { recursive: true });
-    const sessionFile = traceFileName(typeof record.taskId === "string" ? `${record.taskKind}-${record.taskId}` : record.sessionId);
+    const sessionFile = traceFileName(consolidation ? `consolidation-${record.runId}` : typeof record.taskId === "string" ? `${record.taskKind}-${record.taskId}` : record.sessionId);
     const primaryPath = await numberedTracePath(dateDirectory, sessionFile);
     let path = this.recoveryPaths.get(primaryPath) ?? primaryPath;
     if (!this.checkedPaths.has(path)) {
@@ -206,8 +212,19 @@ function traceEventFields(type: string, event: Record<string, unknown>): Record<
     tool_failed: ["tool", "arguments", "result", "summary", "isError", "ms", "outputLength"],
     run_completed: ["reply", "iterations", "stopReason", "toolCallCount", "ms"],
     run_failed: ["errorType", "errorMessage", "iterations", "ms"],
-    consolidation_start: ["trigger", "throughMessageId"],
-    consolidation_end: ["throughMessageId", "factsCreated", "factsUpdated", "factsSkipped", "factsDeleted", "factsMerged"],
+    consolidation_started: ["trigger", "attempt", "createdAt"],
+    consolidation_snapshot: ["batchIndex", "totalBatches", "factCount"],
+    consolidation_batch_started: ["batchIndex", "totalBatches", "factCount"],
+    consolidation_reviewed: ["batchIndex", "totalBatches", "decisionCount", "unresolvedConflicts"],
+    consolidation_change: ["batchIndex", "totalBatches", "action", "reasonCode", "targetId", "deletedIds"],
+    consolidation_batch_completed: ["batchIndex", "totalBatches", "completedBatches"],
+    consolidation_completed: ["attempt", "completedBatches"],
+    consolidation_retry: ["attempt", "errorType", "nextAttemptAt"],
+    consolidation_failed: ["attempt", "errorType", "nextAttemptAt"],
+    consolidation_batch_failed: ["batchIndex", "totalBatches", "errorType"],
+    consolidation_model_started: ["batchIndex", "totalBatches", "model"],
+    consolidation_model_completed: ["batchIndex", "totalBatches", "model", "durationMs"],
+    consolidation_model_failed: ["batchIndex", "totalBatches", "model", "errorType"],
     memory_task_started: ["attempt"],
     memory_task_completed: ["attempt"],
     memory_task_retry: ["attempt", "errorType", "nextAttemptAt"],
@@ -215,15 +232,14 @@ function traceEventFields(type: string, event: Record<string, unknown>): Record<
     memory_change_replayed: ["candidateId", "action", "targetId"],
     memory_candidate_extracted: ["candidateId", "intent", "evidenceMessageIds"],
     memory_search_completed: ["candidateId", "attempt", "revision", "candidateIds"],
-    memory_model_started: ["candidateId", "model"],
-    memory_model_completed: ["candidateId", "model", "durationMs"],
-    memory_model_failed: ["candidateId", "model", "errorType"],
+    memory_model_started: ["candidateId", "batchIndex", "totalBatches", "model"],
+    memory_model_completed: ["candidateId", "batchIndex", "totalBatches", "model", "durationMs"],
+    memory_model_failed: ["candidateId", "batchIndex", "totalBatches", "model", "errorType"],
     memory_decision_completed: ["candidateId", "attempt", "action", "reasonCode", "targetId", "sourceIds", "evidenceMessageIds"],
     memory_validation_completed: ["candidateId", "attempt", "action"],
     memory_conflict: ["candidateId", "attempt"],
     memory_change_completed: ["candidateId", "action", "reasonCode", "targetId", "deletedIds", "durationMs"],
     memory_change_failed: ["candidateId", "errorType", "durationMs"],
-    consolidation_error: ["throughMessageId", "errorType"],
     embedding_started: ["purpose", "batchIndex", "itemCount", "estimatedTokens", "rebuildId"],
     embedding_completed: ["purpose", "batchIndex", "itemCount", "estimatedTokens", "tokenUsage", "dimensions", "ms", "rebuildId"],
     embedding_failed: ["purpose", "batchIndex", "itemCount", "estimatedTokens", "errorType", "errorMessage", "ms", "rebuildId"],
@@ -251,6 +267,7 @@ function traceEventFields(type: string, event: Record<string, unknown>): Record<
   const payload = Object.fromEntries((payloadFields[type] ?? []).flatMap((key) => event[key] === undefined
     ? []
     : [[key, sanitizeTraceValue(event[key], key)]]));
+  if (type.startsWith("consolidation_") && typeof event.attempt === "number") payload.attempt = event.attempt;
   if (Object.keys(payload).length > 0) output.payload = payload;
   return output;
 }

@@ -41,7 +41,7 @@ export interface MemoryRetrievalConfiguration {
 }
 export interface SessionSummary {
   id: string; title: string; messageCount: number; completedRunCount: number; incompleteRunCount: number;
-  createdAt: string; updatedAt: string; pendingMessages: number;
+  createdAt: string; updatedAt: string;
 }
 export interface ChatLogEntry {
   id: number; sessionId: string; runId: string; role: string; kind: string; content: unknown; createdAt: string;
@@ -67,13 +67,13 @@ export interface SessionReadResult {
   expandLimitReached: boolean; nextCursor: string | null;
 }
 export interface ConsolidationRun {
-  id: number; runId: string; sessionId: string; trigger: string; status: string; throughMessageId: number;
+  id: number; runId: string; trigger: string; status: string; totalBatches: number; completedBatches: number; unresolvedConflicts: number;
   factsCreated: number; factsUpdated: number; factsSkipped: number; factsDeleted: number; factsMerged: number; errorType: string | null;
   startedAt: string; completedAt: string | null;
 }
 export interface MemoryOverview {
   semanticCount: number; indexedSessionCount: number; indexedMessageCount: number; sessionCount: number;
-  pendingSessionCount: number; databasePath: string; latestConsolidation: ConsolidationRun | null;
+  databasePath: string; latestConsolidation: ConsolidationRun | null;
 }
 export interface RetrievalResult {
   context: string; retrieved: boolean; semantic: SemanticMemory[]; sessionRecall: SessionSearchResult | null;
@@ -95,7 +95,7 @@ export interface MemorySource {
   createdAt: string;
 }
 export type MemoryAction = "create" | "update" | "delete" | "merge" | "noop";
-export type MemoryReasonCode = "new_fact" | "correction" | "explicit_forget" | "redundant" | "duplicate" | "not_durable" | "uncertain" | "no_change";
+export type MemoryReasonCode = "new_fact" | "correction" | "explicit_forget" | "redundant" | "duplicate" | "not_durable" | "uncertain" | "no_change" | "superseded";
 export interface MemoryDecision {
   action: MemoryAction;
   reason: string;
@@ -119,6 +119,8 @@ export interface MemoryManagementResult {
 export interface MemoryManagementOptions {
   /** 持久任务的稳定操作标识，用于恢复时查询已提交结果。 */
   candidateId?: string;
+  modelContextWindow?: number;
+  tokenEstimator?: TokenEstimator;
   sourceRunId?: string;
   client: AgentModelClient;
   model: string;

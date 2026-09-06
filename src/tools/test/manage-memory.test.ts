@@ -14,6 +14,24 @@ const recall: SessionRecallSettings = {
 afterEach(() => memories.splice(0).forEach((memory) => memory.close()));
 
 describe("本地记忆工具", () => {
+  it("提交缺少字段时明确指出字段，避免把有效 content 报为记忆文本错误", async () => {
+    const runtime = await memory(); const session = runtime.createSession();
+    const evidence = runtime.startRun(session.id, "r1", "我喜欢布偶猫");
+    const tool = new ManageMemoryTool(runtime, {
+      currentSessionId: session.id, runId: "r1", evidenceMessageId: evidence.id, model: "small",
+      client: { messages: { create: () => { throw new Error("无效提交不得调用模型"); } } },
+    });
+    expect(() => tool.execute({ action: "submit", content: "用户喜欢布偶猫" })).toThrow("submit 缺少必填字段：intent、subject、attribute");
+    expect(() => tool.execute({ action: "submit", content: "用户喜欢布偶猫", intent: "remember", subject: "宠物偏好" })).toThrow("submit 缺少必填字段：attribute");
+    const schemas = new LocalToolRegistry(runtime, tool).schemas() as Array<{ name: string; input_schema: unknown }>;
+    expect(schemas.find((schema) => schema.name === "manage_memory")?.input_schema).toMatchObject({
+      anyOf: [
+        { properties: { action: { enum: ["search"] } }, required: ["query"] },
+        { properties: { action: { enum: ["submit"] } }, required: ["intent", "subject", "attribute", "content"] },
+      ],
+    });
+  });
+
   it("submit 绑定当前用户证据并由小模型选择写入，search 仍只读", async () => {
     const runtime = await memory(); const session = runtime.createSession();
     const evidence = runtime.startRun(session.id, "r1", "我喜欢红茶");

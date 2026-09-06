@@ -1,21 +1,26 @@
+import { describeHarnessRetrieval, harnessEdgeLabels } from "../../src/agent-graph/harness-graph.ts";
 import { fileURLToPath, URL } from "node:url";
 import { agentHarnessGraph, createAgentRuntime } from "../../src/index.ts";
 import type { AgentObserver, AgentSettingsInput, AgentProvider, RetrievalMode } from "../../src/index.ts";
 export { AgentConfigError } from "../../src/index.ts";
+
+// 页面手动搜索不属于 Agent 执行，显式覆盖默认 observer，避免写入 trace。
+const manualSearchObserver: AgentObserver = () => {};
 
 const runtime = createAgentRuntime({
   home: fileURLToPath(new URL("../../.everything/", import.meta.url)),
   envPath: fileURLToPath(new URL("../../.env", import.meta.url)),
   defaultSystemPromptPath: fileURLToPath(new URL("../../EVERYTHING.md", import.meta.url)),
 });
-export const { clearEmbeddingApiKey,
+export const { subscribeBackgroundEvents, clearEmbeddingApiKey,
   resetRuntimeSettings, rebuildEmbeddingIndex, cancelEmbeddingIndexRebuild,
 } = runtime;
 
 /** 组装 Web 首屏数据；静态拓扑来自 Graph.describe()。 */
 export async function loadAgentBootstrap(): Promise<Record<string, unknown>> {
   await runtime.start();
-  return { workflow: toWorkflow(), settings: await runtime.getSettings(),
+  const settings = await runtime.getSettings();
+  return { workflow: toWorkflow(settings.retrievalMode), settings,
     systemPrompt: await runtime.readSystemPrompt(), sessions: runtime.memory.listSessions() };
 }
 /** 校验 Web 输入并将事件交给传输层。 */
@@ -32,6 +37,8 @@ export function clearLocalAgentData(body: Record<string, unknown>) {
 export async function handleMemoryAction(body: Record<string, unknown>): Promise<unknown> {
   const memory = runtime.memory;
   const action = requiredText(body.action, "action", 80);
+  if (action === "consolidate") return runtime.consolidate(body.trigger === "daily" ? "daily" : "manual");
+  if (action === "consolidation_status") return memory.listBackgroundTasks().filter((task) => task.kind === "consolidation").at(-1) ?? null;
   if (action === "bootstrap") return memoryDashboard(memory);
   if (action === "create_session") {
     const previousSessionId = optionalText(body.previousSessionId, "Previous Session ID", 200);
@@ -55,7 +62,7 @@ export async function handleMemoryAction(body: Record<string, unknown>): Promise
     await runtime.prepareMemory();
   }
   if (action === "create_semantic") return memory.createSemantic(requiredText(body.subject, "Subject", 500), requiredText(body.content, "Content", 20_000), "ui");
-  if (action === "search_semantic") return memory.searchSemantic(requiredText(body.query, "Query", 2_000), 100);
+  if (action === "search_semantic") return memory.searchSemantic(requiredText(body.query, "Query", 2_000), 100, undefined, undefined, manualSearchObserver);
   if (action === "update_semantic") return memory.updateSemantic(positiveId(body.id), requiredText(body.subject, "Subject", 500), requiredText(body.content, "Content", 20_000), "ui");
   if (action === "delete_semantic") return void memory.deleteSemantic(positiveId(body.id), "ui");
   if (action === "session_search") {
@@ -65,7 +72,7 @@ export async function handleMemoryAction(body: Record<string, unknown>): Promise
       recent: body.recent === true,
       limit: body.limit === undefined ? undefined : Number(body.limit),
       window: body.window === undefined ? undefined : Number(body.window),
-    }, recall);
+    }, recall, undefined, undefined, manualSearchObserver);
   }
   if (action === "session_read") {
     const recall = await runtime.prepareMemory();
@@ -77,17 +84,19 @@ export async function handleMemoryAction(body: Record<string, unknown>): Promise
   throw new TypeError("未知 Memory action");
 }
 
-function toWorkflow(): Record<string, unknown> {
+function toWorkflow(mode: RetrievalMode): Record<string, unknown> {
+  const harnessPresentation = describeHarnessRetrieval(mode);
   const description = agentHarnessGraph.describe();
   return {
     name: description.name,
     nodes: description.nodes.map((node) => ({
       id: node.name,
-      label: node.name,
+      label: harnessPresentation[node.name]?.title ?? node.name,
+      presentation: harnessPresentation[node.name],
       kind: node.kind,
       maxVisits: node.maxVisits,
     })),
-    edges: description.edges,
+    edges: description.edges.map((edge) => ({ ...edge, label: harnessEdgeLabels[`${edge.source}->${edge.target}`] })),
   };
 }
 

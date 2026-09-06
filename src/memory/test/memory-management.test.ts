@@ -43,7 +43,7 @@ it.each(["lexical_only", "dense_only", "hybrid"] as const)("%s 管理检索保�
   const { memory, candidate, options, evidence } = await setup();
   const first = await memory.manageMemory(candidate, { ...options, client: model(() => write("create", evidence.id)) });
   const secondEvidence = memory.startRun(options.currentSessionId, "second", "我上午喜欢喝红茶");
-  const second = await memory.manageMemory({ ...candidate, evidenceMessageIds: [secondEvidence.id] }, { ...options, runId: "second", client: model(() => write("create", secondEvidence.id)) });
+  const second = await memory.manageMemory({ ...candidate, evidenceMessageIds: [secondEvidence.id] }, { ...options, runId: "second", client: model(() => ({ ...write("create", secondEvidence.id), content: "上午喜欢喝红茶" })) });
   await configureEmbedding(memory, mode);
   if (mode !== "lexical_only") expect(await memory.searchSemantic("红茶")).toHaveLength(1);
   const events: string[] = [];

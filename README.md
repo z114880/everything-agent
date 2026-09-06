@@ -2,31 +2,31 @@
 
 ## 快速开始
 
-环境要求：Node.js 24.12 或更高版本。后端通过 Node.js 原生 TypeScript 类型擦除直接运行 `src/`，前端仍由 Vite 处理。Memory 使用 Node.js 内置 `node:sqlite`，启动时会验证 FTS5 可用性。
+环境要求：Node.js 24.12 或更高版本。后端通过 Node.js 原生 TypeScript 类型擦除直接运行 `src/`，前端仍由 Vite 处理。Memory 使用 Node.js 内置 `node:sqlite`，启动时会验证 FTS5 可用性；Session 与 Semantic FTS 共用 nodejieba 中文搜索分词、identifier 整体与组成词索引。
 
 ```bash
-npm install
-npm run dev:web
+pnpm install
+pnpm run dev:web
 ```
 
-`npm run dev:web` 是启动 Everything Agent 本地控制台、Engine 和 Agent 桥接接口的主要命令。启动后按照终端输出在浏览器中打开本地地址，并进入“配置”页面设置模型。
+`pnpm run dev:web` 是启动 Everything Agent 本地控制台、Engine 和 Agent 桥接接口的主要命令。启动后按照终端输出在浏览器中打开本地地址，并进入“配置”页面设置模型。
 
 提交改动前可运行完整检查和示例：
 
 ```bash
-npm run typecheck
-npm test
-npm run example
+pnpm run typecheck
+pnpm test
+pnpm run example
 ```
 
 ## 本地可视化控制台
 
 仓库已包含一个 React + Tailwind 的本地控制台：
 
-- **Agent**：运行真实 `runAgentLoop`，从 SQLite 恢复多轮 Session，展示 Working Memory、LLM、Tools 和 Reply。工具调用过程完整保存在本地 Chat Log，活动边和回复由真实 observer 事件驱动。
+- **Agent**：运行真实 `runAgentLoop`，从 SQLite 恢复多轮 Session，展示输入、记忆需求判断、事实与历史召回、上下文组装、推理、工具和回复；独立后台区域展示记忆写入与跨会话整理关系。工具调用过程完整保存在本地 Chat Log，活动边和回复由真实 observer 事件驱动。
 - **Workflow**：枚举 `src/workflows/` 下的 TypeScript 文件，可编辑和执行任一工作流。拓扑来自真实 `Graph.describe()`，执行由本地 Node.js 进程调用 `runGraph()`。
-- **Memory**：通过 Overview、Semantic、Episodic (Session Recall)、Procedural、Chat Log 和 Consolidation 查看本地记忆与真实历史检索窗口。
-- **运行记录**：只读列出 `.everything/traces/<日期>/<序号>-<sessionId>.jsonl` 中的 classic loop 与 memory 执行事实，页面按 JSONL 文件直接展示已脱敏事件，不额外推导 Session 或 Agent 回合结构。trace 不记录 Session 创建或选择这类 UI 活动。“配置”页面提供带二次确认的“一键清理”，可删除数据库、Session、Memory 与 trace，只保留 `.everything/EVERYTHING.md`。
+- **Memory**：通过 Overview、Semantic、Session Recall、Procedural、Chat Log 和 Consolidation 查看本地记忆与真实历史检索窗口。
+- **运行记录**：只读列出 `.everything/traces/<日期>/<序号>-<sessionId>.jsonl` 中的 classic loop 与 memory 执行事实，页面按 JSONL 文件直接展示已脱敏事件，不额外推导 Session 或 Agent 回合结构。trace 不记录 Session 创建、选择，以及 Memory 页面手动搜索记忆或历史会话这类 UI 活动；Agent 内部检索仍记录执行事件。“配置”页面提供带二次确认的“一键清理”，可删除数据库、Session、Memory 与 trace，保留 `.everything/EVERYTHING.md` 和 `.env` 配置。
 - **配置**：把 Provider、主/小模型、Session Recall 预算、Context Limit、Base URL 和密钥写入根目录 `.env`，把 System Prompt 保存到 `.everything/EVERYTHING.md`。浏览器只能读取密钥是否存在及末四位。
 
 首次运行后打开“配置”菜单，选择 Anthropic 或 OpenAI Compatible。对应环境变量为：
@@ -45,7 +45,7 @@ ANTHROPIC_API_KEY=""
 OPENAI_API_KEY=""
 ```
 
-`npm run dev:web` 同时启动页面与本地 Engine/Agent 桥接接口；浏览器不会执行工作流源码，也不会读取完整模型密钥。修改新密钥或 Base URL 时，服务端会先进行只读连接测试；失败不会覆盖旧配置，除非用户显式选择“仍然保存”。`.env` 已被 Git 忽略，不应提交。`npm run build:web` 可验证并构建浏览器静态资源到 `dist-web/`，但执行仍需要本地开发服务器。
+`pnpm run dev:web` 同时启动页面与本地 Engine/Agent 桥接接口；浏览器不会执行工作流源码，也不会读取完整模型密钥。修改新密钥或 Base URL 时，服务端会先进行只读连接测试；失败不会覆盖旧配置，除非用户显式选择“仍然保存”。`.env` 已被 Git 忽略，不应提交。`pnpm run build:web` 可验证并构建浏览器静态资源到 `dist-web/`，但执行仍需要本地开发服务器。
 
 Everything Agent 的目标是构建一个真正可长期使用的个人助理 Agent：它能够理解用户意图、调用工具完成任务、保留必要的个人记忆，并以可视化方式展示每一次执行过程。
 
@@ -73,7 +73,7 @@ Everything Agent 的目标是构建一个真正可长期使用的个人助理 Ag
 | Agent Loop | 基础能力完成 | 支持模型推理、工具调用、结果观察、流式文本、迭代限制、超时和取消 |
 | 模型客户端 | 基础能力完成 | 支持 Anthropic Messages 与 OpenAI Compatible，包含普通响应、SSE 流式响应和降级 |
 | Tool Registry | 基础能力完成 | 注册 `get_current_time`、Semantic-only `manage_memory`、只读 `session_search` 与 `session_read` |
-| Session / Memory | 基础闭环完成 | SQLite Session、结构化 Chat Log、消息级 FTS5 + BM25 Session Recall、基于 RetrievalIntent 的 gated retrieval；聊天与 consolidation 共用小模型 create/update/delete/merge/noop 管理流程 |
+| Session / Memory | 基础闭环完成 | SQLite Session、结构化 Chat Log、消息级 FTS5 + BM25 Session Recall、基于 RetrievalIntent 的 gated retrieval；聊天异步记忆写入；每日与手动全量 semantic facts 整理 |
 | Graph 前端 | 本地闭环完成 | 浏览器读写本地 TypeScript 工作流，消费真实 describe 与 observer 事件，并展示 wave、耗时和结果 |
 | Agent Harness 前端 | 基础闭环完成 | 真实 Agent Loop、动态 SVG、流式 Reply、持久多轮 Session、停止与 60 秒超时 |
 | 完整可视化界面 | 进行中 | 已有 Memory 管理与按 JSONL 文件列出的持久 trace 查看页；状态差异和更丰富的工具仍待补充 |
@@ -236,15 +236,15 @@ console.log(result.state.reply);
 ## 测试
 
 ```bash
-npm test
-npm run test:watch
-npm run test:coverage
-npm run typecheck
-npm run build
+pnpm test
+pnpm run test:watch
+pnpm run test:coverage
+pnpm run typecheck
+pnpm run build
 ```
 
 当前测试通过公开接口验证行为，不依赖私有实现。覆盖率门槛为：行、函数和语句 85%，分支 80%。
-`npm run build` 会先严格检查后端 TypeScript，再由 Vite 检查并构建前端到 `dist-web/`。后端不生成 `dist/`；Node.js 直接加载 `.ts` 源码。`tsconfig.json` 只服务于静态类型检查，Node.js 运行时不会读取它。
+`pnpm run build` 会先严格检查后端 TypeScript，再由 Vite 检查并构建前端到 `dist-web/`。后端不生成 `dist/`；Node.js 直接加载 `.ts` 源码。`tsconfig.json` 只服务于静态类型检查，Node.js 运行时不会读取它。
 
 ## 当前边界
 
@@ -257,4 +257,14 @@ npm run build
 
 ### 记忆变更流程
 
-聊天通过 `manage_memory submit` 提交用户事实或忘记意图；后台 consolidation 提取独立事实后进入同一流程。代码逐条按配置检索旧记忆，小模型选择 `create/update/delete/merge/noop`，代码校验证据与版本后执行。删除无需确认令牌；合并原子保留完整内容和来源并删除冗余项。版本冲突最多尝试 3 次（含首次），检索或模型失败不会降级新增。合并按需触发，尚无全库定期去重任务。详见 [Memory 文档](./src/memory/README.md#统一-semantic-memory-管理)。
+聊天通过 `manage_memory submit` 将用户事实或忘记意图持久入队，立即返回 `queued`，与独立的全量 consolidation 共用串行队列。代码逐条按配置检索旧记忆，小模型选择 `create/update/delete/merge/noop`，代码校验证据与版本后执行。删除无需确认令牌；合并原子保留完整内容和来源并删除冗余项。版本冲突最多尝试 3 次（含首次），检索或模型失败不会降级新增。每日与手动全库去重通过独立 consolidation 流程完成。详见 [Memory 文档](./src/memory/README.md#统一-semantic-memory-管理)。
+
+### 后台记忆任务
+
+Session 历史只维护 FTS，不生成或检索向量，回合归档不再等待远程 embedding。只有 Semantic Memory 使用配置的向量检索。
+
+Agent 页面每天首次进入时后台自动执行一次 consolidation（服务端本地自然日），**Consolidate** 按钮可额外手动触发；同一时刻只允许一个整理任务。仅将全量 semantic facts 及已有元数据交给模型，进行去重、合并、冲突检测、直接替换旧事实和低质量清理，不读取聊天。超出上下文时分组并进行有界组间审查；画布独立成区，与其他流程无连线。详见 [Consolidation 机制](./src/memory/CONSOLIDATION.md)。
+
+记忆写入与 consolidation 持久化到 `memory_tasks`，共用串行后台队列；失败最多执行三次，重试与恢复使用事务内操作凭据避免重复提交。一次写入独立一个 trace JSONL，一次 consolidation 的所有子任务共用一个 JSONL，文件名分别为 `<序号>-memory_write-<taskId>.jsonl` 和 `<序号>-consolidation-<runId>.jsonl`。整理 trace 直接以 consolidation 为根，批次下记录模型审查与变更，不包含 memory_task 包装层。
+
+Agent 页的聊天区在桌面端固定为 420px 窄宽度，小屏幕下适应屏幕宽度。“新建对话”和会话列表集成在聊天标题栏下方，默认收起，点击标题栏按钮可展开或收起；切换不改变聊天区宽度，当前会话和输入内容保持不变。

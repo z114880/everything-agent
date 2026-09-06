@@ -32,6 +32,28 @@ function model(reply = "你好") {
 const options = () => ({ observer: () => {}, signal: new AbortController().signal });
 
 describe("个人助理 Runtime", () => {
+  it("consolidation 只产生独立整理日志，不产生 system.jsonl", async () => {
+    const runtime = await setup();
+    const fact = await runtime.memory.createSemantic("饮品", "喜欢红茶");
+    create.mockResolvedValue(response(JSON.stringify({
+      decisions: [{ action: "delete", targetId: fact.id, reasonCode: "not_durable" }],
+      unresolvedConflicts: [],
+    })));
+
+    const task = await runtime.consolidate("manual");
+    await runtime.memory.waitForBackgroundTasks();
+
+    expect(runtime.memory.listSemantic()).toEqual([]);
+    const files = await runtime.readTraces();
+    expect(files).toHaveLength(1);
+    expect(files[0]?.path).toContain(`consolidation-${task!.taskId}.jsonl`);
+    expect(files[0]?.records.map((record) => record.type)).toEqual([
+      "consolidation_started", "consolidation_batch_started", "consolidation_snapshot",
+      "consolidation_model_started", "consolidation_model_completed", "consolidation_reviewed",
+      "consolidation_change", "consolidation_batch_completed", "consolidation_completed",
+    ]);
+  });
+
   it("独立实例隔离会话、规则与密钥，保存不修改进程环境", async () => {
     vi.stubEnv("OPENAI_API_KEY", "inherited");
     const first = await setup(); const second = await setup();
@@ -84,7 +106,9 @@ describe("个人助理 Runtime", () => {
     expect(requests[1]?.messages).toEqual(expect.arrayContaining([{ role: "user", content: "第一问" }]));
     expect(runtime.memory.getWorkingMemory(session.id)).toHaveLength(4);
     await runtime.saveSystemPrompt("保留规则");
+    const settingsBeforeClear = await runtime.getSettings();
     await runtime.clearLocalAgentData();
+    expect(await runtime.getSettings()).toEqual(settingsBeforeClear);
     expect(runtime.memory.listSessions()).toEqual([]);
     expect(await runtime.readSystemPrompt()).toBe("保留规则\n");
   });
@@ -99,7 +123,7 @@ describe("个人助理 Runtime", () => {
     expect(runtime.memory.getWorkingMemory(session.id)).toEqual([]);
     await runtime.run({ sessionId: session.id, prompt: "继续" }, options());
     await runtime.close();
-    expect(() => runtime.createSession()).toThrow("已关闭");
+    await expect(runtime.createSession()).rejects.toThrow("已关闭");
     await expect(runtime.run({ sessionId: session.id, prompt: "继续" }, options())).rejects.toThrow("已关闭");
   });
 });
@@ -182,9 +206,15 @@ it("聊天记忆使用配置的小模型与当前证据，事件和工具摘要�
   const runtime = await setup();
   await runtime.saveAgentSettings({ provider: "openai-compatible", model: "main", smallModel: "memory-small" });
   const session = await runtime.createSession();
+  const backgroundRelease = Promise.withResolvers<void>();
+  const backgroundEvents: Array<{ kind: string; event: Record<string, unknown> }> = [];
+  const unsubscribe = runtime.subscribeBackgroundEvents((kind, event) => { backgroundEvents.push({ kind, event }); });
+  const removedObserver = vi.fn();
+  runtime.subscribeBackgroundEvents(removedObserver)();
   let mainCalls = 0;
   create.mockImplementation(async (request) => {
     if (request.system?.includes("你是个人助理的记忆管理模型")) {
+      await backgroundRelease.promise;
       expect(request.model).toBe("memory-small");
       const payload = JSON.parse(String(request.messages[0]?.content));
       expect(payload.evidence[0].text).toBe("请记住我喜欢红茶");
@@ -199,11 +229,27 @@ it("聊天记忆使用配置的小模型与当前证据，事件和工具摘要�
   });
   const events: Array<{ kind: string; event: Record<string, unknown> }> = [];
   await runtime.run({ sessionId: session.id, prompt: "请记住我喜欢红茶" }, { ...options(), observer: (kind, event) => { events.push({ kind, event }) } });
+  const completedBeforeReply = backgroundEvents.some(({ kind }) => kind === "memory_change_completed");
+  backgroundRelease.resolve();
+  await runtime.memory.waitForBackgroundTasks();
+  expect(completedBeforeReply).toBe(false);
+  unsubscribe();
+  expect(removedObserver).not.toHaveBeenCalled();
+  expect(backgroundEvents.map(({ kind }) => kind)).toEqual(expect.arrayContaining([
+    "memory_task_started", "memory_decision_completed", "memory_change_completed", "memory_task_completed",
+  ]));
+  expect(backgroundEvents[0]?.kind).toBe("memory_task_started");
+  expect(backgroundEvents.at(-1)?.kind).toBe("memory_task_completed");
+  expect(backgroundEvents.every(({ event }) => event.taskId && event.taskKind === "memory_write" && event.sourceRunId)).toBe(true);
+  expect(JSON.stringify(backgroundEvents)).not.toContain("红茶");
   expect(runtime.memory.listSemantic()).toMatchObject([{ content: "喜欢红茶" }]);
   const memoryEvents = events.filter((item) => item.kind.startsWith("memory_") || item.kind === "tool_completed");
-  expect(memoryEvents.some((item) => item.kind === "memory_change_completed")).toBe(true);
+  expect(memoryEvents.some((item) => item.kind === "memory_change_completed")).toBe(false);
+  expect(memoryEvents.find((item) => item.kind === "tool_completed")?.event.result).toMatchObject({ status: "queued", taskId: expect.any(String) });
   expect(JSON.stringify(memoryEvents)).not.toContain("红茶");
-  const traces = (await runtime.readTraces()).flatMap((file) => file.records).filter((record) => record.type.startsWith("memory_") || record.type === "tool_completed");
+  const files = await runtime.readTraces();
+  expect(files.some((file) => file.path.includes("memory_write-"))).toBe(true);
+  const traces = files.flatMap((file) => file.records).filter((record) => record.type.startsWith("memory_") || record.type === "tool_completed");
   expect(traces.find((record) => record.type === "memory_model_completed")?.payload).toMatchObject({ model: "memory-small" });
   expect(traces.find((record) => record.type === "memory_change_completed")?.payload).toMatchObject({ action: "create", reasonCode: "new_fact", targetId: expect.any(Number) });
   expect(JSON.stringify(traces)).not.toContain("红茶");

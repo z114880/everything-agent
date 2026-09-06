@@ -34,7 +34,7 @@ export class MemoryRuntime {
     this.search = new MemorySearch(this.storage, this.embedding, this.semantic);
     this.recall = new SessionRecall(this.embedding, this.sessions, this.search);
     this.management = new MemoryManagement(this.storage, this.semantic, this.search);
-    this.background = new MemoryBackgroundTasks(this.storage, this.management);
+    this.background = new MemoryBackgroundTasks(this.storage, this.management, this.semantic);
   }
 
   /** 分别检索 Semantic Memory 与历史 Session，并生成隔离的不可信历史数据块。 */
@@ -74,7 +74,7 @@ export class MemoryRuntime {
     return {
       semanticCount: count("semantic_memory"), indexedSessionCount,
       indexedMessageCount: Number((this.storage.connection.prepare("SELECT COUNT(*) AS count FROM chat_log WHERE search_text <> ''").get() as Row).count),
-      sessionCount: count("sessions"), pendingSessionCount: this.sessions.listSessions().filter((session) => session.pendingMessages > 0).length,
+      sessionCount: count("sessions"),
       databasePath: this.storage.databasePath, latestConsolidation: this.listConsolidations(1)[0] ?? null,
     };
   }
@@ -208,25 +208,27 @@ export class MemoryRuntime {
     return this.management.manage(candidate, options);
   }
 
-  /** 注入后台依赖并恢复已入队任务，不触发未满阈值的整理。 */
+  /** 注入后台依赖并恢复已入队任务，不因服务启动创建新的每日整理。 */
   startBackgroundTasks(options: BackgroundOptions): void { this.background.start(options); }
 
   enqueueMemory(candidate: MemoryCandidate, options: MemoryManagementOptions) {
     return this.background.enqueueMemory(candidate, options);
   }
 
-  /** 新建对话时复用空 Session，防止重复点击产生空记录；批次任务与会话一起入库。 */
-  createConversation(previousSessionId?: string, threshold = 6): SessionSummary {
+  /** 新建对话时复用空 Session，防止重复点击产生空记录。 */
+  createConversation(previousSessionId?: string): SessionSummary {
     return this.storage.transaction(() => {
       const sessions = this.sessions.listSessions();
       if (previousSessionId && !sessions.some((session) => session.id === previousSessionId)) throw new Error("Session 不存在");
       const empty = sessions.find((session) => session.messageCount === 0);
       if (empty) return empty;
       const session = this.sessions.createSession();
-      if (previousSessionId) this.background.enqueueConsolidations(session.id, threshold);
       return session;
     });
   }
+
+  /** 每日自动检查或手动触发全量事实整理；已有任务时返回原任务。 */
+  consolidate(trigger: "daily" | "manual" = "manual") { return this.background.enqueueConsolidation(trigger); }
 
   waitForBackgroundTasks(): Promise<void> { return this.background.wait(); }
   stopBackgroundTasks(): void { this.background.stop(); }
@@ -234,8 +236,10 @@ export class MemoryRuntime {
 
   listConsolidations(limit = 100): ConsolidationRun[] {
     return (this.storage.connection.prepare(`SELECT r.*,
-      (SELECT COUNT(*) FROM memory_changes c WHERE (c.run_id=r.run_id OR c.run_id || ':' || c.session_id=r.run_id) AND c.action='delete') AS facts_deleted,
-      (SELECT COUNT(*) FROM memory_changes c WHERE (c.run_id=r.run_id OR c.run_id || ':' || c.session_id=r.run_id) AND c.action='merge') AS facts_merged
+      (SELECT COUNT(*) FROM memory_changes c WHERE c.run_id=r.run_id AND c.action='delete') AS facts_deleted,
+      (SELECT COUNT(*) FROM memory_changes c WHERE c.run_id=r.run_id AND c.action='merge') AS facts_merged,
+      (SELECT COUNT(*) FROM memory_changes c WHERE c.run_id=r.run_id AND c.action='update') AS facts_updated,
+      (SELECT COUNT(*) FROM memory_changes c WHERE c.run_id=r.run_id AND c.action='noop') AS facts_skipped
       FROM consolidation_runs r ORDER BY r.id DESC LIMIT ?`).all(limit) as Row[]).map(consolidationFromRow);
   }
 

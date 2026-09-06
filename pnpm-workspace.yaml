@@ -1,0 +1,12 @@
+# 仅允许分词原生扩展和现有构建工具执行安装脚本。
+allowBuilds:
+  esbuild: true
+  nodejieba: true
+
+# 修复原生依赖安装工具链的归档解压漏洞。
+overrides:
+  '@mapbox/node-pre-gyp>tar': ^7.5.22
+
+patchedDependencies:
+  # 直接调用本地 node-pre-gyp，避免上游安装脚本绕过 pnpm 锁文件。
+  nodejieba@3.5.8: patches/nodejieba@3.5.8.patch

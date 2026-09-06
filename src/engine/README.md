@@ -66,12 +66,12 @@ await runGraph(graph, initialState, {
 ## 本地验证
 
 ```bash
-npm test             # 单次运行全部 Vitest 测试
-npm run test:watch   # 开发时监听文件变化
-npm run test:coverage
-npm run typecheck    # 严格检查源码、测试和示例
-npm run build        # 检查后端类型并由 Vite 构建前端；后端不生成 dist/
-npm run example
+pnpm test             # 单次运行全部 Vitest 测试
+pnpm run test:watch   # 开发时监听文件变化
+pnpm run test:coverage
+pnpm run typecheck    # 严格检查源码、测试和示例
+pnpm run build        # 检查后端类型并由 Vite 构建前端；后端不生成 dist/
+pnpm run example
 ```
 
 测试通过包的公开导出验证行为，分别覆盖 `State`、`Node`、`Graph/describe`

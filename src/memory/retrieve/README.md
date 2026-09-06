@@ -6,10 +6,10 @@
 
 Memory Retrieval 为两个互相隔离的语料域提供相关性检索：
 
-- Semantic Memory：consolidation 后形成的稳定属性、偏好、持续项目事实、约束和承诺。
+- Semantic Memory：记忆写入后形成、由 consolidation 整理的稳定属性、偏好、持续项目事实、约束和承诺。
 - Session Recall：历史 Session 中已经成功完成的 run，用于恢复事件经过和原始证据。
 
-两个语料域都支持 Dense 与 FTS5 + BM25，但分别生成候选、融合和执行 MMR。Semantic Memory 与 Session Recall 不进入同一个候选池，也不互相竞争名额。
+Semantic Memory 支持 Dense 与 FTS5 + BM25；Session Recall 始终只使用 FTS5 + BM25，不生成向量，不执行 RRF 或 MMR。Semantic Memory 与 Session Recall 不进入同一个候选池，也不互相竞争名额。
 
 Session Recall 的 `recent` 模式只按时间读取；`session_read` 只按 Session ID 或 cursor 读取。二者都不经过 Dense、BM25、RRF 或 MMR。
 
@@ -54,7 +54,7 @@ src/memory/retrieve/
 
 ## 检索模式
 
-配置页提供一个全局模式，同时作用于 Semantic Memory、Session Recall、`manage_memory search/submit`、后台 consolidation 和 `session_search`：
+配置页的检索模式只作用于 Semantic Memory（含 `manage_memory search/submit` 的事实检索；consolidation 直接读取全量事实）；`session_search` 始终只走 FTS：
 
 ```ts
 type RetrievalMode = "dense_only" | "lexical_only" | "hybrid";
@@ -68,9 +68,9 @@ type RetrievalMode = "dense_only" | "lexical_only" | "hybrid";
 
 新安装和数据库升级后的默认模式是 `lexical_only`。没有完整有效的 active generation 时，不允许启用 `dense_only` 或 `hybrid`。
 
-模式只决定查询路线，不决定是否维护向量。只要已经配置 Embedding，三种模式下的成功 run 和 Semantic Memory 变更都同步维护向量；Embedding 失败会使该次记忆写入失败。只有完全没有配置 Embedding 时，lexical-only 写入才不调用远程服务。
+模式只决定查询路线，不决定是否维护向量。只要已经配置 Embedding，三种模式下的 Semantic Memory 变更都同步维护向量；Embedding 失败会使该次记忆写入失败。只有完全没有配置 Embedding 时，lexical-only 写入才不调用远程服务。
 
-任何需要 Dense 的查询只要遇到远程错误、维度错误或不完整索引，就立即抛出异常并终止当前运行。系统不重试、不静默回退到 BM25，也不返回部分 Dense 结果。相似度阈值过滤后没有候选属于正常空结果，不属于故障降级。
+任何需要 Dense 的查询只要遇到远程错误、维度错误或不完整索引，就立即抛出异常并终止当前运行。单次查询不重试、不静默回退到 BM25；后台任务会按任务重试策略重新执行未完成操作，且，也不返回部分 Dense 结果。相似度阈值过滤后没有候选属于正常空结果，不属于故障降级。
 
 ## Embedding 协议与配置
 
@@ -104,7 +104,7 @@ Query Template 与 Document Template 只能包含一个 `{text}` 占位符，不
 - 429、5xx、超时和网络错误均不自动重试。
 - 查询向量始终单独请求。
 
-同一次 `retrieve()` 内，如果 Semantic Query 与 Session Query 在应用 Query Template 后完全相同，则复用一次查询向量。查询向量和查询文本不写入 SQLite，不做跨 run 持久缓存。
+只有 Semantic Query 生成查询向量，Session Query 不调用 embedding。查询向量和查询文本不写入 SQLite，不做跨 run 持久缓存。
 
 ## Token 估算与预算
 
@@ -191,48 +191,39 @@ interface TokenEstimator {
 
 ### Session Recall
 
-一个成功完成的 run 是一个语义单元，正文估算量超过 512 tokens 时再切块。Embedding 文档格式固定并版本化：
+成功 run 的用户输入与助手最终回复只维护消息级 FTS，不切块或生成向量；归档在本地事务中保存 Chat Log 和 FTS 投影。远程 embedding 故障不影响本轮归档。数据库版本不匹配时直接删除旧库并创建新库，不迁移旧数据。
 
-```text
-用户：{userText}
-助手：{finalAssistantText}
-```
-
-Session ID、run ID、message ID、时间、Session 标题、工具请求、工具结果、trace 和运行状态都不进入 Embedding 正文。
-
-失败或未完成 run 只保留在 Chat Log 中供当前 Session UI 和审计查看：
-
-- 不进入 FTS5。
-- 不生成 chunk 或向量。
-- 不参与 Semantic consolidation。
-- Session 摘要仍可统计 `incompleteRunCount`。
-
-所有模式都继续向用户流式展示模型回复。模型回复已经展示后，完整 run 的 Embedding 仍可能失败；此时 trace 同时保留“模型已生成回复”和“run 持久化失败”的事实，最终回复不保存为完成 run，也不进入任何检索索引。
-
-成功 run 的流程是：模型生成最终回复，拼接固定文档格式，执行估算切块和远程 Embedding，最后在同一 SQLite 事务中保存最终回复、FTS5 投影和 active generation 向量。
+失败或未完成 run 只保留在 Chat Log 中供 UI 和审计查看，不进入 FTS；consolidation 不读取任何聊天回合。Session 摘要继续统计 `incompleteRunCount`。
 
 ## Lexical 检索
 
-FTS5 继续使用现有中英文检索投影：
+Session FTS 与 Semantic FTS 的写入、更新和查询共用同一检索投影：
 
-- 连续汉字生成二元组。
-- 拉丁字母和数字保留连续 Unicode 单词。
-- 使用 NFKC 与小写规范化。
+- 中文使用 `nodejieba.cutForSearch(text, true)`，开启 HMM，使用默认词典；不再自行生成 bigram。不配置停用词表，保留单字词。
+- 英文保留连续字母数字，不做词干化；其他非汉字文字保留连续 Unicode 字母数字。
+- identifier 同时保留整体和组成词，支持 `_`、`-`、`.`、`C++`、`C#`、`@scope/pkg`；驼峰在小写化前拆分，例如 `getUserInfo` → `getuserinfo get user info`。
+- 路径按目录和文件名拆分，不额外索引完整路径。
+- 先做 NFKC，最终统一 lowercase。索引保留不同原文位置的词频，同一位置的重复扩展只记一次；查询词去重后用 `OR` 连接，每个词元单独引用，不执行用户输入的 MATCH 操作符。
+- 两张 FTS5 表统一配置 `unicode61` 的 `tokenchars`，保留 identifier 中的 `_-.+#@/`，避免 SQLite 二次拆词；关闭额外的去音调归一化。
+
+搜索模式仍会输出词典中的短词，不意味着禁用所有二字词。例如当前默认词典会把“数据库”展开为“数据 / 据库 / 数据库”，而“长江大桥”不会自行生成“江大”。短词与完整词按现有 OR 规则召回，完整名称命中可参与 BM25 评分，但不保证在所有语料中总排第一。
+
+本地分词依赖 `nodejieba` 原生扩展，不启动 Python 或远程服务。词典首次使用时加载，安装由 pnpm 配置允许执行原生构建脚本；安装工具链的 tar 通过限定范围的 override 使用修复版本。仓库中的最小 pnpm 补丁让安装脚本直接使用本地锁定的 node-pre-gyp。
 
 Token 估算不参与 FTS5；Lexical 检索继续使用独立的中英文规范化规则。
 
-Semantic Memory 使用 subject 与 content 的加权 BM25。Session Recall 仍在消息级 FTS5 上搜索，但在进入 RRF 前将命中映射为 `run_id`。
+Semantic Memory 的主题和正文分别保存分词投影，使用 2:1 的加权 BM25，原文保持原样。Session Recall 仍在消息级 FTS5 上搜索，按 `run_id` 聚合后按 Session 去重。
 
 ## 候选聚合
 
-同一事实或 run 的多个 chunk/消息命中不累加：
+同一事实的多个 chunk、同一 run 的多个消息命中不累加：
 
-- Dense 按事实 ID 或 `run_id` 分组，取最高 cosine 的 chunk 作为查询 anchor。
+- Dense 按事实 ID 分组，取最高 cosine 的 chunk 作为查询 anchor。
 - BM25 按事实 ID 或 `run_id` 分组，取最佳 BM25 消息作为 anchor。
 - 分组完成后再取每路 Top 50，避免长文因 chunk 多而获得不公平优势。
 - 命中总数只进入 trace，不参与排序。
 
-Dense 命中 Session chunk 后，最终仍从原始 Chat Log 恢复上下文，而不是把切块文本当成新的事实。
+FTS 命中 Session 消息后，从原始 Chat Log 恢复上下文。
 
 ## 相似度阈值
 
@@ -254,7 +245,7 @@ Dense 候选在 RRF 或 MMR 之前应用 `minimumSimilarity`，默认值为 `0.3
 
 ## RRF 融合
 
-RRF 只在 hybrid 模式运行。Dense 与 BM25 各取 Top 50 个不同事实/run，使用固定等权公式：
+RRF 只在 hybrid 模式运行。Dense 与 BM25 各取 Top 50 个不同事实，使用固定等权公式：
 
 ```text
 rrfScore(candidate) = Σ 1 / (60 + rankInRoute)
@@ -267,7 +258,7 @@ rrfScore(candidate) = Σ 1 / (60 + rankInRoute)
 
 Semantic Memory 以 memory ID 为候选身份。Session Recall 以 `run_id` 为候选身份，避免同一 run 的多个消息或 chunk 挤占候选位。
 
-Session Recall 在最终截断前还会按 `session_id` 保留每个 Session 排名最高的 run。该约束统一应用于 `dense_only`、`lexical_only` 和 `hybrid`，因此只要存在足够多的合格候选，最终 4 条一定来自 4 个不同 Session；同一 Session 的次优 run 不占返回名额。
+Session Recall 在最终截断前还会按 `session_id` 保留每个 Session 排名最高的 run。Session 搜索固定使用 FTS，此约束不受 Semantic 检索模式影响，因此只要存在足够多的合格候选，最终 4 条一定来自 4 个不同 Session；同一 Session 的次优 run 不占返回名额。
 
 ## MMR 原理与代码语义
 
@@ -301,12 +292,12 @@ MMR 不是普通排序。它每选中一个候选，都要重新计算剩余候�
 
 ### 多 chunk 候选
 
-一个事实或 run 可能包含多个 chunk：
+一个事实可能包含多个 chunk：
 
 - 与查询的 relevance 取最高 chunk cosine。
 - 两个候选间的 redundancy 取双方所有 chunk 两两 cosine 的最大值。
 
-使用最大值是保守去重：只要两个长 run 中存在高度重复片段，就应承认这部分重复；不能用大量无关 chunk 的平均值稀释它。
+使用最大值是保守去重：只要两个长事实 中存在高度重复片段，就应承认这部分重复；不能用大量无关 chunk 的平均值稀释它。
 
 ### MMR 不是必然去重
 
@@ -385,7 +376,7 @@ Embedding Model、固定维度、Document Template、文档格式版本、`chunk
 5. 全部 chunk 成功、维度一致且数量校验通过后，在一个 SQLite 事务中切换 active generation。
 6. 激活成功后删除旧 generation，再解除写入阻止。
 
-任一批失败会立即停止作业、写 trace、清空影子 generation 的局部 chunks，并保留失败状态；旧配置与旧索引继续可用，系统不自动重试。进程退出后，启动时把未完成作业标记为 `interrupted`，用户需要手动重试。
+任一批失败会立即停止作业、写 trace、清空影子 generation 的局部 chunks，并保留失败状态；旧配置与旧索引继续可用，重建不自动重试。进程退出后，启动时把未完成作业标记为 `interrupted`，用户需要手动重试。
 
 配置页提供取消按钮。取消中止当前 HTTP 请求，将作业标记为 `cancelled`，清空局部 chunks、保留旧索引并解除写入阻止。页面关闭不等于取消。
 
@@ -393,7 +384,7 @@ Embedding Model、固定维度、Document Template、文档格式版本、`chunk
 
 ## 隐私与安全
 
-启用 Dense/Hybrid 前，配置页必须明确提示 Semantic Memory 和历史成功 run 的正文会发送到远程 Embedding 服务。
+启用 Dense/Hybrid 前，配置页必须明确提示 Semantic Memory 正文会发送到远程 Embedding 服务。
 
 Embedding trace 不记录：
 
@@ -404,7 +395,7 @@ Embedding trace 不记录：
 
 Trace 只记录 corpus、稳定候选 ID、generation、模型、估算预算、供应商返回的真实 `tokenUsage`、批大小、维度、排名、分数、耗时、HTTP 状态和脱敏错误摘要。
 
-SQLite 不重复保存不必要的私人正文；chunk 优先保存原始事实/run 的引用、offset 与 `estimated_tokens`。删除原始记忆时在同一事务中删除派生向量。首版不提供单独删除全部向量索引的入口；用户仍可清除全部本地数据，未来可再增加只删除派生向量而保留原始记忆与 FTS5 的操作。
+SQLite 不重复保存不必要的私人正文；chunk 优先保存原始事实的引用、offset 与 `estimated_tokens`。删除原始记忆时在同一事务中删除派生向量。首版不提供单独删除全部向量索引的入口；用户仍可清除全部本地数据，未来可再增加只删除派生向量而保留原始记忆与 FTS5 的操作。
 
 ## Observer 与 trace 事件
 
@@ -429,11 +420,11 @@ embedding_generation_activated
 
 事件需要关联 run、corpus、generation 和有序时间信息。重建事件关联 `rebuildId`。不同模式只发出真正执行过的阶段：lexical-only 不伪造 Dense/RRF/MMR，dense-only 不伪造 Lexical/RRF。
 
-`embedding_failed` 的 purpose 至少区分 `query`、`memory_create`、`run_complete`、`rebuild` 和 `config_probe`。事件名称、关键字段和相对顺序必须通过行为测试验证。
+`embedding_failed` 的 purpose 至少区分 `query`、`memory_create`、`rebuild` 和 `config_probe`。事件名称、关键字段和相对顺序必须通过行为测试验证。
 
 ## 已实现范围
 
-首版已完成统一 token 估算、Lexical 分层、Embedding HTTP adapter、切块、SQLite generation、精确 cosine、Semantic/Session Dense、RRF、MMR、三种模式、影子重建/取消/原子激活、配置 UI 与分阶段 trace。当前明确不做 recency boost 与 ANN；这些只能作为未来候选，不能视为现成功能。
+首版已完成统一 token 估算、Lexical 分层、Embedding HTTP adapter、切块、SQLite generation、精确 cosine、Semantic Dense 与 Session FTS、RRF、MMR、三种模式、影子重建/取消/原子激活、配置 UI 与分阶段 trace。当前明确不做 recency boost 与 ANN；这些只能作为未来候选，不能视为现成功能。
 
 ## 最低行为测试
 
@@ -445,7 +436,7 @@ embedding_generation_activated
 - Dense/BM25 Top 50、RRF `k=60`、等权和平分决胜确定可重复。
 - MMR λ=0.7、多 chunk 最大相似度及 `>=0.999` 排除符合本文公式。
 - 三种模式只执行并观察真实阶段。
-- 失败 run 不进入 FTS5、Dense 或 consolidation。
+- 失败 run 不进入 FTS5 或 Dense；consolidation 不读取聊天。
 - 已配置 Embedding 时，lexical-only 写入仍同步维护 active generation。
 - 未配置 Embedding 时 lexical-only 不发起远程请求。
 - 影子重建成功原子切换；失败、取消和重启中断都保留旧 generation。

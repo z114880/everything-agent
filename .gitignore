@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 node_modules/
+.pnpm-store/
 coverage/
 dist-web/
 *.tgz

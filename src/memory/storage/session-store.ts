@@ -162,10 +162,7 @@ function sessionSummarySql(where: string): string {
       ) THEN c.run_id END) AS completed_run_count,
       COUNT(DISTINCT CASE WHEN NOT EXISTS (
         SELECT 1 FROM chat_log done WHERE done.session_id=c.session_id AND done.run_id=c.run_id AND done.kind='assistant_message'
-      ) THEN c.run_id END) AS incomplete_run_count,
-      COALESCE(SUM(CASE WHEN c.id > s.consolidated_through_message_id AND EXISTS (
-        SELECT 1 FROM chat_log done WHERE done.session_id=c.session_id AND done.run_id=c.run_id AND done.kind='assistant_message'
-      ) THEN 1 ELSE 0 END), 0) AS pending_messages
+      ) THEN c.run_id END) AS incomplete_run_count
     FROM sessions s LEFT JOIN chat_log c ON c.session_id=s.id ${where}
     GROUP BY s.id ORDER BY s.updated_at DESC, s.id ASC
   `;

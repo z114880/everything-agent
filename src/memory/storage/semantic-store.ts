@@ -28,8 +28,8 @@ export class SemanticStore {
     this.embedding.assertNoEmbeddingRebuild();
     return this.storage.transaction(() => {
       const result = this.storage.connection.prepare(`
-        INSERT INTO semantic_memory(subject, content, source, search_text, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)
-      `).run(cleanSubject, cleanContent, source, toSearchText(`${cleanSubject} ${cleanContent}`), timestamp, timestamp);
+        INSERT INTO semantic_memory(subject, content, source, search_subject, search_text, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(cleanSubject, cleanContent, source, toSearchText(cleanSubject), toSearchText(cleanContent), timestamp, timestamp);
       const id = Number(result.lastInsertRowid);
       if (this.embedding.retrieval.embedding) this.embedding.vectors.replaceActiveSource("semantic", String(id), dense.map((chunk) => ({
         ...chunk, corpus: "semantic", sourceId: String(id),
@@ -47,8 +47,8 @@ export class SemanticStore {
     this.embedding.assertNoEmbeddingRebuild();
     return this.storage.transaction(() => {
       const result = this.storage.connection.prepare(`
-        UPDATE semantic_memory SET subject = ?, content = ?, source = ?, search_text = ?, updated_at = ? WHERE id = ?
-      `).run(cleanSubject, cleanContent, source, toSearchText(`${cleanSubject} ${cleanContent}`), nowUtc(), id);
+        UPDATE semantic_memory SET subject = ?, content = ?, source = ?, search_subject = ?, search_text = ?, updated_at = ? WHERE id = ?
+      `).run(cleanSubject, cleanContent, source, toSearchText(cleanSubject), toSearchText(cleanContent), nowUtc(), id);
       if (Number(result.changes) === 0) throw new Error("Semantic memory 不存在");
       if (this.embedding.retrieval.embedding) this.embedding.vectors.replaceActiveSource("semantic", String(id), dense.map((chunk) => ({
         ...chunk, corpus: "semantic", sourceId: String(id),
@@ -90,7 +90,12 @@ export class SemanticStore {
   }
 
   /** 向量预计算后重新检查版本，再原子更新事实、来源、索引与审计；冲突返回 null。 */
-  async applyDecision(decision: MemoryDecision, revision: number, evidence: MemorySource[], context: { runId: string; candidateId: string; sessionId: string; source: string; signal: AbortSignal; observer: AgentObserver }): Promise<MemoryManagementResult | null> {
+  async applyDecision(decision: MemoryDecision, revision: number, evidence: MemorySource[], context: { runId: string; candidateId: string; sessionId: string; source: string; signal: AbortSignal; observer: AgentObserver; onCommitted?: () => void }): Promise<MemoryManagementResult | null> {
+    // 相同正文的 create 即使被模型误判，也不能增加重复事实。
+    if (decision.action === "create") {
+      const same = this.storage.connection.prepare("SELECT id FROM semantic_memory WHERE subject=? AND content=? ORDER BY id LIMIT 1").get(decision.subject!, decision.content!) as Row | undefined;
+      if (same) decision = { action: "noop", reason: "相同事实已存在", reasonCode: "duplicate", evidenceMessageIds: decision.evidenceMessageIds, targetId: Number(same.id) };
+    }
     const { action } = decision;
     context.signal.throwIfAborted();
     const committed = this.committedResult(context.runId, context.candidateId);
@@ -116,9 +121,9 @@ export class SemanticStore {
         this.embedding.markCorpusMutation();
         const timestamp = nowUtc();
         if (action === "create") {
-          targetId = Number(this.storage.connection.prepare("INSERT INTO semantic_memory(subject, content, source, search_text, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").run(subject, content, context.source, toSearchText(`${subject} ${content}`), timestamp, timestamp).lastInsertRowid);
+          targetId = Number(this.storage.connection.prepare("INSERT INTO semantic_memory(subject, content, source, search_subject, search_text, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(subject, content, context.source, toSearchText(subject), toSearchText(content), timestamp, timestamp).lastInsertRowid);
         } else {
-          this.storage.connection.prepare("UPDATE semantic_memory SET subject=?, content=?, source=?, search_text=?, updated_at=? WHERE id=?").run(subject, content, context.source, toSearchText(`${subject} ${content}`), timestamp, targetId!);
+          this.storage.connection.prepare("UPDATE semantic_memory SET subject=?, content=?, source=?, search_subject=?, search_text=?, updated_at=? WHERE id=?").run(subject, content, context.source, toSearchText(subject), toSearchText(content), timestamp, targetId!);
         }
         for (const id of action === "merge" ? deletedIds : []) {
           this.storage.connection.prepare("INSERT OR IGNORE INTO semantic_sources SELECT ?, session_id, message_id, created_at FROM semantic_sources WHERE memory_id=?").run(targetId!, id);
@@ -135,9 +140,7 @@ export class SemanticStore {
       }
       // 模型自由文本理由只返回调用方；持久审计不保存可能包含私人正文的理由。
       this.storage.connection.prepare("INSERT INTO memory_changes(run_id, candidate_id, action, target_id, reason_code, deleted_ids, evidence_ids, session_id, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(context.runId, context.candidateId, action, targetId ?? null, decision.reasonCode, JSON.stringify(deletedIds), JSON.stringify(evidence.map((item) => item.messageId)), context.sessionId, context.source, nowUtc());
-      if (context.source === "consolidation") {
-        this.storage.connection.prepare("UPDATE consolidation_runs SET facts_created=facts_created+?, facts_updated=facts_updated+?, facts_skipped=facts_skipped+? WHERE run_id=?").run(Number(action === "create"), Number(action === "update"), Number(action === "noop"), context.runId);
-      }
+      context.onCommitted?.();
       return { action, reason: decision.reason, reasonCode: decision.reasonCode, ...(targetId === undefined ? {} : { targetId }), deletedIds };
     });
   }

@@ -3,6 +3,7 @@ export type NodeKind = "fn" | "tool" | "llm" | "agent";
 export interface WorkflowNode {
   id: string;
   label: string;
+  presentation?: { title: string; subtitle: string; x: number; y: number };
   kind: NodeKind;
   maxVisits: number;
 }
@@ -11,6 +12,7 @@ export interface WorkflowEdge {
   source: string;
   target: string;
   conditional: boolean;
+  label?: string;
 }
 
 export interface Workflow {

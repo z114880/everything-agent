@@ -20,7 +20,7 @@ describe("Memory Runtime", () => {
     expect((await stat(join(home, "database"))).isDirectory()).toBe(true);
   });
 
-  it("使用中文 bigram 投影和 BM25 检索 Semantic Memory", async () => {
+  it("使用 jieba 搜索投影和 BM25 检索 Semantic Memory", async () => {
     const memory = await createMemory();
     const created = await memory.createSemantic("用户", "用户喜欢下午喝咖啡");
     expect(toSearchText("下午咖啡")).toContain("下午");
@@ -169,20 +169,6 @@ describe("Memory Runtime", () => {
     expect(systemPrompt).toContain("semanticQuery 聚焦“用户/实体 + 稳定属性或约束”");
   });
 
-  it("consolidation 只整理 Semantic Memory，并在失败时保留高水位", async () => {
-    const memory = await createMemory(); const session = memory.createSession();
-    await addCompletedRun(memory, session.id, "r1", "我喜欢红茶", "收到");
-    memory.startBackgroundTasks(async () => options(memory, scriptedClient([
-      response('{"candidates":[{"intent":"remember","subject":"用户","attribute":"饮品偏好","content":"用户喜欢红茶","evidenceMessageIds":[1]}]}'),
-      response('{"action":"create","reason":"新的偏好","evidenceMessageIds":[1],"category":"preference","stable":true,"futureUseful":true,"subject":"用户","content":"用户喜欢红茶"}'),
-    ]), session.id));
-    memory.createConversation(session.id, 1);
-    await memory.waitForBackgroundTasks();
-    expect(memory.listSemantic()[0]).toMatchObject({ content: "用户喜欢红茶" });
-    expect(memory.listConsolidations()[0]).not.toHaveProperty("episodeChanged");
-    expect(memory.overview().pendingSessionCount).toBe(0);
-  });
-
   it("Session 元数据标记完整与失败 run，删除同步清除 Recall", async () => {
     const memory = await createMemory(); const session = memory.createSession();
     memory.startRun(session.id, "failed", "失败独有代号 ZEBRA");
@@ -245,7 +231,7 @@ describe("Memory Runtime", () => {
     expect(page.isComplete).toBe(true);
   });
 
-  it("再次打开同一 v4 数据库不会执行破坏性迁移", async () => {
+  it("再次打开当前版本数据库保留已写入记录", async () => {
     const directory = await mkdtemp(join(tmpdir(), "everything-memory-reopen-"));
     const first = new MemoryRuntime(directory);
     const session = first.createSession();

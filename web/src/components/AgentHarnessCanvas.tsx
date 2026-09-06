@@ -6,118 +6,56 @@ interface AgentHarnessCanvasProps {
   workflow: Workflow;
   nodeStates: Record<string, VisualNodeState>;
   activeEdges: Set<string>;
-  historyCount: number;
-  systemPromptLength: number;
 }
 
-const positions = {
-  user_prompt: { x: 20, y: 68, width: 165, height: 58 },
-  client_chat_history: { x: 20, y: 180, width: 165, height: 58 },
-  system_prompt: { x: 20, y: 292, width: 165, height: 58 },
-  working_memory: { x: 220, y: 180, width: 165, height: 64 },
-  llm: { x: 435, y: 104, width: 155, height: 64 },
-  tools: { x: 435, y: 270, width: 155, height: 64 },
-  reply: { x: 650, y: 180, width: 140, height: 64 },
-} as const;
-
-const labels: Record<string, { title: string; subtitle: string }> = {
-  user_prompt: { title: "User Prompt", subtitle: "current turn" },
-  working_memory: { title: "Working Memory", subtitle: "assembled per turn" },
-  llm: { title: "LLM", subtitle: "reason" },
-  tools: { title: "Tools", subtitle: "act · observe" },
-  reply: { title: "Reply", subtitle: "stream to client" },
-};
-
-export function AgentHarnessCanvas({
-  workflow,
-  nodeStates,
-  activeEdges,
-  historyCount,
-  systemPromptLength,
-}: AgentHarnessCanvasProps) {
+/** 展示服务端 Graph 提供的业务节点与边，后台关系不推断为聊天执行状态。 */
+export function AgentHarnessCanvas({ workflow, nodeStates, activeEdges }: AgentHarnessCanvasProps) {
   const markerId = useId().replaceAll(":", "");
-  const dynamicIds = new Set(workflow.nodes.map((node) => node.id));
-  const externalLabels = {
-    client_chat_history: { title: "Client Chat History", subtitle: `${historyCount} messages` },
-    system_prompt: { title: "System Prompt", subtitle: `${systemPromptLength} chars` },
-  };
-  const fixedEdges = [
-    ["user_prompt", "working_memory"],
-    ["client_chat_history", "working_memory"],
-    ["system_prompt", "working_memory"],
-  ] as const;
-  const graphEdges = workflow.edges.filter((edge) => edge.source !== "START" && edge.target !== "END");
-  const visibleIds = [
-    "user_prompt",
-    "client_chat_history",
-    "system_prompt",
-    ...workflow.nodes.map((node) => node.id).filter((id) => id in positions),
-  ];
-
-  return (
-    <section className="agent-harness-panel panel">
-      <div className="panel-header">
-        <div>
-          <div>Agent Harness</div>
-          <p className="mt-1 text-[11px] font-normal text-[var(--muted)]">静态输入进入 Working Memory；Loop 拓扑来自 Graph.describe()</p>
-        </div>
-        <span className="status-pill">真实 observer 事件</span>
-      </div>
-      <div className="agent-svg-wrap">
-        <svg viewBox="0 0 810 420" className="agent-harness-svg" role="img" aria-label="Agent Harness 实时流程图">
-          <defs>
-            <marker id={markerId} viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M 0 0 L 10 5 L 0 10 z" className="arrow-head" />
-            </marker>
-          </defs>
-          <rect x="415" y="50" width="200" height="330" rx="20" className="agent-loop-box" />
-          <text x="433" y="79" className="agent-loop-label">AGENT LOOP</text>
-
-          {[...fixedEdges, ...graphEdges.map((edge) => [edge.source, edge.target] as const)].map(([sourceId, targetId]) => {
-            const source = positions[sourceId as keyof typeof positions];
-            const target = positions[targetId as keyof typeof positions];
-            if (!source || !target) return null;
-            const key = `${sourceId}->${targetId}`;
-            const path = edgePath(sourceId, targetId, source, target);
-            return <path key={key} d={path} className={`agent-edge ${activeEdges.has(key) ? "active" : ""}`} markerEnd={`url(#${markerId})`} />;
-          })}
-
-          {visibleIds.map((id) => {
-            const position = positions[id as keyof typeof positions];
-            if (!position || (!dynamicIds.has(id) && !["user_prompt", "client_chat_history", "system_prompt"].includes(id))) return null;
-            const label = labels[id] ?? externalLabels[id as keyof typeof externalLabels];
-            const state = nodeStates[id] ?? "idle";
-            return (
-              <g key={id} className={`agent-node ${id} ${state}`} data-node={id}>
-                <rect {...position} rx={id === "llm" ? 32 : 12} />
-                <text x={position.x + 15} y={position.y + 28} className="agent-node-title">{label.title}</text>
-                <text x={position.x + 15} y={position.y + 48} className="agent-node-subtitle">{label.subtitle}</text>
-              </g>
-            );
-          })}
-        </svg>
-      </div>
-      <div className="agent-graph-note">Graph 起点 <code>START → working_memory</code> 在 Harness 中隐藏 START，仅展示真实业务起点。</div>
-    </section>
-  );
-}
-
-function edgePath(
-  sourceId: string,
-  targetId: string,
-  source: { x: number; y: number; width: number; height: number },
-  target: { x: number; y: number; width: number; height: number },
-): string {
-  if (sourceId === "llm" && targetId === "tools") {
-    return `M ${source.x + 70} ${source.y + source.height} C ${source.x + 45} 205, ${target.x + 45} 230, ${target.x + 70} ${target.y}`;
-  }
-  if (sourceId === "tools" && targetId === "llm") {
-    return `M ${source.x + 125} ${source.y} C ${source.x + 155} 235, ${target.x + 155} 200, ${target.x + 125} ${target.y + target.height}`;
-  }
-  const x1 = source.x + source.width;
-  const y1 = source.y + source.height / 2;
-  const x2 = target.x;
-  const y2 = target.y + target.height / 2;
-  const middle = (x1 + x2) / 2;
-  return `M ${x1} ${y1} C ${middle} ${y1}, ${middle} ${y2}, ${x2} ${y2}`;
+  const nodes = workflow.nodes.filter((node) => node.id !== "START" && node.id !== "END");
+  const positions = new Map(nodes.map((node, index) => [node.id, node.presentation ?? { x: 24 + index % 5 * 220, y: 85 + Math.floor(index / 5) * 105 }]));
+  return <section className="agent-harness-panel panel">
+    <div className="agent-svg-wrap business-graph-scroll">
+      <svg viewBox="0 0 1110 905" style={{ width: "100%", minWidth: 850 }} className="agent-harness-svg" role="img" aria-label="Agent 与 Memory 业务流程图">
+        <defs><marker id={markerId} viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" className="arrow-head" /></marker></defs>
+        <rect x="8" y="20" width="1090" height="477" rx="16" className="agent-loop-box" />
+        <text x="24" y="47" className="agent-loop-label">Memory Retrieval &amp; Agent Loop</text>
+        <rect x="8" y="520" width="1090" height="215" rx="16" className="agent-loop-box" />
+        <text x="24" y="545" className="agent-loop-label">后台写入 · 独立串行队列，不阻塞回复</text>
+        <rect x="8" y="755" width="1090" height="130" rx="16" className="agent-loop-box" />
+        <text x="24" y="780" className="agent-loop-label">Dreaming / Consolidation</text>
+        {workflow.edges.map((edge) => {
+          const source = positions.get(edge.source), target = positions.get(edge.target);
+          if (!source || !target) return null;
+          const key = `${edge.source}->${edge.target}`;
+          let x1 = source.x + 164, y1 = source.y + 25, x2 = target.x, y2 = target.y + 25;
+          let path: string, lx: number, ly: number;
+          if (edge.source === "llm" && edge.target === "tools") {
+            x1 = source.x; x2 = target.x + 164; y1 -= 12; y2 -= 12;
+          }
+          if (edge.source === "tools" && edge.target === "llm") { y1 += 12; y2 += 12; }
+          if (source.x === target.x) {
+            x1 = source.x + 82; x2 = x1; y1 = source.y + 50; y2 = target.y;
+            path = `M ${x1} ${y1} L ${x2} ${y2}`; lx = x1 + 40; ly = (y1 + y2) / 2;
+          } else if (edge.target === "working_memory" && ["user_prompt", "session_chat_history", "retrieval_gate"].includes(edge.source)) {
+            // 输入依赖走节点之间的空隙，不穿过召回卡片。
+            const lane = edge.source === "user_prompt" ? 60 : edge.source === "session_chat_history" ? 265 : 160;
+            x1 = source.x + 82; y1 = edge.source === "user_prompt" ? source.y : source.y + 50;
+            x2 = target.x + (edge.source === "user_prompt" ? 140 : edge.source === "retrieval_gate" ? 110 : 50); y2 = target.y;
+            path = `M ${x1} ${y1} V ${lane} H ${x2} V ${y2}`; lx = (x1 + x2) / 2; ly = lane - 7;
+          } else if (edge.target === "memory_queue") {
+            x1 = source.x + 82; y1 = source.y + 50; x2 = target.x + 82; y2 = target.y;
+            path = `M ${x1} ${y1} V 485 H ${x2} V ${y2}`; lx = (x1 + x2) / 2; ly = 478;
+          } else {
+            const mid = (x1 + x2) / 2;
+            path = `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`; lx = mid; ly = (y1 + y2) / 2 - 7;
+          }
+          return <g key={key} data-edge={key}><path d={path} className={`agent-edge ${activeEdges.has(key) ? "active" : ""}`} markerEnd={`url(#${markerId})`} /><text x={lx} y={ly} textAnchor="middle" className="harness-edge-label">{edge.label}</text></g>;
+        })}
+        {nodes.map((node) => {
+          const position = positions.get(node.id)!;
+          return <g key={node.id} className={`agent-node ${nodeStates[node.id] ?? "idle"}`} data-node={node.id}><title>{`${node.label}：${node.presentation?.subtitle ?? ""}`}</title><rect x={position.x} y={position.y} width="164" height="50" rx="9" /><text x={position.x + 10} y={position.y + 21} className="agent-node-title">{node.label}</text><text x={position.x + 10} y={position.y + 39} className="agent-node-subtitle">{node.presentation?.subtitle}</text></g>;
+        })}
+      </svg>
+    </div>
+  </section>;
 }

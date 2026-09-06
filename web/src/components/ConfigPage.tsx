@@ -18,7 +18,6 @@ export function ConfigPage() {
   const [settings, setSettings] = useState<AgentSettings | null>(null);
   const [provider, setProvider] = useState<AgentProvider>("anthropic");
   const [model, setModel] = useState("");
-  const [consolidationSessionInterval, setConsolidationSessionInterval] = useState(6);
   const [smallModel, setSmallModel] = useState("");
   const [sessionSearchWindow, setSessionSearchWindow] = useState(5);
   const [sessionScrollStep, setSessionScrollStep] = useState(10);
@@ -28,8 +27,6 @@ export function ConfigPage() {
   const [retrievalMode, setRetrievalMode] = useState<RetrievalMode>("lexical_only");
   const [embeddingBaseUrl, setEmbeddingBaseUrl] = useState("");
   const [embeddingModel, setEmbeddingModel] = useState("");
-  const [embeddingQueryTemplate, setEmbeddingQueryTemplate] = useState("{text}");
-  const [embeddingDocumentTemplate, setEmbeddingDocumentTemplate] = useState("{text}");
   const [embeddingMinimumSimilarity, setEmbeddingMinimumSimilarity] = useState(0.30);
   const [embeddingApiKey, setEmbeddingApiKey] = useState("");
   const [rebuildingEmbedding, setRebuildingEmbedding] = useState(false);
@@ -62,10 +59,10 @@ export function ConfigPage() {
     try {
       const result = await saveAgentConfig({
         provider, model, smallModel, baseUrl, apiKey, clearApiKey: false, force,
-        consolidationSessionInterval, sessionSearchWindow, sessionScrollStep, sessionRecallMessageLimit,
+        sessionSearchWindow, sessionScrollStep, sessionRecallMessageLimit,
         sessionRecallTokenLimit, modelContextWindow,
         retrievalMode, embeddingBaseUrl, embeddingModel,
-        embeddingQueryTemplate, embeddingDocumentTemplate, embeddingMinimumSimilarity,
+        embeddingQueryTemplate: "{text}", embeddingDocumentTemplate: "{text}", embeddingMinimumSimilarity,
         embeddingApiKey, clearEmbeddingApiKey: false,
       });
       setSettings(result.settings);
@@ -100,7 +97,6 @@ export function ConfigPage() {
 
   function applyRuntimeSettings(value: AgentSettings) {
     setSessionSearchWindow(value.sessionSearchWindow);
-    setConsolidationSessionInterval(value.consolidationSessionInterval);
     setSessionScrollStep(value.sessionScrollStep);
     setSessionRecallMessageLimit(value.sessionRecallMessageLimit);
     setSessionRecallTokenLimit(value.sessionRecallTokenLimit);
@@ -108,8 +104,6 @@ export function ConfigPage() {
     setRetrievalMode(value.retrievalMode);
     setEmbeddingBaseUrl(value.embeddingBaseUrl);
     setEmbeddingModel(value.embeddingModel);
-    setEmbeddingQueryTemplate(value.embeddingQueryTemplate);
-    setEmbeddingDocumentTemplate(value.embeddingDocumentTemplate);
     setEmbeddingMinimumSimilarity(value.embeddingMinimumSimilarity);
   }
 
@@ -125,12 +119,12 @@ export function ConfigPage() {
   }
 
   async function clearAllData() {
-    if (!window.confirm("确认清除全部记忆、会话、运行记录和数据库数据？此操作不可撤销，仅保留 EVERYTHING.md。")) return;
+    if (!window.confirm("确认清除全部记忆、会话、运行记录和数据库数据？此操作不可撤销，保留 EVERYTHING.md 和 .env 配置。")) return;
     setClearingData(true);
     setClearMessage("正在清理本地数据…");
     try {
       await clearAllAgentData();
-      setClearMessage("清理完成。数据库、会话、记忆和运行记录已删除，EVERYTHING.md 已保留。");
+      setClearMessage("清理完成。数据库、会话、记忆和运行记录已删除，EVERYTHING.md 和 .env 配置已保留。");
     } catch (error) {
       setClearMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -209,7 +203,7 @@ export function ConfigPage() {
             </div>
 
             <div className="config-section">
-              <div className="config-section-heading"><Gauge size={16} /><div><strong>Memory Retrieval</strong><p>Semantic Memory 与 Session Recall 共用检索模式，Dense 仅调用远程 OpenAI-compatible API。</p></div></div>
+              <div className="config-section-heading"><Gauge size={16} /><div><strong>Memory Retrieval</strong><p>检索模式控制 Semantic Memory；Session 历史始终使用 FTS。Dense 调用远程 OpenAI-compatible API。</p></div></div>
               <label className="config-field">Retrieval Mode
                 <select value={retrievalMode} onChange={(event) => setRetrievalMode(event.target.value as RetrievalMode)}>
                   <option value="lexical_only">FTS5 + BM25</option>
@@ -228,14 +222,8 @@ export function ConfigPage() {
                 <span className="secret-label"><KeyRound size={13} /> {settings?.embeddingKeyConfigured ? `已配置 ····${settings.embeddingKeyLast4}` : "尚未配置"}</span>
                 <input type="password" value={embeddingApiKey} onChange={(event) => setEmbeddingApiKey(event.target.value)} placeholder={settings?.embeddingKeyConfigured ? "留空保留已保存的独立密钥" : "输入独立 Embedding API Key"} />
               </label>
-              <div className="security-note"><AlertTriangle size={15} /><span>配置 Embedding 后，Semantic Memory 与历史成功 run 的正文会发送到该远程服务；失败 run、工具调用和工具结果不会发送。</span></div>
-              <label className="config-field">Query Template
-                <input value={embeddingQueryTemplate} onChange={(event) => setEmbeddingQueryTemplate(event.target.value)} />
-              </label>
-              <label className="config-field">Document Template
-                <input value={embeddingDocumentTemplate} onChange={(event) => setEmbeddingDocumentTemplate(event.target.value)} />
-              </label>
-              <label className="config-field">Minimum Similarity <span title="建议起点：OpenAI 0.30、BGE 0.45、Qwen3 0.50、GTE/Nomic 0.40、Multilingual-E5 0.80；需按数据校准。">?</span>
+              <div className="security-note"><AlertTriangle size={15} /><span>配置 Embedding 后，Semantic Memory 正文会发送到该远程服务；Session 历史不生成向量。</span></div>
+              <label className="config-field"><span className="config-field-heading">Minimum Similarity <span className="config-help" tabIndex={0} aria-label="最低相似度说明" aria-describedby="minimum-similarity-help">?<span id="minimum-similarity-help" role="tooltip">建议起点：OpenAI 0.30、BGE 0.45、Qwen3 0.50、GTE/Nomic 0.40、Multilingual-E5 0.80；需按数据校准。</span></span></span>
                 <input type="number" min={-1} max={1} step={0.05} value={embeddingMinimumSimilarity} onChange={(event) => setEmbeddingMinimumSimilarity(Number(event.target.value))} />
               </label>
               <div className="security-note"><ShieldCheck size={15} /><span>向量索引状态：{settings?.embeddingIndex.ready
@@ -254,10 +242,6 @@ export function ConfigPage() {
               <label className="config-field">Session Search Window
                 <input type="number" min={settings?.limits.sessionSearchWindow?.min ?? 1} max={settings?.limits.sessionSearchWindow?.max ?? 20} value={sessionSearchWindow} onChange={(event) => setSessionSearchWindow(Number(event.target.value))} />
                 <span className="field-help">命中点初始单侧窗口，默认 5。</span>
-              </label>
-              <label>后台整理间隔（Session 数）
-                <input type="number" min={1} max={100} value={consolidationSessionInterval} onChange={(event) => setConsolidationSessionInterval(Number(event.target.value))} />
-                <small>默认积攒 6 个对话，在新建下一个对话时后台整理。</small>
               </label>
               <label className="config-field">Session Scroll Step
                 <input type="number" min={settings?.limits.sessionScrollStep?.min ?? 1} max={settings?.limits.sessionScrollStep?.max ?? 50} value={sessionScrollStep} onChange={(event) => setSessionScrollStep(Number(event.target.value))} />
@@ -293,7 +277,7 @@ export function ConfigPage() {
         <section className="panel config-card config-danger-card">
           <div className="panel-header"><span><AlertTriangle size={15} /> 数据清理</span><span className="status-pill">不可撤销</span></div>
           <div className="config-card-body config-danger-body">
-            <div><strong>清除全部本地数据</strong><p>删除数据库、Session、Chat Log、Semantic Memory、Session Recall 索引和全部运行记录，仅保留 <code>.everything/EVERYTHING.md</code>。</p></div>
+            <div><strong>清除全部本地数据</strong><p>删除数据库、Session、Chat Log、Semantic Memory、Session Recall 索引和全部运行记录，保留 <code>.everything/EVERYTHING.md</code> 和 <code>.env</code> 配置。</p></div>
             <div className="config-danger-actions"><button className="danger-ghost" disabled={clearingData} onClick={() => void clearAllData()}><Trash2 size={14} /> {clearingData ? "正在清理…" : "一键清理"}</button>{clearMessage && <span>{clearMessage}</span>}</div>
           </div>
         </section>

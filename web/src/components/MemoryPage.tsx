@@ -8,7 +8,7 @@ import {
 type MemoryTab = "overview" | "semantic" | "episodic" | "procedural" | "chat" | "consolidation";
 const tabs: Array<{ id: MemoryTab; label: string }> = [
   { id: "overview", label: "Overview" }, { id: "semantic", label: "Semantic" },
-  { id: "episodic", label: "Episodic (Session Recall)" }, { id: "procedural", label: "Procedural" },
+  { id: "episodic", label: "Session Recall" }, { id: "procedural", label: "Procedural" },
   { id: "chat", label: "Chat Log" }, { id: "consolidation", label: "Consolidation" },
 ];
 
@@ -75,7 +75,7 @@ export function MemoryPage() {
       <Metric label="已索引 Session" value={data.overview.indexedSessionCount} />
       <Metric label="已索引消息" value={data.overview.indexedMessageCount} />
       <Metric label="Sessions" value={data.overview.sessionCount} />
-      <Metric label="待整理 Session" value={data.overview.pendingSessionCount} />
+      <Metric label="整理次数" value={data.consolidations.length} />
       <div className="panel path-card"><Database size={18} /><div><strong>Database</strong><code>{data.overview.databasePath}</code></div></div>
     </div>}
     {(tab === "semantic" || tab === "episodic") && <div className="memory-search"><Search size={14} /><input value={query} onChange={(event) => { setQuery(event.target.value); if (!event.target.value) setSemanticResults(null); }} onKeyDown={(event) => { if (event.key === "Enter") void search(); }} placeholder={tab === "episodic" ? "留空返回最近 Session，或按当前模式检索" : "按当前检索模式搜索"} /><button className="ghost-action" onClick={() => void search()}>{tab === "episodic" && !query.trim() ? "最近 Session" : "搜索"}</button>{tab === "semantic" && <button className="primary-action" onClick={() => createSemantic(mutate)}>新建</button>}</div>}
@@ -86,8 +86,8 @@ export function MemoryPage() {
       {recall?.sessions.map((result) => <RecallCard key={result.session.id} result={result} read={read} />)}
     </div>}
     {tab === "procedural" && <section className="panel procedural-editor"><div className="panel-header"><span><FileText size={15} /> System Prompt</span><code>.everything/EVERYTHING.md</code></div><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} /><button className="primary-action" onClick={() => void saveSystemPrompt(prompt).then(() => setMessage("EVERYTHING.md 已保存"))}>保存 Procedural Memory</button></section>}
-    {tab === "chat" && <div className="panel table-scroll"><table><thead><tr><th>ID</th><th>Session ID</th><th>Run ID</th><th>Role / Kind</th><th>内容</th><th>时间</th></tr></thead><tbody>{data.chatLog.map((item) => <tr key={item.id}><td>{item.id}</td><td><code>{short(item.sessionId)}</code></td><td><code>{short(item.runId)}</code></td><td>{item.role}<br /><small>{item.kind}</small></td><td><pre>{contentText(item.content)}</pre></td><td>{local(item.createdAt)}</td></tr>)}</tbody></table></div>}
-    {tab === "consolidation" && <div className="panel table-scroll"><table><thead><tr><th>Status</th><th>Session ID</th><th>Trigger</th><th>High Watermark</th><th>Facts</th><th>时间</th></tr></thead><tbody>{data.consolidations.map((item) => <tr key={item.id}><td><span className={"status-pill " + item.status}>{item.status}</span>{item.errorType && <small>{item.errorType}</small>}</td><td><code>{short(item.sessionId)}</code></td><td>{item.trigger}</td><td>{item.throughMessageId}</td><td>新增 {item.factsCreated} / 更新 {item.factsUpdated} / 删除 {item.factsDeleted} / 合并 {item.factsMerged} / 跳过 {item.factsSkipped}</td><td>{local(item.startedAt)}</td></tr>)}</tbody></table></div>}
+    {tab === "chat" && <div className="panel table-scroll"><table><thead><tr><th>ID</th><th>Task ID</th><th>Run ID</th><th>Role / Kind</th><th>内容</th><th>时间</th></tr></thead><tbody>{data.chatLog.map((item) => <tr key={item.id}><td>{item.id}</td><td><code>{short(item.runId)}</code></td><td><code>{short(item.runId)}</code></td><td>{item.role}<br /><small>{item.kind}</small></td><td><pre>{contentText(item.content)}</pre></td><td>{local(item.createdAt)}</td></tr>)}</tbody></table></div>}
+    {tab === "consolidation" && <div className="panel table-scroll"><table><thead><tr><th>Status</th><th>Task ID</th><th>Trigger</th><th>批次 / 未解决冲突</th><th>Facts</th><th>时间</th></tr></thead><tbody>{data.consolidations.map((item) => <tr key={item.id}><td><span className={"status-pill " + item.status}>{item.status}</span>{item.errorType && <small>{item.errorType}</small>}</td><td><code>{short(item.runId)}</code></td><td>{item.trigger}</td><td>{item.completedBatches} / {item.totalBatches} · 冲突 {item.unresolvedConflicts}</td><td>新增 {item.factsCreated} / 更新 {item.factsUpdated} / 删除 {item.factsDeleted} / 合并 {item.factsMerged} / 跳过 {item.factsSkipped}</td><td>{local(item.startedAt)}</td></tr>)}</tbody></table></div>}
   </div>;
 }
 

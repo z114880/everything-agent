@@ -1,6 +1,7 @@
-import { Bot, CircleStop, Clock3, MessageSquarePlus, Pencil, Send, Settings2, Trash2, Wrench } from "lucide-react";
+import { advanceHarnessMemory } from "../harness-playback";
+import { Bot, CircleStop, Clock3, MessageSquarePlus, ChevronDown, ChevronUp, Pencil, Send, Settings2, Trash2, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { loadAgent, memoryAction, runAgent, type AgentBootstrap, type AgentEvent, type AgentRunResult, type ChatLogEntry, type SessionSummary } from "../agent-api";
+import { loadAgent, memoryAction, runAgent, subscribeBackgroundEvents, type AgentBootstrap, type AgentEvent, type AgentRunResult, type ChatLogEntry, type SessionSummary } from "../agent-api";
 import { shouldSubmitAgentComposer } from "../agent-composer";
 import { createEdgePlayback } from "../edge-playback";
 import type { VisualNodeState } from "./GraphCanvas";
@@ -13,11 +14,12 @@ interface AssistantChatMessage { id: string; role: "assistant"; content: string;
 type ChatMessage = UserChatMessage | AssistantChatMessage;
 
 const idleStates: Record<string, VisualNodeState> = {
-  user_prompt: "idle", client_chat_history: "idle", system_prompt: "idle", working_memory: "idle", llm: "idle", tools: "idle", reply: "idle",
+  user_prompt: "idle", session_chat_history: "idle", system_prompt: "idle", working_memory: "idle", llm: "idle", tools: "idle", reply: "idle",
 };
 
 export function AgentPage({ onOpenConfig }: AgentPageProps) {
   const [bootstrap, setBootstrap] = useState<AgentBootstrap | null>(null);
+  const [sessionRailCollapsed, setSessionRailCollapsed] = useState(true);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -28,6 +30,10 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
   const [running, setRunning] = useState(false);
   const [nodeStates, setNodeStates] = useState<Record<string, VisualNodeState>>(idleStates);
   const [activeEdges, setActiveEdges] = useState<Set<string>>(new Set());
+  const [backgroundStates, setBackgroundStates] = useState<Record<string, VisualNodeState>>({});
+  const [backgroundEdges, setBackgroundEdges] = useState<Set<string>>(new Set());
+  const [consolidationStatus, setConsolidationStatus] = useState("");
+  const [consolidating, setConsolidating] = useState(false);
   const [tick, setTick] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const chatLogRef = useRef<HTMLDivElement | null>(null);
@@ -40,6 +46,25 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
   useEffect(() => { if (!running) return; const timer = window.setInterval(() => setTick((value) => value + 1), 1_000); return () => window.clearInterval(timer); }, [running]);
   useEffect(() => () => edgePlayback.cancel(), [edgePlayback]);
 
+  useEffect(() => {
+    let states: Record<string, VisualNodeState> = {};
+    const playback = createEdgePlayback(setBackgroundEdges);
+    const unsubscribe = subscribeBackgroundEvents((kind, event) => {
+      if (kind.startsWith("consolidation_")) {
+        if (kind === "consolidation_started") { setConsolidating(true); setConsolidationStatus("正在整理…"); }
+        if (kind === "consolidation_batch_completed") setConsolidationStatus(`整理进度 ${event.completedBatches} / ${event.totalBatches}`);
+        if (kind === "consolidation_retry") setConsolidationStatus("整理失败，等待重试…");
+        if (kind === "consolidation_completed" || kind === "consolidation_failed") { setConsolidating(false); setConsolidationStatus(kind === "consolidation_completed" ? "整理完成" : "整理失败，可手动重试"); }
+      }
+      const next = advanceHarnessMemory(kind, event, states);
+      states = next.states;
+      setBackgroundStates(states);
+      if (next.edges.length) playback.show(next.edges);
+      if (["memory_task_completed", "memory_task_failed", "memory_task_retry", "consolidation_completed", "consolidation_failed", "consolidation_retry"].includes(kind)) playback.show([]);
+    });
+    return () => { unsubscribe(); playback.cancel(); };
+  }, []);
+
   async function initialize() {
     try {
       const loaded = await loadAgent();
@@ -50,7 +75,31 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
       const remembered = window.localStorage.getItem("everything.activeSessionId");
       const selected = available.find((item) => item.id === remembered)?.id ?? available[0]!.id;
       await selectSession(selected, available);
+      await consolidate("daily");
     } catch (error) { setLoadError(error instanceof Error ? error.message : String(error)); }
+  }
+
+  async function refreshConsolidation() {
+    const task = await memoryAction<{ status: string; errorType: string | null } | null>({ action: "consolidation_status" });
+    const active = task?.status === "pending" || task?.status === "running";
+    setConsolidating(active);
+    setConsolidationStatus(task?.status === "failed" && task.errorType === "ConsolidationContextLimitError" ? "事实超出上下文预算，请调整 Model Context Window"
+      : task?.status === "failed" && task.errorType === "ConsolidationBatchLimitError" ? "整理超过 256 个子任务，请增加上下文预算"
+      : task ? ({ pending: "已排队，等待整理…", running: "正在整理…", completed: "整理完成", failed: "整理失败，可手动重试" }[task.status] ?? task.status) : "");
+  }
+
+  useEffect(() => {
+    if (!consolidating) return;
+    const timer = window.setInterval(() => { void refreshConsolidation().catch(() => setConsolidationStatus("无法读取整理状态")); }, 2000);
+    return () => window.clearInterval(timer);
+  }, [consolidating]);
+
+  async function consolidate(trigger: "daily" | "manual") {
+    setConsolidating(true);
+    try {
+      await memoryAction({ action: "consolidate", trigger });
+      await refreshConsolidation();
+    } catch (error) { setConsolidating(false); setConsolidationStatus(error instanceof Error ? error.message : String(error)); }
   }
 
   async function selectSession(sessionId: string, knownSessions = sessions) {
@@ -97,11 +146,18 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
     const assistantId = crypto.randomUUID();
     const controller = new AbortController();
     abortRef.current = controller; setInput(""); setRunning(true); setTick((value) => value + 1); edgePlayback.reset();
-    setNodeStates({ ...idleStates, user_prompt: "running", client_chat_history: "running", system_prompt: "running" });
-    edgePlayback.show(["user_prompt->working_memory", "client_chat_history->working_memory", "system_prompt->working_memory"]);
+    setNodeStates({ ...Object.fromEntries(bootstrap.workflow.nodes.map((node) => [node.id, "idle" as const])), ...idleStates, user_prompt: "running", session_chat_history: "running", system_prompt: "running" });
+    edgePlayback.show(["user_prompt->working_memory", "session_chat_history->working_memory", "system_prompt->working_memory"]);
     setMessages((current) => [...current, { id: crypto.randomUUID(), role: "user", content: prompt }, { id: assistantId, role: "assistant", content: "", pending: true, tools: [], startedAt: performance.now() }]);
     try {
-      const result = await runAgent(prompt, activeSessionId, (kind, event) => applyAgentEvent(kind, event, assistantId, setMessages, setNodeStates, edgePlayback.show), controller.signal);
+      let memoryStates: Record<string, VisualNodeState> = {};
+      const result = await runAgent(prompt, activeSessionId, (kind, event) => {
+        const memory = advanceHarnessMemory(kind, event, memoryStates);
+        memoryStates = memory.states;
+        setNodeStates((states) => ({ ...states, ...memory.states }));
+        if (memory.edges.length) edgePlayback.show(memory.edges);
+        applyAgentEvent(kind, event, assistantId, setMessages, setNodeStates, edgePlayback.show);
+      }, controller.signal);
       setMessages((current) => updateAssistant(current, assistantId, (message) => ({ ...message, content: message.content || result.reply, pending: false, result })));
       setNodeStates((states) => ({ ...states, reply: "done" })); await edgePlayback.finish();
       const refreshed = await memoryAction<{ messages: ChatLogEntry[]; sessions: SessionSummary[] }>({ action: "select_session", sessionId: activeSessionId });
@@ -109,16 +165,17 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
     } catch (error) {
       const message = controller.signal.aborted ? "本轮运行已停止" : error instanceof Error ? error.message : String(error);
       setMessages((current) => updateAssistant(current, assistantId, (assistant) => ({ ...assistant, pending: false, error: message })));
-      setNodeStates((states) => ({ ...states, llm: states.llm === "running" ? "error" : states.llm, tools: states.tools === "running" ? "error" : states.tools, reply: "error" })); edgePlayback.reset();
+      setNodeStates((states) => ({ ...states, ...Object.fromEntries(Object.entries(states).map(([id, state]) => [id, state === "running" ? "error" : state])), reply: "error" })); edgePlayback.reset();
     } finally { abortRef.current = null; setRunning(false); }
   }
 
   if (loadError) return <div className="content-wrap"><div className="panel error-panel">Agent 加载失败：{loadError}</div></div>;
   if (!bootstrap) return <div className="content-wrap"><div className="panel loading-panel">正在加载 Agent Harness…</div></div>;
   return <div className="agent-page-layout">
-    <div className="agent-main-column"><div className="agent-page-intro"><div><div className="eyebrow">个人助理 / 实时执行</div><h1>Agent</h1><p>发送消息，并观察 Working Memory、LLM、Tools 与 Reply 的真实运行状态。</p></div>{!bootstrap.settings.keyConfigured && <button className="config-warning" onClick={onOpenConfig}><Settings2 size={14} /> 配置模型后开始</button>}</div><AgentHarnessCanvas workflow={bootstrap.workflow} nodeStates={nodeStates} activeEdges={activeEdges} historyCount={messages.length} systemPromptLength={bootstrap.systemPrompt.length} /></div>
-    <aside className="agent-chat-dock"><div className="session-rail"><button className="new-session" disabled={running || creatingSession || !activeSessionId || messages.length === 0} onClick={() => void createSession()}><MessageSquarePlus size={14} /> 新建对话</button><div className="session-list">{sessions.map((session) => <button key={session.id} className={session.id === activeSessionId ? "active" : ""} onClick={() => void selectSession(session.id)}><strong>{session.title}</strong><span>{session.messageCount} 条记录</span></button>)}</div></div>
-      <div className="chat-pane"><div className="agent-dock-header"><div className="agent-avatar"><Bot size={16} /></div><div><strong>{sessions.find((item) => item.id === activeSessionId)?.title ?? "当前会话"}</strong><span>当前 Session 全部完整回合进入上下文</span></div><button className="session-icon" onClick={() => void renameActiveSession()} title="重命名"><Pencil size={13} /></button><button className="session-icon danger" onClick={() => void deleteActiveSession()} title="删除 Session"><Trash2 size={13} /></button><button className="model-chip" onClick={onOpenConfig} title="打开模型配置"><span className={bootstrap.settings.keyConfigured ? "model-dot ready" : "model-dot"} />{bootstrap.settings.model || bootstrap.settings.provider}</button></div>
+    <div className="agent-main-column"><div className="agent-page-intro"><div><div className="eyebrow">个人助理 / 实时执行</div><h1>Agent</h1><button className="ghost-action" disabled={consolidating || !bootstrap.settings.keyConfigured} onClick={() => void consolidate("manual")}>Consolidate</button><span role="status">{consolidationStatus}</span><p>发送消息，观察记忆召回、上下文组装、模型推理与工具执行。</p></div>{!bootstrap.settings.keyConfigured && <button className="config-warning" onClick={onOpenConfig}><Settings2 size={14} /> 配置模型后开始</button>}</div><AgentHarnessCanvas workflow={bootstrap.workflow} nodeStates={{ ...nodeStates, ...backgroundStates }} activeEdges={new Set([...activeEdges, ...backgroundEdges])} /></div>
+    <aside className="agent-chat-dock">
+      <div className="chat-pane"><div className="agent-dock-header"><button type="button" className="session-icon" aria-label={sessionRailCollapsed ? "展开对话列表" : "收起对话列表"} title={sessionRailCollapsed ? "展开对话列表" : "收起对话列表"} aria-expanded={!sessionRailCollapsed} aria-controls="agent-session-rail" onClick={() => setSessionRailCollapsed((collapsed) => !collapsed)}>{sessionRailCollapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}</button><div className="agent-avatar"><Bot size={16} /></div><div className="agent-session-heading"><strong>{sessions.find((item) => item.id === activeSessionId)?.title ?? "当前会话"}</strong><span>当前 Session 全部完整回合进入上下文</span></div><button className="session-icon" onClick={() => void renameActiveSession()} title="重命名"><Pencil size={13} /></button><button className="session-icon danger" onClick={() => void deleteActiveSession()} title="删除 Session"><Trash2 size={13} /></button><button className="model-chip" onClick={onOpenConfig} title="打开模型配置"><span className={bootstrap.settings.keyConfigured ? "model-dot ready" : "model-dot"} />{bootstrap.settings.model || bootstrap.settings.provider}</button></div>
+        <div id="agent-session-rail" className="session-rail" hidden={sessionRailCollapsed}><button className="new-session" disabled={running || creatingSession || !activeSessionId || messages.length === 0} onClick={() => void createSession()}><MessageSquarePlus size={14} /> 新建对话</button><div className="session-list">{sessions.map((session) => <button key={session.id} className={session.id === activeSessionId ? "active" : ""} onClick={() => void selectSession(session.id)}><strong>{session.title}</strong><span>{session.messageCount} 条记录</span></button>)}</div></div>
         <div className="agent-chat-log" ref={chatLogRef}>{messages.length === 0 && <div className="agent-chat-empty"><Bot size={24} /><strong>开始这段对话</strong><span>消息会保存在本地 Session 中。</span></div>}{messages.map((message) => message.role === "user" ? <div key={message.id} className="user-bubble">{message.content}</div> : <AssistantCard key={message.id} message={message} tick={tick} />)}</div>
         <div className="agent-composer"><textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (shouldSubmitAgentComposer(event)) { event.preventDefault(); void send(); } }} placeholder={bootstrap.settings.keyConfigured ? "给 Everything Agent 发消息…" : "请先配置模型 API Key"} disabled={running || !bootstrap.settings.keyConfigured} rows={2} /><div className="agent-composer-actions">{running ? <button className="stop-agent" onClick={() => abortRef.current?.abort()}><CircleStop size={15} /> 停止</button> : <button className="send-agent" onClick={() => void send()} disabled={!input.trim() || !bootstrap.settings.keyConfigured}><Send size={15} /> 发送</button>}</div></div>
       </div></aside>
@@ -131,7 +188,6 @@ function AssistantCard({ message, tick: _tick }: { message: AssistantChatMessage
 }
 
 function applyAgentEvent(kind: string, event: AgentEvent, assistantId: string, setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>, setNodeStates: React.Dispatch<React.SetStateAction<Record<string, VisualNodeState>>>, showActiveEdges: (edges: Iterable<string>) => void) {
-  if (kind === "context_assembled") { setNodeStates((states) => ({ ...states, user_prompt: "done", client_chat_history: "done", system_prompt: "done", working_memory: "done" })); showActiveEdges(["working_memory->llm"]); }
   if (kind === "model_request") { setNodeStates((states) => ({ ...states, llm: "running", tools: states.tools === "running" ? "done" : states.tools })); showActiveEdges((event.iteration ?? 1) > 1 ? ["tools->llm"] : ["working_memory->llm"]); }
   if (kind === "model_response") setNodeStates((states) => ({ ...states, llm: "done" }));
   if (kind === "model_failed") setNodeStates((states) => ({ ...states, llm: "error" }));

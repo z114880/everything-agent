@@ -43,7 +43,7 @@ export function sessionFromRow(row: Row): SessionSummary {
   return {
     id: String(row.id), title: String(row.title), messageCount: Number(row.message_count ?? 0),
     completedRunCount: Number(row.completed_run_count ?? 0), incompleteRunCount: Number(row.incomplete_run_count ?? 0),
-    createdAt: String(row.created_at), updatedAt: String(row.updated_at), pendingMessages: Number(row.pending_messages ?? 0),
+    createdAt: String(row.created_at), updatedAt: String(row.updated_at),
   };
 }
 
@@ -67,8 +67,8 @@ export function semanticFromRow(row: Row): SemanticMemory {
 /** 转换整理任务记录，保留错误类型和完成状态。 */
 export function consolidationFromRow(row: Row): ConsolidationRun {
   return {
-    id: Number(row.id), runId: String(row.run_id), sessionId: String(row.session_id), trigger: String(row.trigger),
-    status: String(row.status), throughMessageId: Number(row.through_message_id), factsCreated: Number(row.facts_created),
+    id: Number(row.id), runId: String(row.run_id), trigger: String(row.trigger),
+    status: String(row.status), totalBatches: Number(row.total_batches), completedBatches: Number(row.completed_batches), unresolvedConflicts: Number(row.unresolved_conflicts), factsCreated: Number(row.facts_created),
     factsUpdated: Number(row.facts_updated), factsSkipped: Number(row.facts_skipped),
     factsDeleted: Number(row.facts_deleted ?? 0), factsMerged: Number(row.facts_merged ?? 0),
     errorType: row.error_type === null || row.error_type === undefined ? null : String(row.error_type),

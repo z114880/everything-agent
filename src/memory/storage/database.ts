@@ -1,8 +1,7 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { MEMORY_SCHEMA, MEMORY_SCHEMA_VERSION } from "./schema.ts";
-import type { Row } from "./records.ts";
 import { nowUtc } from "./records.ts";
 
 /** 数据库连接、Schema 初始化与同步事务。 */
@@ -14,64 +13,30 @@ export class MemoryDatabase {
     const databaseDirectory = join(home, "database");
     mkdirSync(databaseDirectory, { recursive: true });
     this.databasePath = join(databaseDirectory, "state.db");
-    this.connection = new DatabaseSync(this.databasePath);
+    let connection = new DatabaseSync(this.databasePath);
+    const hasMigrations = connection.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'").get();
+    const version = hasMigrations
+      ? Number(connection.prepare("SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations").get()!.version) : 0;
+    // 开发阶段不迁移旧库：版本不匹配时直接删除数据库及其 sidecar，再创建当前 Schema。
+    if (version !== MEMORY_SCHEMA_VERSION) {
+      connection.close();
+      for (const suffix of ["", "-wal", "-shm"]) rmSync(`${this.databasePath}${suffix}`, { force: true });
+      connection = new DatabaseSync(this.databasePath);
+    }
+    this.connection = connection;
     this.initializeSchema();
     this.assertFts5();
   }
 
   private initializeSchema(): void {
-    this.connection.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 3000;");
-    const hasMigrations = Boolean((this.connection.prepare("SELECT 1 AS ok FROM sqlite_master WHERE type='table' AND name='schema_migrations'").get() as Row | undefined)?.ok);
-    const version = hasMigrations
-      ? Number((this.connection.prepare("SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations").get() as Row).version) : 0;
-    if (version < 2) {
-      this.connection.exec(`
-        PRAGMA foreign_keys = OFF;
-        DROP TRIGGER IF EXISTS chat_log_ai; DROP TRIGGER IF EXISTS chat_log_ad; DROP TRIGGER IF EXISTS chat_log_au;
-        DROP TABLE IF EXISTS chat_log_fts;
-        DROP TABLE IF EXISTS episodic_memory_fts; DROP TABLE IF EXISTS episodic_memory;
-        DROP TABLE IF EXISTS consolidation_runs;
-        DROP TABLE IF EXISTS chat_log; DROP TABLE IF EXISTS sessions;
-        PRAGMA foreign_keys = ON;
-      `);
-      this.connection.exec(MEMORY_SCHEMA);
-    } else {
-      this.connection.exec(MEMORY_SCHEMA);
-    }
-    if (version === 3) {
-      // Tokenizer 生成的向量索引与估算切块不兼容；只删除可重建派生数据。
-      this.connection.exec(`
-        DROP TABLE IF EXISTS embedding_rebuilds;
-        DROP TABLE IF EXISTS embedding_chunks;
-        DROP TABLE IF EXISTS embedding_generations;
-      `);
-      this.connection.exec(MEMORY_SCHEMA);
-    }
-    // Session 不再进入向量语料库，清除旧派生向量；事实和原始聊天记录保留。
-    this.connection.prepare("DELETE FROM embedding_chunks WHERE corpus='session'").run();
+    this.connection.exec(MEMORY_SCHEMA);
+    this.connection.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)").run(MEMORY_SCHEMA_VERSION, nowUtc());
     this.connection.prepare("UPDATE memory_tasks SET status='pending', attempts=MAX(0, attempts-1) WHERE status='running'").run();
     // 进程重启后不可能继续持有旧 HTTP 状态，未完成的影子任务明确标为 interrupted。
     this.connection.prepare(`
       UPDATE embedding_rebuilds SET status='interrupted', completed_at=? WHERE status='running'
     `).run(nowUtc());
     this.connection.prepare("UPDATE embedding_generations SET status='interrupted' WHERE status='building'").run();
-    if (version < 3) {
-      // 失败 run 只保留 Chat Log；清空其历史检索投影会通过现有 trigger 同步更新 FTS5。
-      this.connection.prepare(`
-        UPDATE chat_log SET search_text = ''
-        WHERE kind = 'user_message'
-          AND NOT EXISTS (
-            SELECT 1 FROM chat_log done
-            WHERE done.session_id = chat_log.session_id
-              AND done.run_id = chat_log.run_id
-              AND done.kind = 'assistant_message'
-          )
-      `).run();
-    }
-    if (version < MEMORY_SCHEMA_VERSION) {
-      this.connection.prepare("DELETE FROM schema_migrations").run();
-      this.connection.prepare("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)").run(MEMORY_SCHEMA_VERSION, nowUtc());
-    }
   }
 
   /** 同步提交一次原子写入；操作失败时回滚并重抛原始错误，不接受异步操作。 */

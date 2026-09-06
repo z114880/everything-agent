@@ -6,6 +6,7 @@ import { runGraph } from "../../src/engine/src/index.ts";
 import type { Graph, StateRecord } from "../../src/engine/src/index.ts";
 import {
   AgentConfigError,
+  subscribeBackgroundEvents,
   clearProviderApiKey,
   clearEmbeddingApiKey,
   clearLocalAgentData,
@@ -146,6 +147,15 @@ async function handleAgentRequest(
   response: import("node:http").ServerResponse,
   pathname: string,
 ): Promise<void> {
+  if (request.method === "GET" && pathname === `${agentApiPrefix}/background-events`) {
+    response.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
+    response.flushHeaders();
+    const unsubscribe = subscribeBackgroundEvents((kind, event) => {
+      if (!response.destroyed) response.write(`data: ${JSON.stringify({ kind, event })}\n\n`);
+    });
+    response.on("close", unsubscribe);
+    return;
+  }
   if (request.method === "GET" && pathname === agentApiPrefix) {
     sendJson(response, 200, await loadAgentBootstrap());
     return;

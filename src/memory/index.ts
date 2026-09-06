@@ -21,3 +21,5 @@ export type {
   StoredRun,
 } from "./types.ts";
 export { readMemoryCandidate } from "./management.ts";
+
+export type { BackgroundTask, BackgroundOptions } from "./background-tasks.ts";
