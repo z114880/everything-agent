@@ -13,8 +13,7 @@ export function AgentHarnessCanvas({ workflow, nodeStates, activeEdges }: AgentH
   const markerId = useId().replaceAll(":", "");
   const nodes = workflow.nodes.filter((node) => node.id !== "START" && node.id !== "END");
   const positions = new Map(nodes.map((node, index) => [node.id, node.presentation ?? { x: 24 + index % 5 * 220, y: 85 + Math.floor(index / 5) * 105 }]));
-  return <section className="agent-harness-panel panel">
-    <div className="agent-svg-wrap business-graph-scroll">
+  return <div className="business-graph-scroll">
       <svg viewBox="0 0 1110 905" style={{ width: "100%", minWidth: 850 }} className="agent-harness-svg" role="img" aria-label="Agent 与 Memory 业务流程图">
         <defs><marker id={markerId} viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" className="arrow-head" /></marker></defs>
         <rect x="8" y="20" width="1090" height="477" rx="16" className="agent-loop-box" />
@@ -56,6 +55,5 @@ export function AgentHarnessCanvas({ workflow, nodeStates, activeEdges }: AgentH
           return <g key={node.id} className={`agent-node ${nodeStates[node.id] ?? "idle"}`} data-node={node.id}><title>{`${node.label}：${node.presentation?.subtitle ?? ""}`}</title><rect x={position.x} y={position.y} width="164" height="50" rx="9" /><text x={position.x + 10} y={position.y + 21} className="agent-node-title">{node.label}</text><text x={position.x + 10} y={position.y + 39} className="agent-node-subtitle">{node.presentation?.subtitle}</text></g>;
         })}
       </svg>
-    </div>
-  </section>;
+  </div>;
 }

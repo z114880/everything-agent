@@ -8,7 +8,7 @@ import {
 type MemoryTab = "overview" | "semantic" | "episodic" | "procedural" | "chat" | "consolidation";
 const tabs: Array<{ id: MemoryTab; label: string }> = [
   { id: "overview", label: "Overview" }, { id: "semantic", label: "Semantic" },
-  { id: "episodic", label: "Session Recall" }, { id: "procedural", label: "Procedural" },
+  { id: "episodic", label: "Episodic(ession Recall)" }, { id: "procedural", label: "Procedural" },
   { id: "chat", label: "Chat Log" }, { id: "consolidation", label: "Consolidation" },
 ];
 

@@ -36,12 +36,23 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
   const [consolidating, setConsolidating] = useState(false);
   const [tick, setTick] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
+  const sessionMenuRef = useRef<HTMLDivElement | null>(null);
+  const historyToggleRef = useRef<HTMLButtonElement | null>(null);
   const chatLogRef = useRef<HTMLDivElement | null>(null);
   const edgePlaybackRef = useRef<ReturnType<typeof createEdgePlayback> | null>(null);
   edgePlaybackRef.current ??= createEdgePlayback(setActiveEdges);
   const edgePlayback = edgePlaybackRef.current;
 
   useEffect(() => { void initialize(); }, []);
+  // 浮层不参与消息区布局；点击外部、移出焦点或按 Escape 均可关闭。
+  useEffect(() => {
+    if (sessionRailCollapsed) return;
+    const dismiss = (event: PointerEvent) => {
+      if (event.target instanceof Node && !sessionMenuRef.current?.contains(event.target)) setSessionRailCollapsed(true);
+    };
+    document.addEventListener("pointerdown", dismiss);
+    return () => document.removeEventListener("pointerdown", dismiss);
+  }, [sessionRailCollapsed]);
   useEffect(() => { chatLogRef.current?.scrollTo({ top: chatLogRef.current.scrollHeight, behavior: "smooth" }); }, [messages]);
   useEffect(() => { if (!running) return; const timer = window.setInterval(() => setTick((value) => value + 1), 1_000); return () => window.clearInterval(timer); }, [running]);
   useEffect(() => () => edgePlayback.cancel(), [edgePlayback]);
@@ -106,6 +117,7 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
     if (running || creatingSessionRef.current) return;
     const result = await memoryAction<{ messages: ChatLogEntry[]; sessions: SessionSummary[] }>({ action: "select_session", sessionId });
     setActiveSessionId(sessionId);
+    setSessionRailCollapsed(true);
     setSessions(result.sessions.length ? result.sessions : knownSessions);
     setMessages(toChatMessages(result.messages));
     window.localStorage.setItem("everything.activeSessionId", sessionId);
@@ -174,10 +186,11 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
   return <div className="agent-page-layout">
     <div className="agent-main-column"><div className="agent-page-intro"><div><div className="eyebrow">个人助理 / 实时执行</div><h1>Agent</h1><button className="ghost-action" disabled={consolidating || !bootstrap.settings.keyConfigured} onClick={() => void consolidate("manual")}>Consolidate</button><span role="status">{consolidationStatus}</span><p>发送消息，观察记忆召回、上下文组装、模型推理与工具执行。</p></div>{!bootstrap.settings.keyConfigured && <button className="config-warning" onClick={onOpenConfig}><Settings2 size={14} /> 配置模型后开始</button>}</div><AgentHarnessCanvas workflow={bootstrap.workflow} nodeStates={{ ...nodeStates, ...backgroundStates }} activeEdges={new Set([...activeEdges, ...backgroundEdges])} /></div>
     <aside className="agent-chat-dock">
-      <div className="chat-pane"><div className="agent-dock-header"><button type="button" className="session-icon" aria-label={sessionRailCollapsed ? "展开对话列表" : "收起对话列表"} title={sessionRailCollapsed ? "展开对话列表" : "收起对话列表"} aria-expanded={!sessionRailCollapsed} aria-controls="agent-session-rail" onClick={() => setSessionRailCollapsed((collapsed) => !collapsed)}>{sessionRailCollapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}</button><div className="agent-avatar"><Bot size={16} /></div><div className="agent-session-heading"><strong>{sessions.find((item) => item.id === activeSessionId)?.title ?? "当前会话"}</strong><span>当前 Session 全部完整回合进入上下文</span></div><button className="session-icon" onClick={() => void renameActiveSession()} title="重命名"><Pencil size={13} /></button><button className="session-icon danger" onClick={() => void deleteActiveSession()} title="删除 Session"><Trash2 size={13} /></button><button className="model-chip" onClick={onOpenConfig} title="打开模型配置"><span className={bootstrap.settings.keyConfigured ? "model-dot ready" : "model-dot"} />{bootstrap.settings.model || bootstrap.settings.provider}</button></div>
-        <div id="agent-session-rail" className="session-rail" hidden={sessionRailCollapsed}><button className="new-session" disabled={running || creatingSession || !activeSessionId || messages.length === 0} onClick={() => void createSession()}><MessageSquarePlus size={14} /> 新建对话</button><div className="session-list">{sessions.map((session) => <button key={session.id} className={session.id === activeSessionId ? "active" : ""} onClick={() => void selectSession(session.id)}><strong>{session.title}</strong><span>{session.messageCount} 条记录</span></button>)}</div></div>
-        <div className="agent-chat-log" ref={chatLogRef}>{messages.length === 0 && <div className="agent-chat-empty"><Bot size={24} /><strong>开始这段对话</strong><span>消息会保存在本地 Session 中。</span></div>}{messages.map((message) => message.role === "user" ? <div key={message.id} className="user-bubble">{message.content}</div> : <AssistantCard key={message.id} message={message} tick={tick} />)}</div>
-        <div className="agent-composer"><textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (shouldSubmitAgentComposer(event)) { event.preventDefault(); void send(); } }} placeholder={bootstrap.settings.keyConfigured ? "给 Everything Agent 发消息…" : "请先配置模型 API Key"} disabled={running || !bootstrap.settings.keyConfigured} rows={2} /><div className="agent-composer-actions">{running ? <button className="stop-agent" onClick={() => abortRef.current?.abort()}><CircleStop size={15} /> 停止</button> : <button className="send-agent" onClick={() => void send()} disabled={!input.trim() || !bootstrap.settings.keyConfigured}><Send size={15} /> 发送</button>}</div></div>
+      <div className="chat-pane"><div className="agent-dock-header"><div className="agent-avatar"><Bot size={16} /></div><div className="agent-session-heading"><span className="chat-heading-label">与个人助理对话</span><strong>{sessions.find((item) => item.id === activeSessionId)?.title ?? "当前会话"}</strong></div><button className="session-icon" onClick={() => void renameActiveSession()} aria-label="重命名会话" title="重命名会话"><Pencil size={13} /></button><button className="session-icon danger" onClick={() => void deleteActiveSession()} aria-label="删除会话" title="删除会话"><Trash2 size={13} /></button><button className="model-chip" onClick={onOpenConfig} title="打开模型配置"><span className={bootstrap.settings.keyConfigured ? "model-dot ready" : "model-dot"} /><span className="model-name">{bootstrap.settings.model || bootstrap.settings.provider}</span></button></div>
+        <div className="session-menu-anchor" ref={sessionMenuRef} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setSessionRailCollapsed(true); }} onKeyDown={(event) => { if (event.key === "Escape" && !sessionRailCollapsed) { setSessionRailCollapsed(true); historyToggleRef.current?.focus(); } }}><div className="chat-toolbar"><button type="button" className="history-toggle" ref={historyToggleRef} aria-label={sessionRailCollapsed ? "展开对话列表" : "收起对话列表"} title={sessionRailCollapsed ? "展开对话列表" : "收起对话列表"} aria-expanded={!sessionRailCollapsed} aria-controls="agent-session-rail" onClick={() => setSessionRailCollapsed((collapsed) => !collapsed)}>历史对话 {sessionRailCollapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}</button><button className="new-session" disabled={running || creatingSession || !activeSessionId || messages.length === 0} onClick={() => void createSession()}><MessageSquarePlus size={14} /> 新建对话</button></div>
+        <div id="agent-session-rail" className="session-rail" hidden={sessionRailCollapsed}><div className="session-list">{sessions.map((session) => <button key={session.id} className={session.id === activeSessionId ? "active" : ""} onClick={() => void selectSession(session.id)}><strong>{session.title}</strong><span>{session.messageCount} 条记录</span></button>)}</div></div></div>
+        <div className="agent-chat-log" ref={chatLogRef}>{messages.length === 0 && <div className="agent-chat-empty"><div className="chat-empty-icon"><Bot size={28} /></div><strong>有什么可以帮你？</strong><span>提一个问题，或交给我一件要做的事。</span><small>对话记录保存在本地</small></div>}{messages.map((message) => message.role === "user" ? <div key={message.id} className="user-bubble">{message.content}</div> : <AssistantCard key={message.id} message={message} tick={tick} />)}</div>
+        <div className="agent-composer"><div className="composer-input-box"><textarea aria-label="消息内容" value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (shouldSubmitAgentComposer(event)) { event.preventDefault(); void send(); } }} placeholder={bootstrap.settings.keyConfigured ? "给 Everything Agent 发消息…" : "请先配置模型 API Key"} disabled={running || !bootstrap.settings.keyConfigured} rows={2} /><div className="agent-composer-actions"><span className="composer-hint">Enter 发送 · Shift + Enter 换行</span>{running ? <button className="stop-agent" onClick={() => abortRef.current?.abort()}><CircleStop size={15} /> 停止</button> : <button className="send-agent" onClick={() => void send()} disabled={!input.trim() || !bootstrap.settings.keyConfigured}><Send size={15} /> 发送</button>}</div></div></div>
       </div></aside>
   </div>;
 }

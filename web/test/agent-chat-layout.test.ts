@@ -5,11 +5,12 @@ import { describe, expect, it } from "vitest";
 const stylePath = fileURLToPath(new URL("../src/index.css", import.meta.url));
 
 describe("Agent 会话窗口布局", () => {
-  it("聊天区保持固定窄宽度且对话列表在内部纵向展开", async () => {
+  it("聊天区保持 420px 宽度且历史列表浮层不占据消息布局", async () => {
     const css = await readFile(stylePath, "utf8");
     expect(ruleFor(css, ".agent-page-layout")).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\) 420px/);
     expect(ruleFor(css, ".agent-chat-dock")).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\)/);
     expect(ruleFor(css, ".session-rail")).toMatch(/max-height:\s*220px/);
+    expect(ruleFor(css, ".session-rail")).toMatch(/position:\s*absolute/);
     expect(css).not.toContain(".session-rail-collapsed");
     expect(ruleFor(css, ".session-rail[hidden]")).toMatch(/display:\s*none/);
   });
@@ -18,6 +19,12 @@ describe("Agent 会话窗口布局", () => {
     const source = await readFile(new URL("../src/components/AgentPage.tsx", import.meta.url), "utf8");
     expect(source).toContain('[sessionRailCollapsed, setSessionRailCollapsed] = useState(true)');
     expect(source).toContain('hidden={sessionRailCollapsed}');
+    expect(source).not.toContain("当前 Session 全部完整回合进入上下文");
+    expect(source).toContain('aria-label="消息内容"');
+    expect(source.indexOf('className="new-session"')).toBeLessThan(source.indexOf('<div id="agent-session-rail"'));
+    expect(source.indexOf('className="model-chip"')).toBeLessThan(source.indexOf('<div className="session-menu-anchor"'));
+    expect(source.indexOf('className="model-chip"')).toBeGreaterThan(source.indexOf('aria-label="删除会话"'));
+    expect(source).not.toContain('composer-model-row');
     const railIndex = source.indexOf('<div id="agent-session-rail"');
     expect(railIndex).toBeGreaterThan(source.indexOf('<div className="agent-dock-header">'));
     expect(railIndex).toBeLessThan(source.indexOf('<div className="agent-chat-log"'));
