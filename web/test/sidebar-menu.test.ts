@@ -22,4 +22,12 @@ describe("侧栏菜单", () => {
     expect(source).not.toContain("<span>运行记录</span>");
     expect(styles).toContain(".nav-divider { height: 1px;");
   });
+
+  it("保持所有菜单项的图标与文字左对齐", async () => {
+    const styles = await readFile(styleSheet, "utf8");
+
+    expect(styles).toContain("justify-content: flex-start");
+    expect(styles).toContain(".nav-item > svg { width: 17px; height: 17px;");
+    expect(styles).toContain(".nav-item.active::before");
+  });
 });
