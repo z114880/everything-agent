@@ -1,5 +1,5 @@
 import { advanceHarnessMemory } from "../harness-playback";
-import { Bot, CircleStop, Clock3, MessageSquarePlus, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Pencil, Send, Settings2, Trash2, Wrench } from "lucide-react";
+import { Bot, CircleStop, Clock3, MessageSquarePlus, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Pencil, RefreshCw, Send, Settings2, Trash2, Wrench } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { loadAgent, memoryAction, runAgent, subscribeBackgroundEvents, type AgentBootstrap, type AgentEvent, type AgentRunResult, type ChatLogEntry, type SessionSummary } from "../agent-api";
 import { shouldSubmitAgentComposer } from "../agent-composer";
@@ -7,6 +7,7 @@ import { createEdgePlayback } from "../edge-playback";
 import type { VisualNodeState } from "./GraphCanvas";
 import { AgentHarnessCanvas } from "./AgentHarnessCanvas";
 import { ChatMarkdown } from "./ChatMarkdown";
+import { PageHeading } from "./PageHeading";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
@@ -67,9 +68,9 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
     const playback = createEdgePlayback(setBackgroundEdges);
     const unsubscribe = subscribeBackgroundEvents((kind, event) => {
       if (kind.startsWith("consolidation_")) {
-        if (kind === "consolidation_started") { setConsolidating(true); setConsolidationStatus("正在整理…"); }
+        if (kind === "consolidation_started") { setConsolidating(true); setConsolidationStatus("正在整理"); }
         if (kind === "consolidation_batch_completed") setConsolidationStatus(`整理进度 ${event.completedBatches} / ${event.totalBatches}`);
-        if (kind === "consolidation_retry") setConsolidationStatus("整理失败，等待重试…");
+        if (kind === "consolidation_retry") setConsolidationStatus("整理失败，等待重试");
         if (kind === "consolidation_completed" || kind === "consolidation_failed") { setConsolidating(false); setConsolidationStatus(kind === "consolidation_completed" ? "整理完成" : "整理失败，可手动重试"); }
       }
       const next = advanceHarnessMemory(kind, event, states);
@@ -101,7 +102,7 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
     setConsolidating(active);
     setConsolidationStatus(task?.status === "failed" && task.errorType === "ConsolidationContextLimitError" ? "事实超出上下文预算，请调整 Model Context Window"
       : task?.status === "failed" && task.errorType === "ConsolidationBatchLimitError" ? "整理超过 256 个子任务，请增加上下文预算"
-      : task ? ({ pending: "已排队，等待整理…", running: "正在整理…", completed: "整理完成", failed: "整理失败，可手动重试" }[task.status] ?? task.status) : "");
+      : task ? ({ pending: "已排队，等待整理", running: "正在整理", completed: "整理完成", failed: "整理失败，可手动重试" }[task.status] ?? task.status) : "");
   }
 
   useEffect(() => {
@@ -117,6 +118,14 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
       await refreshConsolidation();
     } catch (error) { setConsolidating(false); setConsolidationStatus(error instanceof Error ? error.message : String(error)); }
   }
+
+  const consolidationTone = consolidating
+    ? "running"
+    : consolidationStatus === "整理完成"
+      ? "success"
+      : consolidationStatus
+        ? "error"
+        : "idle";
 
   async function selectSession(sessionId: string, knownSessions = sessions) {
     if (running || creatingSessionRef.current) return;
@@ -189,14 +198,14 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
   if (loadError) return <div className="content-wrap"><div className="panel error-panel">Agent 加载失败：{loadError}</div></div>;
   if (!bootstrap) return <div className="content-wrap"><div className="panel loading-panel">正在加载 Agent Harness…</div></div>;
   return <div className="agent-page-layout" data-chat-collapsed={chatCollapsed}>
-    <div className="agent-main-column"><div className="agent-page-intro"><div><div className="eyebrow">个人助理 / 实时执行</div><div className="agent-title-row"><h1>Agent</h1><Button variant="outline" size="sm" disabled={consolidating || !bootstrap.settings.keyConfigured} onClick={() => void consolidate("manual")}>Consolidate</Button>{consolidationStatus && <Badge variant="outline" role="status">{consolidationStatus}</Badge>}</div><p>发送消息，观察记忆召回、上下文组装、模型推理与工具执行。</p></div>{!bootstrap.settings.keyConfigured && <Button variant="outline" className="config-warning" onClick={onOpenConfig}><Settings2 size={14} /> 配置模型后开始</Button>}</div><AgentHarnessCanvas workflow={bootstrap.workflow} nodeStates={{ ...nodeStates, ...backgroundStates }} activeEdges={new Set([...activeEdges, ...backgroundEdges])} /></div>
+    <div className="agent-main-column"><PageHeading eyebrow="个人助理 / 实时执行" title="Agent" description="发送消息，观察记忆召回、上下文组装、模型推理与工具执行。" actions={<div className="agent-intro-actions"><div className="consolidation-action" data-status={consolidationTone}>{consolidationStatus && <span className="consolidation-status" role="status"><i aria-hidden="true" />{consolidationStatus}</span>}<Button className="consolidation-button" variant="secondary" size="sm" disabled={consolidating || !bootstrap.settings.agentModel.keyConfigured} onClick={() => void consolidate("manual")}><RefreshCw size={13} aria-hidden="true" /> Consolidate</Button></div>{(!bootstrap.settings.agentModel.keyConfigured || !bootstrap.settings.smallModel.keyConfigured) && <Button className="config-warning" onClick={onOpenConfig}><Settings2 size={14} /> 配置模型后开始</Button>}</div>} /><AgentHarnessCanvas workflow={bootstrap.workflow} nodeStates={{ ...nodeStates, ...backgroundStates }} activeEdges={new Set([...activeEdges, ...backgroundEdges])} /></div>
     <aside className="agent-chat-dock">
       <div className="chat-pane"><div className="agent-dock-header"><div className="agent-avatar"><Bot size={16} /></div><div className="agent-session-heading"><span className="chat-heading-label">与个人助理对话</span><strong>{sessions.find((item) => item.id === activeSessionId)?.title ?? "当前会话"}</strong></div><Button variant="ghost" size="icon-sm" className="session-icon" onClick={() => void renameActiveSession()} aria-label="重命名会话" title="重命名会话"><Pencil size={13} /></Button><Button variant="ghost" size="icon-sm" className="session-icon danger" onClick={() => void deleteActiveSession()} aria-label="删除会话" title="删除会话"><Trash2 size={13} /></Button><Button type="button" variant="ghost" size="icon-sm" className="session-icon chat-collapse-toggle" aria-label={chatCollapsed ? "展开聊天区" : "收起聊天区"} title={chatCollapsed ? "展开聊天区" : "收起聊天区"} aria-expanded={!chatCollapsed} aria-controls="agent-chat-content" onClick={() => { setChatCollapsed((collapsed) => !collapsed); setSessionRailCollapsed(true); }}>{chatCollapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}</Button></div>
         <div id="agent-chat-content" className="agent-chat-content" hidden={chatCollapsed}>
-        <div className="session-menu-anchor" ref={sessionMenuRef} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setSessionRailCollapsed(true); }} onKeyDown={(event) => { if (event.key === "Escape" && !sessionRailCollapsed) { setSessionRailCollapsed(true); historyToggleRef.current?.focus(); } }}><div className="chat-toolbar"><Button variant="outline" size="sm" className="new-session" disabled={running || creatingSession || !activeSessionId || messages.length === 0} onClick={() => void createSession()}><MessageSquarePlus size={14} /> 新建对话</Button><Button type="button" variant="outline" size="sm" className="history-toggle" ref={historyToggleRef} aria-label={sessionRailCollapsed ? "展开对话列表" : "收起对话列表"} title={sessionRailCollapsed ? "展开对话列表" : "收起对话列表"} aria-expanded={!sessionRailCollapsed} aria-controls="agent-session-rail" onClick={() => setSessionRailCollapsed((collapsed) => !collapsed)}>历史对话 {sessionRailCollapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}</Button><Button variant="secondary" size="sm" className="model-chip" onClick={onOpenConfig} title="打开模型配置"><span className={bootstrap.settings.keyConfigured ? "model-dot ready" : "model-dot"} /><span className="model-name">{bootstrap.settings.model || bootstrap.settings.provider}</span><ChevronDown size={12} aria-hidden="true" /></Button></div>
+        <div className="session-menu-anchor" ref={sessionMenuRef} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setSessionRailCollapsed(true); }} onKeyDown={(event) => { if (event.key === "Escape" && !sessionRailCollapsed) { setSessionRailCollapsed(true); historyToggleRef.current?.focus(); } }}><div className="chat-toolbar"><Button variant="outline" size="sm" className="new-session" disabled={running || creatingSession || !activeSessionId || messages.length === 0} onClick={() => void createSession()}><MessageSquarePlus size={14} /> 新建对话</Button><Button type="button" variant="outline" size="sm" className="history-toggle" ref={historyToggleRef} aria-label={sessionRailCollapsed ? "展开对话列表" : "收起对话列表"} title={sessionRailCollapsed ? "展开对话列表" : "收起对话列表"} aria-expanded={!sessionRailCollapsed} aria-controls="agent-session-rail" onClick={() => setSessionRailCollapsed((collapsed) => !collapsed)}>历史对话 {sessionRailCollapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}</Button><Button variant="secondary" size="sm" className="model-chip" onClick={onOpenConfig} title="打开模型配置"><span className={bootstrap.settings.agentModel.keyConfigured && bootstrap.settings.smallModel.keyConfigured ? "model-dot ready" : "model-dot"} /><span className="model-name">{bootstrap.settings.agentModel.model || bootstrap.settings.agentModel.provider}</span><ChevronDown size={12} aria-hidden="true" /></Button></div>
         <div id="agent-session-rail" className="session-rail" hidden={sessionRailCollapsed}><div className="session-list-heading"><strong>历史对话</strong><span>选择一个会话继续聊天</span></div><div className="session-list">{sessions.map((session) => <Button variant="ghost" key={session.id} className={session.id === activeSessionId ? "active" : ""} onClick={() => void selectSession(session.id)}><strong>{session.title}</strong><span>{session.messageCount} 条记录</span></Button>)}</div></div></div>
         <div className="agent-chat-log" ref={chatLogRef}>{messages.length === 0 && <div className="agent-chat-empty"><div className="chat-empty-icon"><Bot size={28} /></div><strong>有什么可以帮你？</strong><span>提一个问题，或交给我一件要做的事。</span><small>对话记录保存在本地</small></div>}{messages.map((message) => message.role === "user" ? <div key={message.id} className="user-bubble"><ChatMarkdown content={message.content} /></div> : <AssistantCard key={message.id} message={message} tick={tick} />)}</div>
-        <div className="agent-composer"><div className="composer-input-box"><Textarea aria-label="消息内容" value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (shouldSubmitAgentComposer(event)) { event.preventDefault(); void send(); } }} placeholder={bootstrap.settings.keyConfigured ? "给 Everything Agent 发消息…" : "请先配置模型 API Key"} disabled={running || !bootstrap.settings.keyConfigured} rows={2} /><div className="agent-composer-actions"><span className="composer-hint">Enter 发送 · Shift + Enter 换行</span>{running ? <Button variant="destructive-outline" size="sm" className="stop-agent" onClick={() => abortRef.current?.abort()}><CircleStop size={15} /> 停止</Button> : <Button size="sm" className="send-agent" onClick={() => void send()} disabled={!input.trim() || !bootstrap.settings.keyConfigured}><Send size={15} /> 发送</Button>}</div></div></div>
+        <div className="agent-composer"><div className="composer-input-box"><Textarea aria-label="消息内容" value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (shouldSubmitAgentComposer(event)) { event.preventDefault(); void send(); } }} placeholder={bootstrap.settings.agentModel.keyConfigured && bootstrap.settings.smallModel.keyConfigured ? "给 Everything Agent 发消息…" : "请先完整配置 Agent Model 与 Small Model"} disabled={running || !bootstrap.settings.agentModel.keyConfigured || !bootstrap.settings.smallModel.keyConfigured} rows={2} /><div className="agent-composer-actions"><span className="composer-hint">Enter 发送 · Shift + Enter 换行</span>{running ? <Button variant="destructive-outline" size="sm" className="stop-agent" onClick={() => abortRef.current?.abort()}><CircleStop size={15} /> 停止</Button> : <Button size="sm" className="send-agent" onClick={() => void send()} disabled={!input.trim() || !bootstrap.settings.agentModel.keyConfigured || !bootstrap.settings.smallModel.keyConfigured}><Send size={15} /> 发送</Button>}</div></div></div>
       </div></div></aside>
   </div>;
 }

@@ -1,15 +1,15 @@
 import { createModelClient } from "../../model/model-client.ts";
 import type { AgentModelClient, TokenEstimator } from "../../agent-loop/agent-loop.ts";
-import type { RuntimeSettings } from "../configuration/schema.ts";
+import type { ModelConnectionSettings } from "../configuration/schema.ts";
 
 /** 创建真实模型客户端；非 Loop 调用也使用同一估算预算。 */
-export function createRuntimeClient(settings: RuntimeSettings, estimator?: TokenEstimator): AgentModelClient {
-  const client = createModelClient(settings);
+export function createRuntimeClient(connection: ModelConnectionSettings, modelContextWindow: number, estimator?: TokenEstimator): AgentModelClient {
+  const client = createModelClient(connection);
   if (!estimator) return client;
   return {
     messages: {
       async create(request) {
-        assertModelTokenLimit(request, settings.modelContextWindow, estimator);
+        assertModelTokenLimit(request, modelContextWindow, estimator);
         return client.messages.create(request);
       },
       ...(client.messages.stream ? { stream: client.messages.stream.bind(client.messages) } : {}),

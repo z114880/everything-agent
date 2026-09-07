@@ -25,7 +25,7 @@ export const harnessPresentation: Record<string, { title: string; subtitle: stri
   consolidation: { title: "模型整理", subtitle: "去重 / 合并 / 冲突 / 清理", x: 464, y: 800 },
   consolidate_commit: { title: "校验并提交", subtitle: "版本检查 · 直接替换旧事实", x: 684, y: 800 },
   consolidate_result: { title: "整理结果", subtitle: "批次进度 / 冲突 / 错误", x: 904, y: 800 },
-  memory_review: { title: "检索旧semantic memory", subtitle: "小模型 · 合并 / 更新 / 忘记", x: 464, y: 625 },
+  memory_review: { title: "检索旧semantic memory", subtitle: "模型 · 合并 / 更新 / 忘记", x: 464, y: 625 },
   memory_commit: { title: "校验并保存", subtitle: "证据与版本校验 · 审计", x: 684, y: 625 },
   semantic_store: { title: "Semantic Memory", subtitle: "新增 / 更新 / 删除 / 合并 / 跳过", x: 904, y: 625 },
 };

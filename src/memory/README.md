@@ -16,7 +16,7 @@ Memory 模块为 classic Agent Loop 提供单用户、本地优先的持久记�
 | `retrieve/memory-search.ts` | Lexical/Dense 候选检索、RRF/MMR 排序与 Session 去重 |
 | `retrieve/retrieval-gate.ts` | 小模型检索意图判断及失败回退 |
 | `retrieve/session-recall.ts` | 召回窗口、预算截断与游标分页 |
-| `management.ts` | 逐条检索、小模型五类决策、证据校验与版本冲突重试 |
+| `management.ts` | 逐条检索、Agent Model 五类决策、证据校验与版本冲突重试 |
 | `background-tasks.ts` | 后台串行队列、每日去重、持久任务恢复 |
 | `consolidation.ts` | 全量事实审查、预算分批、版本校验与提交检查点 |
 | `storage/records.ts` | 数据库记录转换、消息分类与凭证字段移除 |
@@ -99,8 +99,8 @@ Gate 初始召回通过 gate_start、gate_end、retrieval_start、retrieval_comp
 
 1. 提交独立事实或明确忘记意图，携带 `subject`、`attribute`、`content`、`intent: remember | forget` 和 `evidenceMessageIds`。
 2. 校验证据属于当前 Session 的有效用户消息。聊天允许本次运行已落库的用户消息；后台仅允许已完成回合的用户消息。Assistant 和工具结果不能作为事实证据。
-3. 按“主体 + 属性 + 内容”逐条检索最多 12 条相关旧记忆，使用全局 `lexical_only / dense_only / hybrid`。管理检索保留 MMR 原本会隐藏的重复候选，供小模型判断合并；普通回答召回继续去重。
-4. 将用户原文、旧记忆内容、ID、来源时间和语料版本交给配置的小模型，生成一项决策。
+3. 按“主体 + 属性 + 内容”逐条检索最多 12 条相关旧记忆，使用全局 `lexical_only / dense_only / hybrid`。管理检索保留 MMR 原本会隐藏的重复候选，供 Agent Model 判断合并；普通回答召回继续去重。
+4. 将用户原文、旧记忆内容、ID、来源时间和语料版本交给配置的 Agent Model，生成一项决策。
 5. 代码校验决策、证据引用、目标候选、长期价值声明和版本，提交后返回操作结果。
 
 | 决策 | 执行语义 |
@@ -111,9 +111,9 @@ Gate 初始召回通过 gate_start、gate_end、retrieval_start、retrieval_comp
 | `merge` | 至少两条旧记忆描述同一事实且重复或互补；保留 `targetId`，删除 `sourceIds` |
 | `noop` | 重复、不值得长期保存、证据不足或目标不明确，本次不修改 |
 
-没有 `clarify` 操作。小模型返回简短 `reason` 供聊天主模型判断是否追问；后台直接跳过。`reasonCode` 为可持久化的固定原因代码（如 `duplicate`、`uncertain`），未提供时使用对应操作的通用代码。
+没有 `clarify` 操作。Agent Model 返回简短 `reason` 供后续判断是否追问；后台直接跳过。`reasonCode` 为可持久化的固定原因代码（如 `duplicate`、`uncertain`），未提供时使用对应操作的通用代码。
 
-`create/update/merge` 必须声明允许的 `category`、`stable=true`、`futureUseful=true`。语义判断由小模型负责；代码强制引用范围和写入约束。删除仅接受 `forget` 候选；事实变化通常是 `update`。矛盾且缺少可靠证据时应 `noop`，不能直接拼接为 `merge`。
+`create/update/merge` 必须声明允许的 `category`、`stable=true`、`futureUseful=true`。语义判断由 Agent Model 负责；代码强制引用范围和写入约束。删除仅接受 `forget` 候选；事实变化通常是 `update`。矛盾且缺少可靠证据时应 `noop`，不能直接拼接为 `merge`。
 
 合并在单个 SQLite 事务中更新保留项、合并来源引用、维护 FTS/向量、删除冗余项并写入审计，任一步失败整体回滚。`semantic_sources` 只保存 Session、消息 ID 和时间，不复制原文。全库单调版本由数据库触发器维护，覆盖手动及自动新增、更新和删除。检索或模型判断后发生并发变更时，重新检索和判断，最多尝试 3 次（含首次）；持续冲突、检索失败或模型失败均报错，不降级为新增。
 
@@ -121,7 +121,7 @@ Gate 初始召回通过 gate_start、gate_end、retrieval_start、retrieval_comp
 
 ### 聊天工具
 
-`manage_memory` 只开放 `search` 与 `submit`，移除了直接 `create/update/delete` 和 `request_delete`、确认令牌参数。Runtime 为每个回合绑定当前用户消息 ID、小模型与 observer，主模型不能提供或伪造证据 ID。
+`manage_memory` 只开放 `search` 与 `submit`，移除了直接 `create/update/delete` 和 `request_delete`、确认令牌参数。Runtime 为每个回合绑定当前用户消息 ID、Agent Model 与 observer，模型不能提供或伪造证据 ID。
 
 工具 schema 按 action 声明必填字段：`search` 需要 `query`；`submit` 需要 `intent`、`subject`、`attribute`、`content`。提交缺少字段时会明确列出字段名，便于模型修正参数；不会自动猜测意图或主体。
 
@@ -137,7 +137,7 @@ Agent 页面每日首次进入时调用 `runtime.consolidate("daily")`，按服�
 
 整理仅输入全量 semantic facts 与已有元数据，不读取聊天或 Session Recall，不做漏记补偿或 episodic evidence 提炼。模型返回 update、merge、delete 及未解决冲突；代码校验 ID、原因、重复目标和版本，直接修改现有事实，不保留旧版本。无建议即无变更；证据不足的冲突保留事实。聊天的 create/update/delete/merge/noop 管理与本流程独立。
 
-模型沿用 smallModel（为空时使用主模型）。请求按 Model Context Window 估算预算，预留最多 4096 输出 tokens（不超过窗口四分之一）及 512 安全余量。能一次处理则全量提交；否则按主题排序、按预算分组，逐对合并分组进行审查，覆盖跨组关联。最多 256 个子任务，超限或单条事实无法放入时明确失败，不截断正文。分组后发生内容增长导致超限也明确报告；该机制提供共同审查机会，不保证自然语言语义判断绝对正确。
+模型固定使用 agentModel。请求按 Model Context Window 估算预算，预留最多 4096 输出 tokens（不超过窗口四分之一）及 512 安全余量。能一次处理则全量提交；否则按主题排序、按预算分组，逐对合并分组进行审查，覆盖跨组关联。最多 256 个子任务，超限或单条事实无法放入时明确失败，不截断正文。分组后发生内容增长导致超限也明确报告；该机制提供共同审查机会，不保证自然语言语义判断绝对正确。
 
 `memory_tasks` 保留父任务与子任务检查点。只持久保存事实 ID 和待提交的新建议，不保存旧事实快照。每次修改与检查点在同一事务提交；恢复不重放已提交操作。事实版本变化使未提交建议失效，重新读取当前批次审查。失败最多执行三次，间隔 1 秒、2 秒；单次整理尝试最多 5 分钟，不继承聊天取消信号。服务启动只恢复已有任务，新建 Session 不触发整理。
 

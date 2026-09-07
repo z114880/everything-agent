@@ -7,7 +7,7 @@ import type { Graph, StateRecord } from "../../src/engine/src/index.ts";
 import {
   AgentConfigError,
   subscribeBackgroundEvents,
-  clearProviderApiKey,
+  clearModelApiKey,
   clearEmbeddingApiKey,
   clearLocalAgentData,
   loadAgentBootstrap,
@@ -183,7 +183,7 @@ async function handleAgentRequest(
   }
 
   if (request.method === "POST" && pathname === `${agentApiPrefix}/config/clear-api-key`) {
-    sendJson(response, 200, { ok: true, ...await clearProviderApiKey(await readJsonBody(request)) });
+    sendJson(response, 200, { ok: true, ...await clearModelApiKey(await readJsonBody(request)) });
     return;
   }
 

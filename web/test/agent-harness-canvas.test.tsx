@@ -24,11 +24,12 @@ describe("Agent 业务画布", () => {
     expect(html).toContain("后台写入 · 独立串行队列，不阻塞回复");
     expect(html).toContain("Memory Retrieval &amp; Agent Loop");
     expect(html).toContain("记忆任务入队");
-    expect(html).toContain("Dreaming / Consolidation");
+    expect(html).toContain("Consolidation / Dreaming");
     expect(html).not.toContain("Background Memory");
     expect(html).not.toContain("Memory Queue");
     expect(html).toContain('agent-node running');
     expect(html).toContain('agent-edge active');
+    expect(html.match(/<rect x="1"[^>]*width="1108"[^>]*class="agent-loop-box"/g)).toHaveLength(3);
   });
   it("服务端移除节点时不在前端恢复固定节点", () => {
     const graph = workflow();

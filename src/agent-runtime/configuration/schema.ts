@@ -12,10 +12,27 @@ export const RUNTIME_DEFAULTS = {
 } as const;
 
 /** 内部配置包含完整凭证，只能经 publicSettings 投影后交给宿主。 */
-export interface RuntimeSettings {
+export interface ModelConnectionSettings {
   provider: AgentProvider;
   model: string;
-  smallModel: string;
+  baseUrl: string;
+  apiKey: string;
+}
+
+/** 单条模型连接的保存输入；空密钥表示保留已保存值。 */
+export interface ModelConnectionInput {
+  provider: AgentProvider;
+  model: string;
+  baseUrl?: string;
+  apiKey?: string;
+  clearApiKey?: boolean;
+}
+
+export type ModelConnectionTarget = "agentModel" | "smallModel";
+
+export interface RuntimeSettings {
+  agentModel: ModelConnectionSettings;
+  smallModel: ModelConnectionSettings;
   sessionSearchWindow: number;
   sessionScrollStep: number;
   sessionRecallMessageLimit: number;
@@ -28,22 +45,28 @@ export interface RuntimeSettings {
   embeddingDocumentTemplate: string;
   embeddingMinimumSimilarity: number;
   embeddingApiKey: string;
-  baseUrl: string;
-  apiKey: string;
-  keyName: "ANTHROPIC_API_KEY" | "OPENAI_API_KEY";
 }
 
 /** 保存运行配置的输入；省略预算字段时使用默认值。 */
-export type AgentSettingsInput = Pick<RuntimeSettings, "provider" | "model"> &
-  Partial<Omit<RuntimeSettings, "provider" | "model" | "keyName">> & {
-    clearApiKey?: boolean; clearEmbeddingApiKey?: boolean; force?: boolean;
+export type AgentSettingsInput = {
+  agentModel: ModelConnectionInput;
+  smallModel: ModelConnectionInput;
+} & Partial<Omit<RuntimeSettings, "agentModel" | "smallModel">> & {
+    clearEmbeddingApiKey?: boolean; force?: boolean;
   };
 
 /** 可安全发送到浏览器的本地 Agent 配置。 */
-export interface PublicAgentSettings {
+export interface PublicModelConnection {
   provider: AgentProvider;
   model: string;
-  smallModel: string;
+  baseUrl: string;
+  keyConfigured: boolean;
+  keyLast4: string;
+}
+
+export interface PublicAgentSettings {
+  agentModel: PublicModelConnection;
+  smallModel: PublicModelConnection;
   sessionSearchWindow: number;
   sessionScrollStep: number;
   sessionRecallMessageLimit: number;
@@ -59,9 +82,6 @@ export interface PublicAgentSettings {
   embeddingKeyLast4: string;
   embeddingIndex: ReturnType<MemoryRuntime["embeddingIndexStatus"]>;
   limits: typeof SETTING_LIMITS;
-  baseUrl: string;
-  keyConfigured: boolean;
-  keyLast4: string;
 }
 
 export const SETTING_LIMITS = {
@@ -138,11 +158,6 @@ function embeddingTemplate(value: unknown, field: string): string {
   const template = value === undefined ? "{text}" : optionalText(value, field, 2_000);
   if ((template.match(/\{text\}/g) ?? []).length !== 1) throw new TypeError(`${field} 必须且只能包含一个 {text}`);
   return template;
-}
-
-/** 返回模型提供方对应的凭证配置键。 */
-export function keyNameFor(provider: AgentProvider): RuntimeSettings["keyName"] {
-  return provider === "anthropic" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY";
 }
 
 /** 校验必填文本，裁剪首尾空白并限制原始输入长度。 */

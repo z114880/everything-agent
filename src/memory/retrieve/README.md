@@ -64,7 +64,7 @@ type RetrievalMode = "dense_only" | "lexical_only" | "hybrid";
 - `lexical_only`：只使用 FTS5 + BM25，不执行 RRF 或 MMR。
 - `hybrid`：Dense 与 BM25 各自产生候选，经过 RRF，再经过 MMR。
 
-记忆管理按单条候选事实检索，最多返回 12 条；Dense/Hybrid 仍执行阈值、融合和 MMR，但关闭 MMR 的近似重复排除，以便小模型能看到多个待合并 ID。普通回答召回仍排除近似重复候选。
+记忆管理按单条候选事实检索，最多返回 12 条；Dense/Hybrid 仍执行阈值、融合和 MMR，但关闭 MMR 的近似重复排除，以便 Agent Model 能看到多个待合并 ID。普通回答召回仍排除近似重复候选。
 
 新安装和数据库升级后的默认模式是 `lexical_only`。没有完整有效的 active generation 时，不允许启用 `dense_only` 或 `hybrid`。
 

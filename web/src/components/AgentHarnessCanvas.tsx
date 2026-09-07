@@ -16,12 +16,12 @@ export function AgentHarnessCanvas({ workflow, nodeStates, activeEdges }: AgentH
   return <div className="business-graph-scroll">
       <svg viewBox="0 0 1110 905" style={{ width: "100%", minWidth: 850 }} className="agent-harness-svg" role="img" aria-label="Agent 与 Memory 业务流程图">
         <defs><marker id={markerId} viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" className="arrow-head" /></marker></defs>
-        <rect x="8" y="20" width="1090" height="477" rx="16" className="agent-loop-box" />
-        <text x="24" y="47" className="agent-loop-label">Memory Retrieval &amp; Agent Loop</text>
-        <rect x="8" y="520" width="1090" height="215" rx="16" className="agent-loop-box" />
-        <text x="24" y="545" className="agent-loop-label">后台写入 · 独立串行队列，不阻塞回复</text>
-        <rect x="8" y="755" width="1090" height="130" rx="16" className="agent-loop-box" />
-        <text x="24" y="780" className="agent-loop-label">Dreaming / Consolidation</text>
+        <rect x="1" y="20" width="1108" height="477" rx="16" className="agent-loop-box" />
+        <text x="17" y="47" className="agent-loop-label">Memory Retrieval &amp; Agent Loop</text>
+        <rect x="1" y="520" width="1108" height="215" rx="16" className="agent-loop-box" />
+        <text x="17" y="545" className="agent-loop-label">后台写入 · 独立串行队列，不阻塞回复</text>
+        <rect x="1" y="755" width="1108" height="130" rx="16" className="agent-loop-box" />
+        <text x="17" y="780" className="agent-loop-label">Consolidation / Dreaming</text>
         {workflow.edges.map((edge) => {
           const source = positions.get(edge.source), target = positions.get(edge.target);
           if (!source || !target) return null;

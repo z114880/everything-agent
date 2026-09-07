@@ -8,7 +8,7 @@ import type { AgentModelClient } from "../../agent-loop/agent-loop.ts";
 const memories: MemoryRuntime[] = [];
 afterEach(() => memories.splice(0).forEach((memory) => memory.close()));
 
-it("聊天写入必须先检索，小模型把重复事实判为 noop", async () => {
+it("聊天写入必须先检索，Agent Model 把重复事实判为 noop", async () => {
   const memory = new MemoryRuntime(await mkdtemp(join(tmpdir(), "memory-management-"))); memories.push(memory);
   const session = memory.createSession();
   const evidence = memory.startRun(session.id, "run", "我喜欢红茶");
@@ -124,7 +124,7 @@ it("检索失败不调用决策模型且不写入", async () => {
   expect(calls).toBe(0); expect(memory.listSemantic()).toEqual([]);
 });
 
-it("取消小模型调用即停止等待，迟到响应不能写入", async () => {
+it("取消 Agent Model 调用即停止等待，迟到响应不能写入", async () => {
   const { memory, candidate, options, evidence } = await setup();
   const controller = new AbortController(); const entered = Promise.withResolvers<void>(); const release = Promise.withResolvers<void>();
   const pending = memory.manageMemory(candidate, { ...options, signal: controller.signal, client: model(async () => { entered.resolve(); await release.promise; return write("create", evidence.id) }) });

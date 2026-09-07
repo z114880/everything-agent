@@ -68,6 +68,23 @@ describe("Agent 会话窗口布局", () => {
     expect(ruleFor(css, ".agent-chat-dock")).toMatch(/overflow:\s*hidden\s*;/);
     expect(ruleFor(css, ".agent-chat-log")).toMatch(/overflow-y:\s*auto\s*;/);
   });
+
+  it("将整理操作收拢为带语义状态的紧凑控件", async () => {
+    const source = await readFile(new URL("../src/components/AgentPage.tsx", import.meta.url), "utf8");
+    const css = await readFile(stylePath, "utf8");
+
+    expect(source).toContain('className="agent-intro-actions"');
+    expect(source).toContain('className="consolidation-action" data-status={consolidationTone}');
+    expect(source).toContain('className="consolidation-status" role="status"');
+    expect(source).toContain('className="consolidation-button" variant="secondary"');
+    expect(source).toContain('<RefreshCw size={13} aria-hidden="true" /> Consolidate');
+    expect(source.indexOf('className="agent-intro-actions"')).toBeGreaterThan(source.indexOf('title="Agent"'));
+    expect(ruleFor(css, ".agent-intro-actions")).toMatch(/align-items:\s*flex-end/);
+    expect(ruleFor(css, ".consolidation-action")).toMatch(/display:\s*inline-flex/);
+    expect(ruleFor(css, ".consolidation-action")).toMatch(/align-items:\s*center/);
+    expect(ruleFor(css, '.consolidation-action[data-status="error"]')).toMatch(/border-color:\s*#efd7d4/);
+    expect(ruleFor(css, ".consolidation-status i")).toMatch(/border-radius:\s*999px/);
+  });
 });
 
 function ruleFor(css: string, selector: string): string {

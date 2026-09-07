@@ -2,6 +2,7 @@ import { ChevronRight, FileJson, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { loadTraces, type TraceDashboard } from "../agent-api";
 import { Button } from "./ui/button";
+import { PageHeading } from "./PageHeading";
 
 const EMPTY_DASHBOARD: TraceDashboard = { files: [] };
 
@@ -17,14 +18,7 @@ export function TracePage() {
   useEffect(() => { void reload(); }, []);
 
   return <div className="content-wrap trace-page">
-    <div className="memory-header">
-      <div>
-        <div className="eyebrow">JSONL 运行记录</div>
-        <h1>运行记录</h1>
-        <p>按文件查看已脱敏的 JSONL 事件。</p>
-      </div>
-      <Button variant="outline" size="sm" onClick={() => void reload()}><RefreshCw size={14} /> 刷新</Button>
-    </div>
+    <PageHeading eyebrow="JSONL 运行记录" title="运行记录" description="按文件查看已脱敏的 JSONL 事件。" descriptionActions={<Button size="sm" onClick={() => void reload()}><RefreshCw size={14} /> 刷新数据</Button>} />
     {error && <div className="error-message">{error}</div>}
     {!error && dashboard.files.length === 0 && <div className="panel trace-empty">还没有运行记录。</div>}
     <div className="trace-file-list">

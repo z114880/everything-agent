@@ -5,12 +5,11 @@ import { MemoryRuntime } from "../memory/index.ts";
 import { JsonlTracer, readTraceFiles } from "../tracing/jsonl-tracer.ts";
 import { runAgentLoop } from "../agent-loop/agent-loop.ts";
 import type { AgentMessage, AgentObserver } from "../agent-loop/agent-loop.ts";
-import type { AgentProvider } from "../model/model-client.ts";
 import { createLocalConfig } from "./local-config.ts";
 import type { LocalConfigPaths } from "./local-config.ts";
 import { clearEverythingData } from "./local-data.ts";
 import { AgentConfigError, requiredText } from "./configuration/schema.ts";
-import type { AgentSettingsInput, PublicAgentSettings, RuntimeSettings } from "./configuration/schema.ts";
+import type { AgentSettingsInput, ModelConnectionTarget, PublicAgentSettings, RuntimeSettings } from "./configuration/schema.ts";
 import { createRuntimeSettings, publicSettings } from "./configuration/settings.ts";
 import { createRuntimeClient } from "./integrations/model.ts";
 import { configureMemoryRuntime, recallSettings } from "./integrations/memory.ts";
@@ -40,7 +39,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
   /** 保存模型配置；密钥永远不会出现在返回值中。 */
   async function saveAgentSettings(body: AgentSettingsInput): Promise<{
     settings: PublicAgentSettings;
-    models: string[];
+    models: Record<ModelConnectionTarget, string[]>;
   }> {
     assertOpen();
     if (memoryRuntime?.isEmbeddingRebuildRunning()) {
@@ -50,10 +49,10 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
     return { settings: publicSettings(settings, getMemoryRuntime()), models };
   }
 
-  /** 清除指定模型提供方的本地 API Key，不修改其他尚未保存的配置。 */
-  async function clearProviderApiKey(provider: AgentProvider): Promise<{ settings: PublicAgentSettings }> {
+  /** 清除指定用途模型连接的本地 API Key，不影响另一条连接。 */
+  async function clearModelApiKey(target: ModelConnectionTarget): Promise<{ settings: PublicAgentSettings }> {
     assertOpen();
-    const settings = await settingsStore.clearProviderApiKey(provider);
+    const settings = await settingsStore.clearModelApiKey(target);
     return { settings: publicSettings(settings, getMemoryRuntime()) };
   }
 
@@ -112,15 +111,16 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
     const prompt = requiredText(input.prompt, "User Prompt", 40_000);
     const sessionId = requiredText(input.sessionId, "Session ID", 200);
     const settings = await loadRuntimeSettings();
-    if (!settings.apiKey) throw new Error(`请先在配置页填写 ${settings.keyName}`);
-    if (!settings.model) throw new Error("请先在配置页填写 Model");
+    assertModelConnectionConfigured(settings.agentModel, "Agent Model");
+    assertModelConnectionConfigured(settings.smallModel, "Small Model");
 
     return withSessionLock(sessionId, async () => {
       const memory = getMemoryRuntime();
       await configureMemoryRuntime(memory, settings, recordMemoryEvent);
       scheduleStartupRecovery(memory, settings);
       const trace = getTracer();
-      const client = createRuntimeClient(settings, tokenEstimator);
+      const agentClient = createRuntimeClient(settings.agentModel, settings.modelContextWindow, tokenEstimator);
+      const smallClient = createRuntimeClient(settings.smallModel, settings.modelContextWindow, tokenEstimator);
       const runId = crypto.randomUUID();
       const startedAt = performance.now();
       const userEvidence = memory.startRun(sessionId, runId, prompt);
@@ -128,8 +128,8 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
         runId,
         sessionId,
         userInput: prompt,
-        provider: settings.provider,
-        model: settings.model,
+        provider: settings.agentModel.provider,
+        model: settings.agentModel.model,
         settings: {
           modelContextWindow: settings.modelContextWindow,
           sessionRecall: recallSettings(settings, tokenEstimator),
@@ -152,7 +152,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
           "model_request", "model_response", "model_failed", "stream_fallback",
           "tool_started", "tool_completed", "tool_failed",
         ].includes(kind) || kind.startsWith("memory_")) {
-          const modelFields = kind.startsWith("model_") ? { provider: settings.provider, model: settings.model } : {};
+          const modelFields = kind.startsWith("model_") ? { provider: settings.agentModel.provider, model: settings.agentModel.model } : {};
           await trace.record(kind, { ...enriched, ...modelFields });
         }
       };
@@ -160,8 +160,8 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
         const history = memory.getWorkingMemory(sessionId);
         const gateHistory = memory.getWorkingMemory(sessionId, 3);
         const retrieval = await memory.retrieve(prompt, gateHistory, {
-          client,
-          model: settings.smallModel || settings.model,
+          client: smallClient,
+          model: settings.smallModel.model,
           currentSessionId: sessionId,
           recall: recallSettings(settings, tokenEstimator),
           observer: emit,
@@ -182,12 +182,12 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
           sessionRecallTruncated: retrieval.sessionRecall?.truncated ?? false,
         };
         const result = await runAgentLoop({
-          client,
-          model: settings.model,
+          client: agentClient,
+          model: settings.agentModel.model,
           system: [baseSystem, retrieval.context].filter(Boolean).join("\n\n"),
           messages,
           tools: new LocalToolRegistry(memory, new ManageMemoryTool(memory, {
-            client, model: settings.smallModel || settings.model, currentSessionId: sessionId,
+            client: agentClient, model: settings.agentModel.model, currentSessionId: sessionId,
             runId, evidenceMessageId: userEvidence.id, observer: emit,
           }), {
             currentSessionId: sessionId,
@@ -224,8 +224,8 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
           iterations: result.iterations,
           stopReason: result.stopReason,
           toolCallCount: result.toolCalls.length,
-          model: settings.model,
-          provider: settings.provider,
+          model: settings.agentModel.model,
+          provider: settings.agentModel.provider,
           ms,
           runId,
         };
@@ -285,17 +285,20 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
 
   // 每个实例只启动一次消费器；每个后台任务执行前重新读取配置，不绑定聊天取消信号。
   function scheduleStartupRecovery(memory: MemoryRuntime, settings: RuntimeSettings): void {
-    if (recoveryScheduled || !settings.apiKey || !(settings.smallModel || settings.model)) return;
+    if (recoveryScheduled || !isModelConnectionConfigured(settings.agentModel)) return;
     recoveryScheduled = true;
     memory.startBackgroundTasks(async () => {
       const current = await loadRuntimeSettings();
       await configureMemoryRuntime(memory, current, recordMemoryEvent);
       return {
-        client: createRuntimeClient(current, tokenEstimator), model: current.smallModel || current.model,
+        client: createRuntimeClient(current.agentModel, current.modelContextWindow, tokenEstimator), model: current.agentModel.model,
         modelContextWindow: current.modelContextWindow, tokenEstimator,
         currentSessionId: "", observer: async (kind, event) => {
-          await getTracer().record(kind, event);
-          for (const observer of backgroundObservers) await observer(kind, event);
+          const enriched = kind.includes("_model_")
+            ? { ...event, provider: current.agentModel.provider, model: current.agentModel.model }
+            : event;
+          await getTracer().record(kind, enriched);
+          for (const observer of backgroundObservers) await observer(kind, enriched);
         },
       };
     });
@@ -356,7 +359,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
       backgroundObservers.add(observer);
       return () => { backgroundObservers.delete(observer); };
     },
-    saveAgentSettings, clearProviderApiKey, clearEmbeddingApiKey, resetRuntimeSettings,
+    saveAgentSettings, clearModelApiKey, clearEmbeddingApiKey, resetRuntimeSettings,
     rebuildEmbeddingIndex, cancelEmbeddingIndexRebuild, saveSystemPrompt,
     clearLocalAgentData, readTraces,
     readSystemPrompt,
@@ -377,7 +380,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
     async consolidate(trigger: "daily" | "manual") {
       const settings = await loadRuntimeSettings();
       const memory = getMemoryRuntime();
-      if (!settings.apiKey || !(settings.smallModel || settings.model)) {
+      if (!isModelConnectionConfigured(settings.agentModel)) {
         if (trigger === "manual") throw new Error("请先配置模型后再 Consolidate");
         return null;
       }
@@ -392,6 +395,15 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
       return memory.createConversation(previousSessionId);
     },
   };
+}
+
+function isModelConnectionConfigured(connection: RuntimeSettings["agentModel"]): boolean {
+  return Boolean(connection.apiKey && connection.model);
+}
+
+function assertModelConnectionConfigured(connection: RuntimeSettings["agentModel"], label: string): void {
+  if (!connection.apiKey) throw new Error(`请先在配置页填写 ${label} API Key`);
+  if (!connection.model) throw new Error(`请先在配置页填写 ${label} Model`);
 }
 
 /** 本地 Runtime 的公开接口。 */

@@ -21,4 +21,10 @@ describe("运行记录页面", () => {
     expect(source).toContain("JSON.stringify(record, null, 2)");
     expect(source).not.toContain("groupTraceRecords");
   });
+
+  it("把刷新操作放在统一页面头部的副标题后", async () => {
+    const source = await readFile(tracePage, "utf8");
+
+    expect(source).toMatch(/<PageHeading eyebrow="JSONL 运行记录" title="运行记录" description="按文件查看已脱敏的 JSONL 事件。" descriptionActions=\{<Button size="sm"[^\n]*刷新数据/);
+  });
 });

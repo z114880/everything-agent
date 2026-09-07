@@ -202,7 +202,7 @@ export class MemoryRuntime {
     return this.semantic.deleteSemantic(id, source);
   }
 
-  /** 强制检索后由小模型判断记忆变更；证据、模型或提交失败时抛错，不降级新增。 */
+  /** 强制检索后由 Agent Model 判断记忆变更；证据、模型或提交失败时抛错，不降级新增。 */
   manageMemory(candidate: MemoryCandidate, options: MemoryManagementOptions): Promise<MemoryManagementResult> {
     return this.management.manage(candidate, options);
   }

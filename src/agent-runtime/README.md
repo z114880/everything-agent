@@ -64,7 +64,7 @@ try {
 
 ## 执行与可观察性
 
-`manage_memory submit` 每回合绑定当前用户消息证据，使用 `smallModel`（留空时回退主模型）进入统一记忆管理流程。独立的全量事实整理也使用此模型。删除无需确认令牌，合并与其他变更通过 `memory_*` observer 事件和 JSONL 元数据回放。提交前检查 Loop 截止时间和取消信号；提交持久任务后立即返回 `queued`，不等待小模型或 embedding。后台单条操作最多 30 秒，不继承聊天取消信号。
+`manage_memory submit` 每回合绑定当前用户消息证据，使用 `agentModel` 进入统一记忆管理流程；独立的全量事实整理同样使用 Agent Model。删除无需确认令牌，合并与其他变更通过 `memory_*` observer 事件和 JSONL 元数据回放。提交前检查 Loop 截止时间和取消信号；提交持久任务后立即返回 `queued`，不等待 Agent Model 或 embedding。后台单条操作最多 30 秒，不继承聊天取消信号。Small Model 仅用于 retrieval gate。
 
 同一会话的回合串行执行，后续回合读取前一回合保存的工作记忆。不同会话可以并行。Loop 仍限制 10 次迭代和 60 秒超时，并接收宿主取消信号；检索与排队阶段不在 Loop 超时范围内。
 

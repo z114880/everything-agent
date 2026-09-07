@@ -8,12 +8,13 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Input } from "./ui/input";
+import { PageHeading } from "./PageHeading";
 import { Textarea } from "./ui/textarea";
 
 type MemoryTab = "overview" | "semantic" | "episodic" | "procedural" | "chat" | "consolidation";
 const tabs: Array<{ id: MemoryTab; label: string }> = [
   { id: "overview", label: "Overview" }, { id: "semantic", label: "Semantic" },
-  { id: "episodic", label: "Episodic(ession Recall)" }, { id: "procedural", label: "Procedural" },
+  { id: "episodic", label: "Episodic(Session Recall)" }, { id: "procedural", label: "Procedural" },
   { id: "chat", label: "Chat Log" }, { id: "consolidation", label: "Consolidation" },
 ];
 
@@ -72,7 +73,7 @@ export function MemoryPage() {
   if (!data) return <div className="content-wrap"><div className="panel loading-panel">正在加载 Memory… {message}</div></div>;
   const semantic = semanticResults ?? data.semantic;
   return <div className="content-wrap memory-page">
-    <div className="memory-header"><div><div className="eyebrow">SQLite / Lexical + Dense</div><h1>Memory</h1><p>Semantic Memory、Session Recall、会话日志与整理状态。</p></div><Button variant="outline" size="sm" onClick={() => void reload()}><RefreshCw size={14} /> 刷新</Button></div>
+    <PageHeading eyebrow="SQLite / Lexical + Dense" title="Memory" description="Semantic Memory、Session Recall、会话日志与整理状态。" descriptionActions={<Button size="sm" className="memory-refresh" onClick={() => void reload()}><RefreshCw size={14} /> 刷新数据</Button>} />
     <div className="memory-tabs">{tabs.map((item) => <Button variant="ghost" size="sm" key={item.id} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)}>{item.label}</Button>)}</div>
     {message && <div className="memory-message">{message}</div>}
     {tab === "overview" && <div className="metric-grid">
@@ -83,7 +84,7 @@ export function MemoryPage() {
       <Metric label="整理次数" value={data.consolidations.length} />
       <Card className="path-card"><Database size={18} /><div><strong>Database</strong><code>{data.overview.databasePath}</code></div></Card>
     </div>}
-    {(tab === "semantic" || tab === "episodic") && <div className="memory-search"><Search size={15} /><Input value={query} onChange={(event) => { setQuery(event.target.value); if (!event.target.value) setSemanticResults(null); }} onKeyDown={(event) => { if (event.key === "Enter") void search(); }} placeholder={tab === "episodic" ? "留空返回最近 Session，或按当前模式检索" : "按当前检索模式搜索"} /><Button variant="outline" onClick={() => void search()}>{tab === "episodic" && !query.trim() ? "最近 Session" : "搜索"}</Button>{tab === "semantic" && <Button onClick={() => createSemantic(mutate)}>新建</Button>}</div>}
+    {(tab === "semantic" || tab === "episodic") && <div className="memory-search"><div className="memory-search-field"><Search size={15} aria-hidden="true" /><Input value={query} onChange={(event) => { setQuery(event.target.value); if (!event.target.value) setSemanticResults(null); }} onKeyDown={(event) => { if (event.key === "Enter") void search(); }} placeholder={tab === "episodic" ? "留空返回最近 Session，或按当前模式检索" : "按当前检索模式搜索"} /></div><Button onClick={() => void search()}>{tab === "episodic" && !query.trim() ? "最近 Session" : "搜索"}</Button>{tab === "semantic" && <Button onClick={() => createSemantic(mutate)}>新建</Button>}</div>}
     {tab === "semantic" && <div className="memory-list">{semantic.map((item) => <SemanticCard key={item.id} item={item} mutate={mutate} />)}</div>}
     {tab === "episodic" && <div className="memory-list">
       {!recall && <div className="panel loading-panel">输入查询验证真实 Session Recall；留空可查看最近活跃 Session。</div>}
@@ -104,8 +105,8 @@ function RecallCard({ result, read }: { result: SessionRecallResult; read(result
     {result.expandLimitReached && <small>完整扩窗已达到预算，请从头分页读取。</small>}
     <pre>{result.entries.map((entry) => "[" + entry.id + " · " + entry.kind + " · " + (entry.runComplete ? "完整" : "未完成") + "] " + contentText(entry.content)).join("\\n\\n")}</pre>
   </div><div>
-      {result.nextCursor && !result.isComplete && <button onClick={() => void read(result)}>扩大 / 继续</button>}
-      {!result.isComplete && <button onClick={() => void read(result, true)}>从头读取</button>}
+      {result.nextCursor && !result.isComplete && <Button size="sm" onClick={() => void read(result)}>扩大 / 继续</Button>}
+      {!result.isComplete && <Button size="sm" onClick={() => void read(result, true)}>从头读取</Button>}
     </div></article>;
 }
 function retrievalScoreLabel(result: SessionRecallResult): string {
@@ -118,7 +119,7 @@ function retrievalScoreLabel(result: SessionRecallResult): string {
 }
 function Metric({ label, value }: { label: string; value: number }) { return <Card className="metric-card"><span>{label}</span><strong>{value}</strong></Card> }
 function SemanticCard({ item, mutate }: { item: SemanticMemory; mutate(action: Record<string, unknown>): Promise<void> }) {
-  return <article className="panel memory-card"><div><span className="memory-id">Semantic #{item.id}</span><strong>{item.subject}</strong><p>{item.content}</p><small>{item.source} · 创建 {local(item.createdAt)} · 更新 {local(item.updatedAt)}</small></div><div><button onClick={() => editSemantic(item, mutate)}>编辑</button><button className="danger" onClick={() => window.confirm("确认彻底删除这条记忆？") && void mutate({ action: "delete_semantic", id: item.id })}><Trash2 size={13} /></button></div></article>;
+  return <article className="panel memory-card"><div><span className="memory-id">Semantic #{item.id}</span><strong>{item.subject}</strong><p>{item.content}</p><small>{item.source} · 创建 {local(item.createdAt)} · 更新 {local(item.updatedAt)}</small></div><div><Button size="sm" onClick={() => editSemantic(item, mutate)}>编辑</Button><Button variant="destructive" size="icon-sm" aria-label="删除记忆" onClick={() => window.confirm("确认彻底删除这条记忆？") && void mutate({ action: "delete_semantic", id: item.id })}><Trash2 size={13} /></Button></div></article>;
 }
 function createSemantic(mutate: (action: Record<string, unknown>) => Promise<void>) {
   const subject = window.prompt("Subject"); if (!subject) return; const content = window.prompt("记忆内容");

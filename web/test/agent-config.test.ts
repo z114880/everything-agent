@@ -17,7 +17,11 @@ it("Web 配置不再暴露或保存 Session 整理间隔", async () => {
   let reopened: AgentRuntime | undefined;
   try {
     const { saveAgentSettings } = await import("../server/agent-service.ts");
-    const result = await saveAgentSettings({ provider: "openai-compatible", model: "test", force: true });
+    const result = await saveAgentSettings({
+      agentModel: { provider: "openai-compatible", model: "agent", baseUrl: "https://agent.example/v1" },
+      smallModel: { provider: "anthropic", model: "small", baseUrl: "https://small.example" },
+      force: true,
+    });
     expect(result.settings).not.toHaveProperty("consolidationSessionInterval");
     expect(await readFile(paths.envPath, "utf8")).not.toContain("CONSOLIDATION_SESSION_INTERVAL");
     reopened = createAgentRuntime(paths);
@@ -41,7 +45,11 @@ it("Web 每日入口与手动入口复用后台任务，首屏只读加载不占
     expect(runtime.memory.listBackgroundTasks()).toEqual([]);
     expect(await handleMemoryAction({ action: "consolidate", trigger: "daily" })).toBeNull();
     await expect(handleMemoryAction({ action: "consolidate" })).rejects.toThrow("请先配置模型");
-    await runtime.saveAgentSettings({ provider: "openai-compatible", model: "test", apiKey: "test-key", force: true });
+    await runtime.saveAgentSettings({
+      agentModel: { provider: "openai-compatible", model: "agent", apiKey: "agent-key" },
+      smallModel: { provider: "anthropic", model: "small", apiKey: "small-key" },
+      force: true,
+    });
     const first = await handleMemoryAction({ action: "consolidate", trigger: "daily" });
     expect(first).toMatchObject({ status: "queued" });
     await runtime.memory.waitForBackgroundTasks();

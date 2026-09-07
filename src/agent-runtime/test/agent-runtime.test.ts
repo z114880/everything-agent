@@ -1,12 +1,15 @@
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createAgentRuntime, type AgentRuntime } from "../index.ts";
+import { createAgentRuntime, type AgentRuntime, type AgentSettingsInput } from "../index.ts";
 import type { ModelRequest, ModelResponse } from "../../agent-loop/agent-loop.ts";
 
-const { create } = vi.hoisted(() => ({ create: vi.fn<(request: ModelRequest) => Promise<ModelResponse>>() }));
-vi.mock("../../model/model-client.ts", () => ({ createModelClient: () => ({ messages: { create } }) }));
+const { create, createModelClient } = vi.hoisted(() => ({
+  create: vi.fn<(request: ModelRequest) => Promise<ModelResponse>>(),
+  createModelClient: vi.fn((_config: unknown) => ({ messages: { create: (...args: [ModelRequest]) => create(...args) } })),
+}));
+vi.mock("../../model/model-client.ts", () => ({ createModelClient }));
 const runtimes: AgentRuntime[] = [];
 const homes: string[] = [];
 afterEach(async () => {
@@ -14,13 +17,19 @@ afterEach(async () => {
   for (const home of homes.splice(0)) await rm(home, { recursive: true, force: true });
   vi.unstubAllEnvs();
   create.mockReset();
+  createModelClient.mockClear();
 });
 async function setup() {
   const home = await mkdtemp(join(tmpdir(), "agent-runtime-"));
   homes.push(home);
   const paths = { home, envPath: join(home, ".env"), defaultSystemPromptPath: join(home, "default.md") };
   await writeFile(paths.defaultSystemPromptPath, "你是个人助理");
-  await writeFile(paths.envPath, 'EVERYTHING_PROVIDER="openai-compatible"\nEVERYTHING_MODEL="test"\nOPENAI_API_KEY="test-key"\n');
+  await writeFile(paths.envPath, [
+    'EVERYTHING_AGENT_PROVIDER="openai-compatible"', 'EVERYTHING_AGENT_MODEL="test"',
+    'EVERYTHING_AGENT_BASE_URL="https://agent.example/v1"', 'EVERYTHING_AGENT_API_KEY="agent-key"',
+    'EVERYTHING_SMALL_PROVIDER="anthropic"', 'EVERYTHING_SMALL_MODEL="small-test"',
+    'EVERYTHING_SMALL_BASE_URL="https://small.example"', 'EVERYTHING_SMALL_API_KEY="small-key"', "",
+  ].join("\n"));
   const runtime = createAgentRuntime(paths);
   runtimes.push(runtime);
   return runtime;
@@ -30,10 +39,15 @@ function model(reply = "你好") {
   create.mockImplementation(async (request) => response((Array.isArray(request.tools) && request.tools.length > 0) ? reply : '{"intent":"none"}'));
 }
 const options = () => ({ observer: () => {}, signal: new AbortController().signal });
+const modelSettings = (): Pick<AgentSettingsInput, "agentModel" | "smallModel"> => ({
+  agentModel: { provider: "openai-compatible", model: "test", baseUrl: "https://agent.example/v1" },
+  smallModel: { provider: "anthropic", model: "small-test", baseUrl: "https://small.example" },
+});
 
 describe("个人助理 Runtime", () => {
   it("consolidation 只产生独立整理日志，不产生 system.jsonl", async () => {
     const runtime = await setup();
+    await runtime.clearModelApiKey("smallModel");
     const fact = await runtime.memory.createSemantic("饮品", "喜欢红茶");
     create.mockResolvedValue(response(JSON.stringify({
       decisions: [{ action: "delete", targetId: fact.id, reasonCode: "not_durable" }],
@@ -43,6 +57,7 @@ describe("个人助理 Runtime", () => {
     const task = await runtime.consolidate("manual");
     await runtime.memory.waitForBackgroundTasks();
 
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ model: "test" }));
     expect(runtime.memory.listSemantic()).toEqual([]);
     const files = await runtime.readTraces();
     expect(files).toHaveLength(1);
@@ -55,18 +70,18 @@ describe("个人助理 Runtime", () => {
   });
 
   it("独立实例隔离会话、规则与密钥，保存不修改进程环境", async () => {
-    vi.stubEnv("OPENAI_API_KEY", "inherited");
+    vi.stubEnv("UNRELATED_TEST_KEY", "inherited");
     const first = await setup(); const second = await setup();
     first.createSession();
     await first.saveSystemPrompt("新规则");
-    await first.clearProviderApiKey("openai-compatible");
+    await first.clearModelApiKey("agentModel");
     expect(first.memory.listSessions()).toHaveLength(1);
     expect(second.memory.listSessions()).toHaveLength(0);
     expect(await first.readSystemPrompt()).toBe("新规则\n");
     expect(await second.readSystemPrompt()).toBe("你是个人助理");
-    expect((await first.getSettings()).keyConfigured).toBe(false);
-    expect((await second.getSettings()).keyConfigured).toBe(true);
-    expect(process.env.OPENAI_API_KEY).toBe("inherited");
+    expect((await first.getSettings()).agentModel.keyConfigured).toBe(false);
+    expect((await second.getSettings()).agentModel.keyConfigured).toBe(true);
+    expect(process.env.UNRELATED_TEST_KEY).toBe("inherited");
   });
 
   it("通过公开接口执行回合，保存工作记忆并关联可观察事件", async () => {
@@ -77,6 +92,10 @@ describe("个人助理 Runtime", () => {
       ...options(), observer: (kind, event) => { events.push({ kind, event }); },
     });
     expect(result).toMatchObject({ reply: "你好", model: "test", provider: "openai-compatible", toolCallCount: 0 });
+    expect(createModelClient.mock.calls.map(([config]) => config)).toEqual([
+      { provider: "openai-compatible", model: "test", baseUrl: "https://agent.example/v1", apiKey: "agent-key" },
+      { provider: "anthropic", model: "small-test", baseUrl: "https://small.example", apiKey: "small-key" },
+    ]);
     expect(runtime.memory.getWorkingMemory(session.id)).toHaveLength(2);
     const kinds = events.map(({ kind }) => kind);
     expect(kinds.indexOf("gate_start")).toBeLessThan(kinds.indexOf("gate_end"));
@@ -132,8 +151,9 @@ describe("Runtime 配置与维护", () => {
   it("保存完整配置、恢复预算并安全公开密钥状态", async () => {
     const runtime = await setup();
     const { settings } = await runtime.saveAgentSettings({
-      provider: "openai-compatible", model: "main", smallModel: "small", apiKey: "new-secret",
-      baseUrl: "https://example.com/v1", force: true,
+      agentModel: { provider: "openai-compatible", model: "main", apiKey: "agent-secret", baseUrl: "https://agent.example/v1" },
+      smallModel: { provider: "anthropic", model: "small", apiKey: "small-secret", baseUrl: "https://small.example" },
+      force: true,
       sessionSearchWindow: 3, sessionScrollStep: 4, sessionRecallMessageLimit: 20,
       sessionRecallTokenLimit: 1024, modelContextWindow: 8192,
       retrievalMode: "lexical_only", embeddingBaseUrl: "https://example.com/v1",
@@ -141,8 +161,17 @@ describe("Runtime 配置与维护", () => {
       embeddingQueryTemplate: "问题：{text}", embeddingDocumentTemplate: "文档：{text}",
       embeddingMinimumSimilarity: 0.5,
     });
-    expect(settings).toMatchObject({ model: "main", smallModel: "small", keyLast4: "cret", embeddingKeyConfigured: true, sessionSearchWindow: 3 });
-    expect(JSON.stringify(settings)).not.toContain("new-secret");
+    expect(settings).toMatchObject({
+      agentModel: { provider: "openai-compatible", model: "main", keyLast4: "cret" },
+      smallModel: { provider: "anthropic", model: "small", keyLast4: "cret" },
+      embeddingKeyConfigured: true, sessionSearchWindow: 3,
+    });
+    expect(JSON.stringify(settings)).not.toContain("agent-secret");
+    expect(JSON.stringify(settings)).not.toContain("small-secret");
+    const env = await readFile(join(homes.at(-1)!, ".env"), "utf8");
+    expect(env).toContain('EVERYTHING_AGENT_API_KEY="agent-secret"');
+    expect(env).toContain('EVERYTHING_SMALL_API_KEY="small-secret"');
+    expect(env).not.toContain("OPENAI_API_KEY");
     expect((await runtime.resetRuntimeSettings()).settings.sessionSearchWindow).toBe(5);
     expect((await runtime.clearEmbeddingApiKey()).settings).toMatchObject({ retrievalMode: "lexical_only", embeddingKeyConfigured: false });
     expect(runtime.cancelEmbeddingIndexRebuild()).toEqual({ cancelled: false });
@@ -157,13 +186,23 @@ describe("Runtime 配置与维护", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
     try {
       fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: "a" }, {}] })));
-      expect((await runtime.saveAgentSettings({ provider: "anthropic", model: "a", apiKey: "anthropic-secret" })).models).toEqual(["a"]);
+      expect((await runtime.saveAgentSettings({
+        agentModel: { provider: "anthropic", model: "a", apiKey: "anthropic-secret", baseUrl: "https://api.anthropic.test" },
+        smallModel: modelSettings().smallModel,
+      })).models).toEqual({ agentModel: ["a"], smallModel: [] });
       fetchMock.mockResolvedValueOnce(new Response("invalid secret-123", { status: 401 }));
-      await expect(runtime.saveAgentSettings({ provider: "openai-compatible", model: "b", apiKey: "secret-123" })).rejects.toMatchObject({ canForce: true, message: "连接测试失败（HTTP 401）：invalid ***" });
-      await runtime.saveAgentSettings({ provider: "openai-compatible", model: "b", apiKey: "secret-123", force: true });
-      await runtime.saveAgentSettings({ provider: "openai-compatible", model: "b", clearApiKey: true, clearEmbeddingApiKey: true });
-      expect((await runtime.getSettings()).keyConfigured).toBe(false);
-      await expect(runtime.run({ sessionId: "s", prompt: "你好" }, options())).rejects.toThrow("OPENAI_API_KEY");
+      await expect(runtime.saveAgentSettings({
+        agentModel: { provider: "openai-compatible", model: "b", apiKey: "secret-123", baseUrl: "https://failed.example/v1" },
+        smallModel: modelSettings().smallModel,
+      })).rejects.toMatchObject({ canForce: true, message: "Agent Model：连接测试失败（HTTP 401）：invalid ***" });
+      await runtime.saveAgentSettings({
+        agentModel: { provider: "openai-compatible", model: "b", apiKey: "secret-123", baseUrl: "https://failed.example/v1" },
+        smallModel: modelSettings().smallModel, force: true,
+      });
+      await runtime.clearModelApiKey("agentModel");
+      expect((await runtime.getSettings()).agentModel.keyConfigured).toBe(false);
+      expect((await runtime.getSettings()).smallModel.keyConfigured).toBe(true);
+      await expect(runtime.run({ sessionId: "s", prompt: "你好" }, options())).rejects.toThrow("Agent Model API Key");
     } finally { fetchMock.mockRestore(); }
   });
 
@@ -177,19 +216,19 @@ describe("Runtime 配置与维护", () => {
     [{ embeddingQueryTemplate: "缺少占位符" }, "Query Template"],
     [{ embeddingDocumentTemplate: "{text}{text}" }, "Document Template"],
     [{ embeddingBaseUrl: "file:///tmp/test" }, "HTTP"],
-    [{ baseUrl: "file:///tmp/test" }, "HTTP"],
+    [{ agentModel: { ...modelSettings().agentModel, baseUrl: "file:///tmp/test" } }, "HTTP"],
     [{ retrievalMode: "dense_only" as const }, "必须完整配置"],
-    [{ model: "" }, "Model 不能为空"],
-    [{ model: "x".repeat(201) }, "小于 200"],
+    [{ smallModel: { ...modelSettings().smallModel, model: "" } }, "Small Model Model 不能为空"],
+    [{ agentModel: { ...modelSettings().agentModel, model: "x".repeat(201) } }, "小于 200"],
   ])("拒绝无效运行配置 %j", async (patch, error) => {
     const runtime = await setup();
-    await expect(runtime.saveAgentSettings({ provider: "openai-compatible", model: "test", ...patch })).rejects.toThrow(error);
+    await expect(runtime.saveAgentSettings({ ...modelSettings(), ...patch })).rejects.toThrow(error);
   });
 });
 
 it("独立 Embedding 配置可重建空索引，并在更换模型后继续使用活动索引", async () => {
   const runtime = await setup();
-  const input = { provider: "openai-compatible" as const, model: "test", retrievalMode: "hybrid" as const,
+  const input = { ...modelSettings(), retrievalMode: "hybrid" as const,
     embeddingApiKey: "embedding", embeddingBaseUrl: "https://example.com/v1", embeddingModel: "embed-a" };
   await runtime.saveAgentSettings(input);
   const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({ data: [{ embedding: [1, 0, 0] }] })));
@@ -202,9 +241,12 @@ it("独立 Embedding 配置可重建空索引，并在更换模型后继续使�
   } finally { fetchMock.mockRestore(); }
 });
 
-it("聊天记忆使用配置的小模型与当前证据，事件和工具摘要不暴露记忆正文", async () => {
+it("聊天记忆使用 Agent Model 与当前证据，只有 gate 使用 Small Model", async () => {
   const runtime = await setup();
-  await runtime.saveAgentSettings({ provider: "openai-compatible", model: "main", smallModel: "memory-small" });
+  await runtime.saveAgentSettings({
+    agentModel: { ...modelSettings().agentModel, model: "main" },
+    smallModel: { ...modelSettings().smallModel, model: "memory-small" },
+  });
   const session = await runtime.createSession();
   const backgroundRelease = Promise.withResolvers<void>();
   const backgroundEvents: Array<{ kind: string; event: Record<string, unknown> }> = [];
@@ -215,17 +257,21 @@ it("聊天记忆使用配置的小模型与当前证据，事件和工具摘要�
   create.mockImplementation(async (request) => {
     if (request.system?.includes("你是个人助理的记忆管理模型")) {
       await backgroundRelease.promise;
-      expect(request.model).toBe("memory-small");
+      expect(request.model).toBe("main");
       const payload = JSON.parse(String(request.messages[0]?.content));
       expect(payload.evidence[0].text).toBe("请记住我喜欢红茶");
       return response(JSON.stringify({ action: "create", reason: "私人理由：喜欢红茶", evidenceMessageIds: payload.candidate.evidenceMessageIds, subject: "饮品偏好", content: "喜欢红茶", category: "preference", stable: true, futureUseful: true }));
+    }
+    if (!Array.isArray(request.tools) || request.tools.length === 0) {
+      expect(request.model).toBe("memory-small");
+      return response('{"intent":"none"}');
     }
     if (Array.isArray(request.tools) && request.tools.length > 0) {
       expect(request.model).toBe("main");
       if (++mainCalls === 1) return { content: [{ type: "tool_use", id: "memory-tool", name: "manage_memory", input: { action: "submit", intent: "remember", subject: "用户", attribute: "饮品偏好", content: "喜欢红茶" } }], stop_reason: "tool_use" };
       return response("已记住");
     }
-    return response('{"intent":"none"}');
+    throw new Error("未预期的模型调用");
   });
   const events: Array<{ kind: string; event: Record<string, unknown> }> = [];
   await runtime.run({ sessionId: session.id, prompt: "请记住我喜欢红茶" }, { ...options(), observer: (kind, event) => { events.push({ kind, event }) } });
@@ -250,7 +296,7 @@ it("聊天记忆使用配置的小模型与当前证据，事件和工具摘要�
   const files = await runtime.readTraces();
   expect(files.some((file) => file.path.includes("memory_write-"))).toBe(true);
   const traces = files.flatMap((file) => file.records).filter((record) => record.type.startsWith("memory_") || record.type === "tool_completed");
-  expect(traces.find((record) => record.type === "memory_model_completed")?.payload).toMatchObject({ model: "memory-small" });
+  expect(traces.find((record) => record.type === "memory_model_completed")?.payload).toMatchObject({ model: "main" });
   expect(traces.find((record) => record.type === "memory_change_completed")?.payload).toMatchObject({ action: "create", reasonCode: "new_fact", targetId: expect.any(Number) });
   expect(JSON.stringify(traces)).not.toContain("红茶");
 });

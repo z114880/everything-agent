@@ -3,10 +3,17 @@ import type { Workflow } from "./workflow-api";
 export type AgentProvider = "anthropic" | "openai-compatible";
 export type RetrievalMode = "lexical_only" | "dense_only" | "hybrid";
 
-export interface AgentSettings {
+export interface ModelConnectionSettings {
   provider: AgentProvider;
   model: string;
-  smallModel: string;
+  baseUrl: string;
+  keyConfigured: boolean;
+  keyLast4: string;
+}
+
+export interface AgentSettings {
+  agentModel: ModelConnectionSettings;
+  smallModel: ModelConnectionSettings;
   sessionSearchWindow: number;
   sessionScrollStep: number;
   sessionRecallMessageLimit: number;
@@ -22,9 +29,6 @@ export interface AgentSettings {
   embeddingKeyLast4: string;
   embeddingIndex: { ready: boolean; generationId: string | null; profileHash: string | null };
   limits: Record<string, { min: number; max: number }>;
-  baseUrl: string;
-  keyConfigured: boolean;
-  keyLast4: string;
 }
 
 export interface AgentBootstrap {
@@ -176,12 +180,8 @@ export function loadAgent(): Promise<AgentBootstrap> {
 
 /** 保存模型配置；服务端在必要时先测试连接。 */
 export function saveAgentConfig(value: {
-  provider: AgentProvider;
-  model: string;
-  baseUrl: string;
-  apiKey: string;
-  clearApiKey: boolean;
-  smallModel: string;
+  agentModel: ModelConnectionSettingsInput;
+  smallModel: ModelConnectionSettingsInput;
   sessionSearchWindow: number;
   sessionScrollStep: number;
   sessionRecallMessageLimit: number;
@@ -196,7 +196,7 @@ export function saveAgentConfig(value: {
   embeddingApiKey: string;
   clearEmbeddingApiKey: boolean;
   force?: boolean;
-}): Promise<{ ok: true; settings: AgentSettings; models: string[] }> {
+}): Promise<{ ok: true; settings: AgentSettings; models: Record<"agentModel" | "smallModel", string[]> }> {
   return requestJson(`${endpoint}/config`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -218,12 +218,20 @@ export function cancelEmbeddingIndexRebuild(): Promise<{ ok: true; cancelled: bo
   return requestJson(`${endpoint}/config/cancel-embedding-rebuild`, { method: "POST" });
 }
 
-/** 立即清除指定 Provider 的本地 API Key。 */
-export function clearProviderApiKey(provider: AgentProvider): Promise<{ ok: true; settings: AgentSettings }> {
+export interface ModelConnectionSettingsInput {
+  provider: AgentProvider;
+  model: string;
+  baseUrl: string;
+  apiKey: string;
+  clearApiKey: boolean;
+}
+
+/** 立即清除指定用途模型连接的本地 API Key。 */
+export function clearModelApiKey(target: "agentModel" | "smallModel"): Promise<{ ok: true; settings: AgentSettings }> {
   return requestJson(`${endpoint}/config/clear-api-key`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ provider }),
+    body: JSON.stringify({ target }),
   });
 }
 

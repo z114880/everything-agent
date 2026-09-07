@@ -4,6 +4,7 @@ import { CodeEditor } from "./components/CodeEditor";
 import { AgentPage } from "./components/AgentPage";
 import { ConfigPage } from "./components/ConfigPage";
 import { MemoryPage } from "./components/MemoryPage";
+import { PageHeading } from "./components/PageHeading";
 import { TracePage } from "./components/TracePage";
 import { GraphCanvas, type VisualNodeState } from "./components/GraphCanvas";
 import { ResultPanel, RunPanel } from "./components/RunPanel";
@@ -211,16 +212,8 @@ export default function App() {
       {!sidebarOpen && <Button variant="outline" size="icon" className="sidebar-reopen" onClick={() => setSidebarOpen(true)} aria-label="展开侧边栏"><PanelLeftOpen size={17} /></Button>}
 
       <main className={`main-content ${page === "agent" ? "agent-main-content" : ""}`}>
-        {page === "agent" ? <AgentPage onOpenConfig={() => setPage("config")} /> : page === "config" ? <ConfigPage /> : page === "memory" ? <MemoryPage /> : page === "traces" ? <TracePage /> : <>
-        <header className="page-header">
-          <div>
-            <div className="eyebrow">工作流 / 可视化执行</div>
-            <h1>Workflow</h1>
-            <p>用代码定义智能体工作流，并实时观察节点、路由、并行 wave 和最终结果。</p>
-          </div>
-        </header>
-
-        <div className="content-wrap">
+        {page === "agent" ? <AgentPage onOpenConfig={() => setPage("config")} /> : page === "config" ? <ConfigPage /> : page === "memory" ? <MemoryPage /> : page === "traces" ? <TracePage /> : <div className="content-wrap workflow-page">
+          <PageHeading eyebrow="工作流 / 可视化执行" title="Workflow" description="用代码定义智能体工作流，并实时观察节点、路由、并行 wave 和最终结果。" />
           <div className="intro-note"><GitBranch size={16} /><p><strong>本地代码是事实来源。</strong> 下方编辑器直接读写 <code>src/workflows/{selectedFile || "…"}</code>；拓扑来自 <code>Graph.describe()</code>，执行过程来自本地 <code>runGraph()</code> 的 observer 事件。</p></div>
           <div className="workspace-grid">
             {workflow ? <GraphCanvas workflow={workflow} nodeStates={nodeStates} activeEdges={activeEdges} /> : <div className="panel grid min-h-[580px] place-items-center text-sm text-[var(--muted)]">等待有效的工作流代码…</div>}
@@ -240,7 +233,7 @@ export default function App() {
           </div>
           {workflow && <ResultPanel result={result} />}
         </div>
-        </>}
+        }
       </main>
     </div>
   );

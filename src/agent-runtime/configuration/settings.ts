@@ -3,54 +3,44 @@ import type { MemoryRuntime } from "../../memory/index.ts";
 import type { createLocalConfig } from "../local-config.ts";
 import {
   AgentConfigError, RUNTIME_DEFAULTS, SETTING_LIMITS,
-  keyNameFor, optionalText, parseProvider, parseRetrievalMode, parseRuntimeSettingBody,
+  optionalText, parseProvider, parseRetrievalMode, parseRuntimeSettingBody,
   parseSetting, parseSimilarity, requiredText, validateBaseUrl,
 } from "./schema.ts";
-import type { AgentSettingsInput, PublicAgentSettings, RuntimeSettings } from "./schema.ts";
+import type {
+  AgentSettingsInput, ModelConnectionInput, ModelConnectionSettings, ModelConnectionTarget,
+  PublicAgentSettings, PublicModelConnection, RuntimeSettings,
+} from "./schema.ts";
 
-const OBSOLETE_CONFIG_KEYS = ["EVERYTHING_CHAT_TOKENIZER_ID", "EVERYTHING_EMBEDDING_TOKENIZER_ID"] as const;
+const OBSOLETE_CONFIG_KEYS = [
+  "EVERYTHING_CHAT_TOKENIZER_ID", "EVERYTHING_EMBEDDING_TOKENIZER_ID",
+] as const;
 
 /** 管理配置校验、连接探测和持久化；资源使用许可由 Runtime 在调用前检查。 */
 export function createRuntimeSettings(config: ReturnType<typeof createLocalConfig>) {
   const { readEnvValues, updateEnvFile } = config;
-  return { load: loadRuntimeSettings, save, clearProviderApiKey, clearEmbeddingApiKey, reset: resetRuntimeSettings };
+  return { load: loadRuntimeSettings, save, clearModelApiKey, clearEmbeddingApiKey, reset: resetRuntimeSettings };
 
-  async function save(body: AgentSettingsInput): Promise<{ settings: RuntimeSettings; models: string[] }> {
-    const provider = parseProvider(body.provider);
-    const model = requiredText(body.model, "Model", 200);
-    const smallModel = optionalText(body.smallModel, "Small Model", 200);
+  async function save(body: AgentSettingsInput): Promise<{ settings: RuntimeSettings; models: Record<ModelConnectionTarget, string[]> }> {
     const runtime = parseRuntimeSettingBody(body);
     if (runtime.embeddingBaseUrl) validateBaseUrl(runtime.embeddingBaseUrl);
-    const baseUrl = optionalText(body.baseUrl, "Base URL", 2_000);
-    const effectiveBaseUrl = provider === "openai-compatible" ? baseUrl : "";
-    if (effectiveBaseUrl) validateBaseUrl(effectiveBaseUrl);
-    const apiKey = optionalText(body.apiKey, "API Key", 10_000);
-    const clearApiKey = body.clearApiKey === true;
     const embeddingApiKey = optionalText(body.embeddingApiKey, "Embedding API Key", 10_000);
     const clearEmbeddingApiKey = body.clearEmbeddingApiKey === true;
     const force = body.force === true;
     const before = await readEnvValues();
-    const keyName = keyNameFor(provider);
-    const currentKey = before[keyName] ?? "";
-    const currentBaseUrl = before.EVERYTHING_BASE_URL ?? "";
-    const candidateKey = clearApiKey ? "" : apiKey || currentKey;
+    const agentModel = parseModelConnection(body.agentModel, "Agent Model", before, "AGENT");
+    const smallModel = parseModelConnection(body.smallModel, "Small Model", before, "SMALL");
     const candidateEmbeddingKey = clearEmbeddingApiKey ? "" : embeddingApiKey || before.EVERYTHING_EMBEDDING_API_KEY || "";
-    const keyChanged = Boolean(apiKey && apiKey !== currentKey);
-    const baseChanged = provider === "openai-compatible" && effectiveBaseUrl !== currentBaseUrl;
-    let models: string[] = [];
-
-    if (!clearApiKey && candidateKey && (keyChanged || baseChanged) && !force) {
-      try {
-        models = await probeModels(provider, candidateKey, effectiveBaseUrl);
-      } catch (error) {
-        throw new AgentConfigError(sanitizeError(error, [candidateKey]), true);
-      }
-    }
+    const models = { agentModel: [] as string[], smallModel: [] as string[] };
+    await probeChangedConnection("Agent Model", agentModel, models.agentModel, force);
+    await probeChangedConnection("Small Model", smallModel, models.smallModel, force);
 
     const updates: Record<string, string> = {
-      EVERYTHING_PROVIDER: provider,
-      EVERYTHING_MODEL: model,
-      EVERYTHING_SMALL_MODEL: smallModel,
+      EVERYTHING_AGENT_PROVIDER: agentModel.settings.provider,
+      EVERYTHING_AGENT_MODEL: agentModel.settings.model,
+      EVERYTHING_AGENT_BASE_URL: agentModel.settings.baseUrl,
+      EVERYTHING_SMALL_PROVIDER: smallModel.settings.provider,
+      EVERYTHING_SMALL_MODEL: smallModel.settings.model,
+      EVERYTHING_SMALL_BASE_URL: smallModel.settings.baseUrl,
       EVERYTHING_SESSION_SEARCH_WINDOW: String(runtime.sessionSearchWindow),
       EVERYTHING_SESSION_SCROLL_STEP: String(runtime.sessionScrollStep),
       EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT: String(runtime.sessionRecallMessageLimit),
@@ -62,23 +52,25 @@ export function createRuntimeSettings(config: ReturnType<typeof createLocalConfi
       EVERYTHING_EMBEDDING_QUERY_TEMPLATE: runtime.embeddingQueryTemplate,
       EVERYTHING_EMBEDDING_DOCUMENT_TEMPLATE: runtime.embeddingDocumentTemplate,
       EVERYTHING_EMBEDDING_MINIMUM_SIMILARITY: String(runtime.embeddingMinimumSimilarity),
-      EVERYTHING_BASE_URL: effectiveBaseUrl,
     };
-    if (apiKey) updates[keyName] = apiKey;
+    if (agentModel.inputApiKey) updates.EVERYTHING_AGENT_API_KEY = agentModel.inputApiKey;
+    if (smallModel.inputApiKey) updates.EVERYTHING_SMALL_API_KEY = smallModel.inputApiKey;
     if (embeddingApiKey) updates.EVERYTHING_EMBEDDING_API_KEY = embeddingApiKey;
     if (runtime.retrievalMode !== "lexical_only" && !(candidateEmbeddingKey && runtime.embeddingBaseUrl && runtime.embeddingModel)) {
       throw new AgentConfigError("Dense/Hybrid 模式必须完整配置独立的 Embedding Base URL、API Key 与 Model");
     }
     await updateEnvFile(updates, [
-      ...(clearApiKey ? [keyName] : []),
+      ...(agentModel.clearApiKey ? ["EVERYTHING_AGENT_API_KEY"] : []),
+      ...(smallModel.clearApiKey ? ["EVERYTHING_SMALL_API_KEY"] : []),
       ...(clearEmbeddingApiKey ? ["EVERYTHING_EMBEDDING_API_KEY"] : []),
       ...OBSOLETE_CONFIG_KEYS,
     ]);
     return { settings: await loadRuntimeSettings(), models };
   }
 
-  async function clearProviderApiKey(provider: AgentProvider): Promise<RuntimeSettings> {
-    await updateEnvFile({}, [keyNameFor(parseProvider(provider))]);
+  async function clearModelApiKey(target: ModelConnectionTarget): Promise<RuntimeSettings> {
+    if (target !== "agentModel" && target !== "smallModel") throw new TypeError("模型连接目标无效");
+    await updateEnvFile({}, [target === "agentModel" ? "EVERYTHING_AGENT_API_KEY" : "EVERYTHING_SMALL_API_KEY"]);
     return loadRuntimeSettings();
   }
 
@@ -100,12 +92,9 @@ export function createRuntimeSettings(config: ReturnType<typeof createLocalConfi
 
   async function loadRuntimeSettings(): Promise<RuntimeSettings> {
     const values = await readEnvValues();
-    const provider = parseProvider(values.EVERYTHING_PROVIDER || "anthropic");
-    const keyName = keyNameFor(provider);
     return {
-      provider,
-      model: values.EVERYTHING_MODEL ?? "",
-      smallModel: values.EVERYTHING_SMALL_MODEL ?? "",
+      agentModel: loadModelConnection(values, "AGENT"),
+      smallModel: loadModelConnection(values, "SMALL"),
       sessionSearchWindow: parseSetting(values.EVERYTHING_SESSION_SEARCH_WINDOW, "Session Search Window", RUNTIME_DEFAULTS.sessionSearchWindow, SETTING_LIMITS.sessionSearchWindow),
       sessionScrollStep: parseSetting(values.EVERYTHING_SESSION_SCROLL_STEP, "Session Scroll Step", RUNTIME_DEFAULTS.sessionScrollStep, SETTING_LIMITS.sessionScrollStep),
       sessionRecallMessageLimit: parseSetting(values.EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT, "Session Recall Message Limit", RUNTIME_DEFAULTS.sessionRecallMessageLimit, SETTING_LIMITS.sessionRecallMessageLimit),
@@ -118,9 +107,6 @@ export function createRuntimeSettings(config: ReturnType<typeof createLocalConfi
       embeddingDocumentTemplate: values.EVERYTHING_EMBEDDING_DOCUMENT_TEMPLATE ?? "{text}",
       embeddingMinimumSimilarity: parseSimilarity(values.EVERYTHING_EMBEDDING_MINIMUM_SIMILARITY ?? "0.30"),
       embeddingApiKey: values.EVERYTHING_EMBEDDING_API_KEY ?? "",
-      baseUrl: values.EVERYTHING_BASE_URL ?? "",
-      apiKey: values[keyName] ?? "",
-      keyName,
     };
   }
 }
@@ -136,9 +122,8 @@ export function publicSettings(settings: RuntimeSettings, memory: MemoryRuntime)
       }
     : null;
   return {
-    provider: settings.provider,
-    model: settings.model,
-    smallModel: settings.smallModel,
+    agentModel: publicModelConnection(settings.agentModel),
+    smallModel: publicModelConnection(settings.smallModel),
     sessionSearchWindow: settings.sessionSearchWindow,
     sessionScrollStep: settings.sessionScrollStep,
     sessionRecallMessageLimit: settings.sessionRecallMessageLimit,
@@ -154,9 +139,69 @@ export function publicSettings(settings: RuntimeSettings, memory: MemoryRuntime)
     embeddingKeyLast4: settings.embeddingApiKey ? settings.embeddingApiKey.slice(-4) : "",
     embeddingIndex: { ...embeddingIndex, ready: Boolean(embeddingProfile && memory.embeddingIndexMatches(embeddingProfile)) },
     limits: SETTING_LIMITS,
-    baseUrl: settings.baseUrl,
-    keyConfigured: Boolean(settings.apiKey),
-    keyLast4: settings.apiKey ? settings.apiKey.slice(-4) : "",
+  };
+}
+
+interface ParsedConnection {
+  settings: ModelConnectionSettings;
+  inputApiKey: string;
+  clearApiKey: boolean;
+  changed: boolean;
+}
+
+function parseModelConnection(
+  input: ModelConnectionInput,
+  label: string,
+  before: Record<string, string>,
+  prefix: "AGENT" | "SMALL",
+): ParsedConnection {
+  if (!input || typeof input !== "object") throw new TypeError(`${label} 配置不能为空`);
+  const provider = parseProvider(input.provider);
+  const model = requiredText(input.model, `${label} Model`, 200);
+  const baseUrl = optionalText(input.baseUrl, `${label} Base URL`, 2_000);
+  if (baseUrl) validateBaseUrl(baseUrl);
+  const inputApiKey = optionalText(input.apiKey, `${label} API Key`, 10_000);
+  const currentProvider = before[`EVERYTHING_${prefix}_PROVIDER`] || "anthropic";
+  // Provider 改变后旧凭证不属于新连接；未显式输入新密钥时直接清除。
+  const clearApiKey = input.clearApiKey === true || (provider !== currentProvider && !inputApiKey);
+  const currentApiKey = before[`EVERYTHING_${prefix}_API_KEY`] ?? "";
+  const settings = {
+    provider, model, baseUrl,
+    apiKey: clearApiKey ? "" : inputApiKey || currentApiKey,
+  };
+  return {
+    settings, inputApiKey, clearApiKey,
+    changed: Boolean(inputApiKey && inputApiKey !== currentApiKey)
+      || provider !== currentProvider
+      || baseUrl !== (before[`EVERYTHING_${prefix}_BASE_URL`] ?? ""),
+  };
+}
+
+async function probeChangedConnection(label: string, connection: ParsedConnection, models: string[], force: boolean): Promise<void> {
+  if (connection.clearApiKey || !connection.settings.apiKey || !connection.changed || force) return;
+  try {
+    models.push(...await probeModels(connection.settings.provider, connection.settings.apiKey, connection.settings.baseUrl));
+  } catch (error) {
+    throw new AgentConfigError(`${label}：${sanitizeError(error, [connection.settings.apiKey])}`, true);
+  }
+}
+
+function loadModelConnection(values: Record<string, string>, prefix: "AGENT" | "SMALL"): ModelConnectionSettings {
+  return {
+    provider: parseProvider(values[`EVERYTHING_${prefix}_PROVIDER`] || "anthropic"),
+    model: values[`EVERYTHING_${prefix}_MODEL`] ?? "",
+    baseUrl: values[`EVERYTHING_${prefix}_BASE_URL`] ?? "",
+    apiKey: values[`EVERYTHING_${prefix}_API_KEY`] ?? "",
+  };
+}
+
+function publicModelConnection(connection: ModelConnectionSettings): PublicModelConnection {
+  return {
+    provider: connection.provider,
+    model: connection.model,
+    baseUrl: connection.baseUrl,
+    keyConfigured: Boolean(connection.apiKey),
+    keyLast4: connection.apiKey ? connection.apiKey.slice(-4) : "",
   };
 }
 

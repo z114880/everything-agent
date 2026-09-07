@@ -1,7 +1,7 @@
 import { describeHarnessRetrieval, harnessEdgeLabels } from "../../src/agent-graph/harness-graph.ts";
 import { fileURLToPath, URL } from "node:url";
 import { agentHarnessGraph, createAgentRuntime } from "../../src/index.ts";
-import type { AgentObserver, AgentSettingsInput, AgentProvider, RetrievalMode } from "../../src/index.ts";
+import type { AgentObserver, AgentSettingsInput, AgentProvider, ModelConnectionInput, ModelConnectionTarget, RetrievalMode } from "../../src/index.ts";
 export { AgentConfigError } from "../../src/index.ts";
 
 // 页面手动搜索不属于 Agent 执行，显式覆盖默认 observer，避免写入 trace。
@@ -133,9 +133,11 @@ function optionalText(value: unknown, field: string, maxLength: number): string 
 
 /** 将请求中的未知配置字段转换为 Runtime 的类型化输入。 */
 export function saveAgentSettings(body: Record<string, unknown>) {
-  const provider = providerInput(body.provider);
-  const input: AgentSettingsInput = { provider, model: requiredText(body.model, "Model", 200) };
-  for (const key of ["smallModel", "baseUrl", "apiKey", "embeddingApiKey", "embeddingBaseUrl", "embeddingModel", "embeddingQueryTemplate", "embeddingDocumentTemplate"] as const) {
+  const input: AgentSettingsInput = {
+    agentModel: modelConnectionInput(body.agentModel, "Agent Model"),
+    smallModel: modelConnectionInput(body.smallModel, "Small Model"),
+  };
+  for (const key of ["embeddingApiKey", "embeddingBaseUrl", "embeddingModel", "embeddingQueryTemplate", "embeddingDocumentTemplate"] as const) {
     if (body[key] !== undefined) input[key] = optionalText(body[key], key, 10_000);
   }
   for (const key of ["sessionSearchWindow", "sessionScrollStep", "sessionRecallMessageLimit", "sessionRecallTokenLimit", "modelContextWindow", "embeddingMinimumSimilarity"] as const) {
@@ -145,14 +147,15 @@ export function saveAgentSettings(body: Record<string, unknown>) {
     if (!["lexical_only", "dense_only", "hybrid"].includes(String(body.retrievalMode))) throw new TypeError("Retrieval Mode 无效");
     input.retrievalMode = body.retrievalMode as RetrievalMode;
   }
-  input.clearApiKey = body.clearApiKey === true;
   input.clearEmbeddingApiKey = body.clearEmbeddingApiKey === true;
   input.force = body.force === true;
   return runtime.saveAgentSettings(input);
 }
-/** 解析提供方后清除对应密钥。 */
-export function clearProviderApiKey(body: Record<string, unknown>) {
-  return runtime.clearProviderApiKey(providerInput(body.provider));
+/** 按用途清除独立模型连接的密钥。 */
+export function clearModelApiKey(body: Record<string, unknown>) {
+  const target = body.target;
+  if (target !== "agentModel" && target !== "smallModel") throw new TypeError("模型连接目标无效");
+  return runtime.clearModelApiKey(target as ModelConnectionTarget);
 }
 /** 校验页面输入后保存规则。 */
 export function saveSystemPrompt(body: Record<string, unknown>) {
@@ -161,6 +164,18 @@ export function saveSystemPrompt(body: Record<string, unknown>) {
 function providerInput(value: unknown): AgentProvider {
   if (value !== "anthropic" && value !== "openai-compatible") throw new TypeError("Provider 必须是 anthropic 或 openai-compatible");
   return value;
+}
+
+function modelConnectionInput(value: unknown, label: string): ModelConnectionInput {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError(`${label} 配置不能为空`);
+  const body = value as Record<string, unknown>;
+  return {
+    provider: providerInput(body.provider),
+    model: requiredText(body.model, `${label} Model`, 200),
+    baseUrl: optionalText(body.baseUrl, `${label} Base URL`, 2_000),
+    apiKey: optionalText(body.apiKey, `${label} API Key`, 10_000),
+    clearApiKey: body.clearApiKey === true,
+  };
 }
 
 /** 组装 trace 页面的文件列表。 */

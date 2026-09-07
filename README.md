@@ -27,25 +27,27 @@ pnpm run example
 - **Workflow**：枚举 `src/workflows/` 下的 TypeScript 文件，可编辑和执行任一工作流。拓扑来自真实 `Graph.describe()`，执行由本地 Node.js 进程调用 `runGraph()`。
 - **Memory**：通过 Overview、Semantic、Session Recall、Procedural、Chat Log 和 Consolidation 查看本地记忆与真实历史检索窗口。
 - **运行记录**：只读列出 `.everything/traces/<日期>/<序号>-<sessionId>.jsonl` 中的 classic loop 与 memory 执行事实，页面按 JSONL 文件直接展示已脱敏事件，不额外推导 Session 或 Agent 回合结构。trace 不记录 Session 创建、选择，以及 Memory 页面手动搜索记忆或历史会话这类 UI 活动；Agent 内部检索仍记录执行事件。“配置”页面提供带二次确认的“清除全部数据”，可删除数据库、Session、Memory 与 trace，保留 `.everything/EVERYTHING.md` 和 `.env` 配置。
-- **配置**：把 Provider、主/小模型、Session Recall 预算、Context Limit、Base URL 和密钥写入根目录 `.env`，把 System Prompt 保存到 `.everything/EVERYTHING.md`。浏览器只能读取密钥是否存在及末四位。
+- **配置**：Agent Model 与 Small Model 各自拥有独立的 Provider、Model、Base URL 和 API Key；Session Recall 预算、Context Limit 等运行参数同样写入根目录 `.env`，System Prompt 保存到 `.everything/EVERYTHING.md`。浏览器只能读取各密钥是否存在及末四位。
 
 首次运行后打开“配置”菜单，选择 Anthropic 或 OpenAI Compatible。对应环境变量为：
 
 ```dotenv
-EVERYTHING_PROVIDER="anthropic"
-EVERYTHING_MODEL="your-model-id"
+EVERYTHING_AGENT_PROVIDER="anthropic"
+EVERYTHING_AGENT_MODEL="your-agent-model-id"
+EVERYTHING_AGENT_BASE_URL="https://api.anthropic.com"
+EVERYTHING_AGENT_API_KEY=""
+EVERYTHING_SMALL_PROVIDER="openai-compatible"
 EVERYTHING_SMALL_MODEL="your-small-model-id"
+EVERYTHING_SMALL_BASE_URL="https://api.openai.com/v1"
+EVERYTHING_SMALL_API_KEY=""
 EVERYTHING_SESSION_SEARCH_WINDOW="5"
 EVERYTHING_SESSION_SCROLL_STEP="10"
 EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT="100"
-EVERYTHING_SESSION_RECALL_CHARACTER_LIMIT="50000"
-EVERYTHING_CONTEXT_CHARACTER_LIMIT="200000"
-EVERYTHING_BASE_URL=""
-ANTHROPIC_API_KEY=""
-OPENAI_API_KEY=""
+EVERYTHING_SESSION_RECALL_TOKEN_LIMIT="8192"
+EVERYTHING_MODEL_CONTEXT_WINDOW="32768"
 ```
 
-`pnpm run dev:web` 同时启动页面与本地 Engine/Agent 桥接接口；浏览器不会执行工作流源码，也不会读取完整模型密钥。修改新密钥或 Base URL 时，服务端会先进行只读连接测试；失败不会覆盖旧配置，除非用户显式选择“仍然保存”。`.env` 已被 Git 忽略，不应提交。`pnpm run build:web` 可验证并构建浏览器静态资源到 `dist-web/`，但执行仍需要本地开发服务器。
+Agent Model 用于主 Agent 推理、工具调用、记忆写入和 consolidation；Small Model 仅用于 retrieval gate，两者不会互相回退或复用连接。`pnpm run dev:web` 同时启动页面与本地 Engine/Agent 桥接接口；浏览器不会执行工作流源码，也不会读取完整模型密钥。修改任一连接的新密钥、Provider 或 Base URL 时，服务端会先对该连接进行只读测试；失败不会覆盖旧配置，除非用户显式选择“仍然保存”。`.env` 已被 Git 忽略，不应提交。`pnpm run build:web` 可验证并构建浏览器静态资源到 `dist-web/`，但执行仍需要本地开发服务器。
 
 Everything Agent 的目标是构建一个真正可长期使用的个人助理 Agent：它能够理解用户意图、调用工具完成任务、保留必要的个人记忆，并以可视化方式展示每一次执行过程。
 
@@ -259,7 +261,7 @@ pnpm run build
 
 ### 记忆变更流程
 
-聊天通过 `manage_memory submit` 将用户事实或忘记意图持久入队，立即返回 `queued`，与独立的全量 consolidation 共用串行队列。代码逐条按配置检索旧记忆，小模型选择 `create/update/delete/merge/noop`，代码校验证据与版本后执行。删除无需确认令牌；合并原子保留完整内容和来源并删除冗余项。版本冲突最多尝试 3 次（含首次），检索或模型失败不会降级新增。每日与手动全库去重通过独立 consolidation 流程完成。详见 [Memory 文档](./src/memory/README.md#统一-semantic-memory-管理)。
+聊天通过 `manage_memory submit` 将用户事实或忘记意图持久入队，立即返回 `queued`，与独立的全量 consolidation 共用串行队列。代码逐条按配置检索旧记忆，Agent Model 选择 `create/update/delete/merge/noop`，代码校验证据与版本后执行。删除无需确认令牌；合并原子保留完整内容和来源并删除冗余项。版本冲突最多尝试 3 次（含首次），检索或模型失败不会降级新增。每日与手动全库去重通过独立 consolidation 流程完成。详见 [Memory 文档](./src/memory/README.md#统一-semantic-memory-管理)。
 
 ### 后台记忆任务
 
