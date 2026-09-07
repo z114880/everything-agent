@@ -28,6 +28,6 @@ describe("侧栏菜单", () => {
 
     expect(styles).toContain("justify-content: flex-start");
     expect(styles).toContain(".nav-item > svg { width: 17px; height: 17px;");
-    expect(styles).toContain(".nav-item.active::before");
+    expect(styles).not.toContain(".nav-item.active::before");
   });
 });
