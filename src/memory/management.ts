@@ -40,7 +40,8 @@ export class MemoryManagement {
         signal.throwIfAborted();
         const revision = this.semantic.revision();
         // 属性查询不依赖新值，避免“住上海”漏掉旧值“住北京”；仍按全局检索模式执行。
-        const matches = await abortable(this.search.searchSemantic(`${candidate.subject} ${candidate.attribute} ${candidate.content}`, 12, undefined, runId, emit, { purpose: "management", signal }), signal);
+        const query = `${candidate.subject} ${candidate.attribute} ${candidate.content}`;
+        const matches = await abortable(this.search.searchSemantic({ denseQuery: query, lexicalQuery: query }, 12, undefined, runId, emit, { purpose: "management", signal }), signal);
         signal.throwIfAborted();
         const facts = matches.map((item) => this.semantic.getSemantic(item.id)).filter((item) => item !== null);
         await emit("memory_search_completed", { attempt, revision, candidateIds: facts.map((item) => item.id) });

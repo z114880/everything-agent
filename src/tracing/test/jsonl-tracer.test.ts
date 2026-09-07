@@ -154,7 +154,7 @@ describe("JSONL 运行记录", () => {
     const tracer = new JsonlTracer(home, { now: () => new Date("2026-09-03T08:09:10Z") });
     await tracer.record("retrieval_completed", {
       sessionId: "s1",
-      semantic: { query: "Bearer abc.def token-12345678", hits: [{ id: 1, bm25: -1 }] },
+      semantic: { denseQuery: "Bearer abc.def", lexicalQuery: "token-12345678", hits: [{ id: 1, bm25: -1 }] },
       sessionRecall: { mode: "none", sessions: [] },
       rawPrompt: "不能出现",
     });

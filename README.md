@@ -25,7 +25,7 @@ pnpm run example
 
 - **Agent**：运行真实 `runAgentLoop`，从 SQLite 恢复多轮 Session，展示输入、记忆需求判断、事实与历史召回、上下文组装、推理、工具和回复；独立后台区域展示记忆写入与跨会话整理关系。工具调用过程完整保存在本地 Chat Log，活动边和回复由真实 observer 事件驱动。
 - **Workflow**：枚举 `src/workflows/` 下的 TypeScript 文件，可编辑和执行任一工作流。拓扑来自真实 `Graph.describe()`，执行由本地 Node.js 进程调用 `runGraph()`。
-- **Memory**：通过 Overview、Semantic、Session Recall、Procedural、Chat Log 和 Consolidation 查看本地记忆与真实历史检索窗口。
+- **Memory**：通过 Overview、Semantic、Session Recall、Procedural、Chat Log 和 Consolidation 查看本地记忆与真实历史检索窗口。Session Recall 结果按消息分段展示，结构化内容保留缩进、正文换行；查询留空可查看最近活跃会话。
 - **运行记录**：只读列出 `.everything/traces/<日期>/<序号>-<sessionId>.jsonl` 中的 classic loop 与 memory 执行事实，页面按 JSONL 文件直接展示已脱敏事件，不额外推导 Session 或 Agent 回合结构。trace 不记录 Session 创建、选择，以及 Memory 页面手动搜索记忆或历史会话这类 UI 活动；Agent 内部检索仍记录执行事件。“配置”页面提供带二次确认的“清除全部数据”，可删除数据库、Session、Memory 与 trace，保留 `.everything/EVERYTHING.md` 和 `.env` 配置。
 - **配置**：Agent Model 与 Small Model 各自拥有独立的 Provider、Model、Base URL 和 API Key；Session Recall 预算、Context Limit 等运行参数同样写入根目录 `.env`，System Prompt 保存到 `.everything/EVERYTHING.md`。浏览器只能读取各密钥是否存在及末四位。
 

@@ -112,7 +112,7 @@ describe("Memory Runtime", () => {
     const events: { kind: string; data: Record<string, unknown> }[] = [];
     await memory.retrieve("项目周五", [], {
       ...options(memory, scriptedClient([
-        response('{"intent":"fact_with_evidence","semanticQuery":"项目周五","sessionRecall":{"mode":"search","query":"周五"},"reason":"测试"}'),
+        response('{"intent":"fact_with_evidence","denseQuery":"项目周五","lexicalQuery":"项目周五","sessionRecall":{"mode":"search","query":"周五"},"reason":"测试"}'),
       ]), "current"),
       observer: (kind, data) => { events.push({ kind, data }) },
     });
@@ -134,7 +134,7 @@ describe("Memory Runtime", () => {
     await addCompletedRun(memory, historical.id, "r1", "周五发布", "决定周五发布");
     await memory.createSemantic("项目", "项目安排在周五");
     const result = await memory.retrieve("上次怎么决定的", [], options(memory, scriptedClient([
-      response('{"intent":"fact_with_evidence","semanticQuery":"项目周五","sessionRecall":{"mode":"search","query":"周五发布"},"reason":"过去决定"}'),
+      response('{"intent":"fact_with_evidence","denseQuery":"项目周五","lexicalQuery":"项目周五","sessionRecall":{"mode":"search","query":"周五发布"},"reason":"过去决定"}'),
     ]), "current"));
     expect(result.semantic).toHaveLength(1);
     expect(result.sessionRecall?.sessions).toHaveLength(1);
@@ -151,7 +151,7 @@ describe("Memory Runtime", () => {
     await memory.createSemantic("用户偏好", "用户喜欢红茶");
 
     const factWithEvidence = await memory.retrieve("我喜欢喝什么", [], options(memory, scriptedClient([
-      response('{"intent":"fact_with_evidence","semanticQuery":"喜欢 红茶","sessionRecall":{"mode":"search","query":"部署失败"},"reason":"稳定偏好及历史依据"}'),
+      response('{"intent":"fact_with_evidence","denseQuery":"喜欢 红茶","lexicalQuery":"喜欢 红茶","sessionRecall":{"mode":"search","query":"部署失败"},"reason":"稳定偏好及历史依据"}'),
     ]), "current"));
     expect(factWithEvidence.semantic).toHaveLength(1);
     expect(factWithEvidence.sessionRecall?.sessions).toHaveLength(1);
@@ -189,7 +189,7 @@ describe("Memory Runtime", () => {
     expect(systemPrompt).toContain("删除“用户、我、我的、本人、自己”等主体词");
     expect(systemPrompt).toContain("必须保留“不、没、取消、停止”等否定信息");
     expect(systemPrompt).toContain("不得猜测答案、补造实体");
-    expect(systemPrompt).toContain("semanticQuery 聚焦“用户/实体 + 稳定属性或约束”");
+    expect(systemPrompt).toContain("denseQuery 聚焦“用户/实体 + 稳定属性或约束”");
   });
 
   it("Session 元数据标记完整与失败 run，删除同步清除 Recall", async () => {

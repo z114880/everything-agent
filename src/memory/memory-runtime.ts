@@ -43,7 +43,7 @@ export class MemoryRuntime {
     const decision = await decideRetrieval(options.client, options.model, message, gateHistory, observer);
     await observer("retrieval_start", { mode: this.embedding.retrieval.mode, intent: decision.intent });
     const semantic = decision.intent === "fact_with_evidence"
-      ? await this.search.searchSemantic(decision.semanticQuery, DEFAULT_SEMANTIC_LIMIT, undefined, options.runId, options.observer)
+      ? await this.search.searchSemantic({ denseQuery: decision.denseQuery, lexicalQuery: decision.lexicalQuery }, DEFAULT_SEMANTIC_LIMIT, undefined, options.runId, options.observer)
       : [];
     const recallDecision = decision.intent === "past_episode" || decision.intent === "fact_with_evidence"
       ? decision.sessionRecall
@@ -55,7 +55,8 @@ export class MemoryRuntime {
         : null;
     await observer("retrieval_completed", {
       semantic: {
-        query: decision.intent === "fact_with_evidence" ? decision.semanticQuery : "",
+        denseQuery: decision.intent === "fact_with_evidence" ? decision.denseQuery : "",
+        lexicalQuery: decision.intent === "fact_with_evidence" ? decision.lexicalQuery : "",
         hits: semantic.map((item) => ({ id: item.id, bm25: item.score })),
       },
       sessionRecall: sessionRecall ? recallMetadata(sessionRecall) : { mode: "none", sessions: [] },
@@ -159,9 +160,9 @@ export class MemoryRuntime {
     return this.sessions.getWorkingMemory(sessionId, turns);
   }
 
-  /** 按全局模式搜索 Semantic Memory；Dense 与 Lexical 始终在独立候选池中执行。 */
+  /** 直接按全局模式搜索 Semantic Memory，不调用 Gate；两路使用同一输入文本，各自编码与召回。 */
   searchSemantic(query: string, limit = 100, providedQueryVector?: Float32Array, runId?: string, observer = this.embedding.retrieval.observer): Promise<SemanticMemory[]> {
-    return this.search.searchSemantic(query, limit, providedQueryVector, runId, observer);
+    return this.search.searchSemantic({ denseQuery: query, lexicalQuery: query }, limit, providedQueryVector, runId, observer);
   }
 
   /**

@@ -19,13 +19,17 @@ export class MemorySearch {
   }
 
   /** 按全局模式搜索 Semantic Memory；Dense 与 Lexical 始终在独立候选池中执行。 */
-  async searchSemantic(query: string, limit = 100, providedQueryVector?: Float32Array, runId?: string, observer = this.embedding.retrieval.observer, options: { purpose?: "recall" | "management"; signal?: AbortSignal } = {}): Promise<SemanticMemory[]> {
+  async searchSemantic(query: { denseQuery: string; lexicalQuery: string }, limit = 100, providedQueryVector?: Float32Array, runId?: string, observer = this.embedding.retrieval.observer, options: { purpose?: "recall" | "management"; signal?: AbortSignal } = {}): Promise<SemanticMemory[]> {
     options.signal?.throwIfAborted();
-    const clean = query.trim(); if (!clean) return [];
-    const lexical = searchSemanticLexical(this.storage.connection, clean, 50);
-    await observer?.("lexical_retrieval_completed", { corpus: "semantic", candidateCount: lexical.length });
+    const denseQuery = query.denseQuery.trim();
+    const lexicalQuery = query.lexicalQuery.trim();
+    const mode = this.embedding.retrieval.mode;
+    if (!denseQuery && !lexicalQuery) return [];
+    // 两路只消费自己的查询；Dense 不经过 FTS 分词，也不触发未选择的 Lexical 阶段。
+    const lexical = mode !== "dense_only" ? searchSemanticLexical(this.storage.connection, lexicalQuery, 50) : [];
+    if (mode !== "dense_only") await observer?.("lexical_retrieval_completed", { corpus: "semantic", candidateCount: lexical.length });
     if (this.embedding.retrieval.mode === "lexical_only") return lexical.slice(0, limit);
-    const queryVector = providedQueryVector ?? await this.embedding.embedQuery(clean, runId, observer, options.signal);
+    const queryVector = providedQueryVector ?? await this.embedding.embedQuery(denseQuery, runId, observer, options.signal);
     options.signal?.throwIfAborted();
     const stored = this.embedding.vectors.listActive("semantic");
     const dense = rankDenseSources(queryVector, stored, this.embedding.retrieval.embedding!.profile.minimumSimilarity);

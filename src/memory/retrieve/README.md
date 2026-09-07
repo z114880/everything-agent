@@ -447,3 +447,17 @@ embedding_generation_activated
 - 自动 Recall、Agent 工具和 Memory 管理页分别保持既有限制。
 - Trace 不泄露正文、向量或凭证。
 - Context Window 估算覆盖完整上下文并预留输出和 512 tokens。
+
+## Gate 的两路查询改写
+
+一次 Gate 模型调用同时返回 `denseQuery`、`lexicalQuery` 与 `sessionRecall`：
+
+- `denseQuery` 用于 Semantic Dense：结合近期对话补全指代，保留主体、关系、否定和约束，生成自然语言查询；套用 `queryTemplate` 后直接送入 Embedding，不经过 jieba 分词。
+- `lexicalQuery` 用于 Semantic Lexical：提取稳定属性、实体和约束关键词，再通过 jieba 搜索分词与 FTS5 / BM25 召回。
+- `sessionRecall.query` 保持事件、对象、时间或结果线索的关键词改写；Session Recall 仍只执行 Lexical。
+
+例如“我喜欢喝什么”可生成 `denseQuery: "用户偏好的饮品"` 与 `lexicalQuery: "喜欢 偏好 饮品"`。所有改写只使用当前消息与近期对话已有信息，不猜测答案或补造实体。
+
+Semantic 检索按全局模式执行所需路线，Hybrid 将两路独立候选融合。任一路查询缺失或空白时，该路回退到当前消息；Gate 失败时，两路及 Session 搜索一起回退到当前消息。手动 `searchSemantic` 和记忆管理检索不调用 Gate，直接把调用方提供的文本用于两路。
+
+`retrieval_completed.semantic` 使用 `denseQuery`、`lexicalQuery` 和 `hits`，不再使用单一 `query`；JSONL 记录继续对两路查询递归脱敏。阶段事件只表示实际执行过的路线。

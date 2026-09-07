@@ -2,27 +2,29 @@ import type { AgentMessage, AgentModelClient, AgentObserver } from "../../agent-
 import type { RetrievalIntent } from "../types.ts";
 
 const GATE_SYSTEM = `你是个人助理记忆检索判定器。Semantic Memory 保存稳定、跨会话有用的用户事实；Session Recall 用于寻找过去对话中的具体事件和过程。
-只输出 JSON：{"intent":"none|past_episode|fact_with_evidence","semanticQuery":"Semantic 检索词","sessionRecall":{"mode":"search|recent","query":"search 时的检索词"},"reason":"简短原因"}。
+只输出 JSON：{"intent":"none|past_episode|fact_with_evidence","denseQuery":"Semantic 自然语言查询","lexicalQuery":"Semantic 关键词","sessionRecall":{"mode":"search|recent","query":"search 时的检索词"},"reason":"简短原因"}。
 intent 必须遵循：
 - none：常识、数学、寒暄或信息完整，不检索记忆；
 - past_episode：只需要过去某次对话、事件、操作过程或原始结果，只检索 Session Recall；
 - fact_with_evidence：请求涉及稳定偏好、身份、约束、承诺或持续项目事实，同时检索 Semantic Memory 与 Session Recall，以补充来源、变化、例外、冲突、最新状态和具体上下文。
 不存在只检索 Semantic Memory 的 intent。任何 Semantic Memory 查询都必须选择 fact_with_evidence，并同时执行 Session Recall；宁可多召回一次历史，也不要漏掉关键信息。拿不准是否需要稳定事实时，也选择 fact_with_evidence。
 出现“上次、之前、当时、为什么决定、怎么处理、具体过程、原话、结果”等历史指向，但不需要稳定事实时，选择 past_episode。只有确实需要浏览最近几段历史但没有明确关键词时，Session Recall 才使用 recent；否则使用 search。
-检索词生成规则：
+查询生成规则（一次返回两路 Semantic 查询）：
+- denseQuery 聚焦“用户/实体 + 稳定属性或约束”，结合 Recent Conversation 补全指代，生成独立可理解的自然语言查询；保留主体、关系、否定和约束，不做分词或压缩成关键词；例如“我喜欢喝什么”改为“用户偏好的饮品”；
+- lexicalQuery 与 Session Recall 的 search query 使用以下关键词规则：
 - 改写为简短的陈述式关键词，不要照抄问题；去掉“什么、哪一个、是否、怎么、如何、为什么、谁、哪里、何时”等疑问词，以及“吗、呢、请、帮我、告诉我、你记得”等无检索价值的问句成分；
 - 删除“用户、我、我的、本人、自己”等主体词，例如“我喜欢喝什么”改为“喜欢 饮品”；
 - 保留人名、项目名、产品名、错误码、动作、结果、约束和“上次、昨天、改为”等时间或变化线索；必须保留“不、没、取消、停止”等否定信息；
 - 只使用当前消息和 Recent Conversation 中已有的信息，不得猜测答案、补造实体或把 reason 混入检索词；去重并避免宽泛词；
-- semanticQuery 聚焦“用户/实体 + 稳定属性或约束”；Session Recall 的 search query 聚焦“事件/动作 + 对象 + 时间或结果线索”。
-检索词必须与当前用户消息使用相同语言，不得翻译。`;
+- lexicalQuery 聚焦稳定属性或约束；Session Recall 的 search query 聚焦“事件/动作 + 对象 + 时间或结果线索”。
+两路 Semantic 查询与 Session 查询都只使用当前消息和 Recent Conversation 中已有的信息，不得猜测答案、补造实体；必须保留否定与约束，并与当前用户消息使用相同语言，不得翻译。`;
 
 type DecisionBase = { reason: string; fallback: boolean };
 type SessionRecallDecision = { mode: "search"; query: string } | { mode: "recent" };
 export type GateDecision =
   | (DecisionBase & { intent: "none" })
   | (DecisionBase & { intent: "past_episode"; sessionRecall: SessionRecallDecision })
-  | (DecisionBase & { intent: "fact_with_evidence"; semanticQuery: string; sessionRecall: SessionRecallDecision });
+  | (DecisionBase & { intent: "fact_with_evidence"; denseQuery: string; lexicalQuery: string; sessionRecall: SessionRecallDecision });
 
 /** 使用小模型判断单一检索意图；失败时对 Semantic 与 Session Recall 一起 fail-open。 */
 export async function decideRetrieval(
@@ -47,7 +49,7 @@ export async function decideRetrieval(
     return decision;
   } catch (error) {
     const decision: GateDecision = {
-      intent: "fact_with_evidence", semanticQuery: message, sessionRecall: { mode: "search", query: message },
+      intent: "fact_with_evidence", denseQuery: message, lexicalQuery: message, sessionRecall: { mode: "search", query: message },
       reason: "检索判定失败，对 Semantic Memory 与 Session Recall 执行回退检索", fallback: true,
     };
     await observer("gate_end", { ...gateEvent(decision), errorType: error instanceof Error ? error.name : "UnknownError" });
@@ -65,7 +67,7 @@ function parseDecision(json: Record<string, unknown>, message: string): GateDeci
     ? { mode: "recent" }
     : { mode: "search", query: stringValue(recallValue.query) || message };
   if (intent === "past_episode") return { ...base, intent, sessionRecall };
-  return { ...base, intent, semanticQuery: stringValue(json.semanticQuery) || message, sessionRecall };
+  return { ...base, intent, denseQuery: stringValue(json.denseQuery) || message, lexicalQuery: stringValue(json.lexicalQuery) || message, sessionRecall };
 }
 
 function retrievalIntent(value: unknown): RetrievalIntent {

@@ -20,6 +20,81 @@ const client: EmbeddingPort = {
 afterEach(() => runtimes.splice(0).forEach((runtime) => runtime.close()));
 
 describe("MemoryRuntime Dense/Hybrid 集成", () => {
+  it.each(["lexical_only", "dense_only", "hybrid"] as const)("%s 使用一次 Gate 生成独立查询且只执行选定路线", async (mode) => {
+    const memory = await createMemory();
+    const lexicalHit = await memory.createSemantic("ORBIT", "词法命中");
+    const denseHit = await memory.createSemantic("项目", "发布安排");
+    const embedded: string[] = [];
+    const embeddingClient: EmbeddingPort = { async embed(texts) {
+      embedded.push(...texts);
+      return texts.map((text, index) => ({ index, vector: keywordVector(text) }));
+    } };
+    memory.configureRetrieval({ mode: "lexical_only", embedding: { profile, client: embeddingClient }, allowIncompleteIndex: true });
+    await memory.rebuildEmbeddings();
+    memory.configureRetrieval({ mode, embedding: { profile, client: embeddingClient } });
+    embedded.length = 0;
+    let calls = 0;
+    const events: { kind: string; data: Record<string, unknown> }[] = [];
+    const result = await memory.retrieve("原始问题", [], {
+      model: "gate", currentSessionId: "current", recall: recall(),
+      client: { messages: { async create() {
+        calls += 1;
+        return { stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify({
+          intent: "fact_with_evidence", denseQuery: "用户的发布安排", lexicalQuery: "ORBIT",
+          sessionRecall: { mode: "search", query: "历史线索" }, reason: "测试",
+        }) }] };
+      } } },
+      observer: (kind, data) => { events.push({ kind, data }) },
+    });
+    expect(calls).toBe(1);
+    expect(result.semantic.map((item) => item.id).sort()).toEqual(
+      (mode === "lexical_only" ? [lexicalHit.id] : mode === "dense_only" ? [denseHit.id] : [lexicalHit.id, denseHit.id]).sort(),
+    );
+    expect(embedded).toEqual(mode === "lexical_only" ? [] : ["用户的发布安排"]);
+    const semanticStages = events.filter((event) => event.data.corpus === "semantic").map((event) => event.kind);
+    expect(semanticStages.includes("lexical_retrieval_completed")).toBe(mode !== "dense_only");
+    expect(semanticStages.includes("dense_retrieval_completed")).toBe(mode !== "lexical_only");
+    expect(events.find((event) => event.kind === "retrieval_completed")?.data.semantic).toMatchObject({
+      denseQuery: "用户的发布安排", lexicalQuery: "ORBIT",
+    });
+  });
+
+  it.each([
+    { denseQuery: "", lexicalQuery: "ORBIT", expectedDense: "发布", expectedLexical: "ORBIT" },
+    { denseQuery: "用户的发布安排", expectedDense: "用户的发布安排", expectedLexical: "发布" },
+    { fail: true, expectedDense: "发布", expectedLexical: "发布" },
+  ])("Gate 缺失查询时逐路回退，失败时两路回退：%j", async (scenario) => {
+    const memory = await createMemory();
+    await memory.createSemantic("发布", "安排");
+    const embedded: string[] = [];
+    const embeddingClient: EmbeddingPort = { async embed(texts) {
+      embedded.push(...texts);
+      return texts.map((text, index) => ({ index, vector: keywordVector(text) }));
+    } };
+    memory.configureRetrieval({ mode: "lexical_only", embedding: { profile, client: embeddingClient }, allowIncompleteIndex: true });
+    await memory.rebuildEmbeddings();
+    memory.configureRetrieval({ mode: "hybrid", embedding: { profile, client: embeddingClient } });
+    embedded.length = 0;
+    const events: { kind: string; data: Record<string, unknown> }[] = [];
+    await memory.retrieve("发布", [], {
+      model: "gate", currentSessionId: "current", recall: recall(),
+      client: { messages: { async create() {
+        if ("fail" in scenario) throw new Error("Gate 不可用");
+        return { stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify({
+          intent: "fact_with_evidence", denseQuery: scenario.denseQuery,
+          lexicalQuery: "lexicalQuery" in scenario ? scenario.lexicalQuery : undefined,
+          sessionRecall: { mode: "recent" }, reason: "测试",
+        }) }] };
+      } } },
+      observer: (kind, data) => { events.push({ kind, data }) },
+    });
+    expect(embedded).toEqual([scenario.expectedDense]);
+    expect(events.find((event) => event.kind === "retrieval_completed")?.data.semantic).toMatchObject({
+      denseQuery: scenario.expectedDense, lexicalQuery: scenario.expectedLexical,
+    });
+    expect(events.find((event) => event.kind === "gate_end")?.data.fallback).toBe("fail" in scenario);
+  });
+
   it.each(["lexical_only", "dense_only", "hybrid"] as const)("%s 的前 4 条 Session Recall 来自不同 Session", async (mode) => {
     const memory = await createMemory();
     const dominant = memory.createSession("高频会话");
@@ -237,7 +312,7 @@ function gateClient(): AgentModelClient {
       async create() {
         return {
           content: [{ type: "text", text: JSON.stringify({
-            intent: "fact_with_evidence", semanticQuery: "发布",
+            intent: "fact_with_evidence", denseQuery: "发布", lexicalQuery: "发布",
             sessionRecall: { mode: "search", query: "发布" }, reason: "测试",
           }) }],
           stop_reason: "end_turn",

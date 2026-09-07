@@ -8,6 +8,7 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Input } from "./ui/input";
+import { MemoryContent } from "./MemoryContent";
 import { PageHeading } from "./PageHeading";
 import { Textarea } from "./ui/textarea";
 
@@ -85,10 +86,19 @@ export function MemoryPage() {
       <Card className="path-card"><Database size={18} /><div><strong>Database</strong><code>{data.overview.databasePath}</code></div></Card>
     </div>}
     {(tab === "semantic" || tab === "episodic") && <div className="memory-search"><div className="memory-search-field"><Search size={15} aria-hidden="true" /><Input value={query} onChange={(event) => { setQuery(event.target.value); if (!event.target.value) setSemanticResults(null); }} onKeyDown={(event) => { if (event.key === "Enter") void search(); }} placeholder={tab === "episodic" ? "留空返回最近 Session，或按当前模式检索" : "按当前检索模式搜索"} /></div><Button onClick={() => void search()}>{tab === "episodic" && !query.trim() ? "最近 Session" : "搜索"}</Button>{tab === "semantic" && <Button onClick={() => createSemantic(mutate)}>新建</Button>}</div>}
-    {tab === "semantic" && <div className="memory-list">{semantic.map((item) => <SemanticCard key={item.id} item={item} mutate={mutate} />)}</div>}
+    {tab === "semantic" && <div className="memory-list">
+      <div className="recall-hint recall-hint-compact"><div className="recall-hint-heading"><strong>搜索语义记忆</strong><p>输入关键词查找相关记忆，或留空查看记忆列表。</p></div></div>
+      {semantic.map((item) => <SemanticCard key={item.id} item={item} mutate={mutate} />)}
+    </div>}
     {tab === "episodic" && <div className="memory-list">
-      {!recall && <div className="panel loading-panel">输入查询验证真实 Session Recall；留空可查看最近活跃 Session。</div>}
-      {recall && <div className="memory-message">{recall.retrievalMode} · 返回 {recall.returnedSessionCount}/{recall.requestedLimit} 个 Session{recall.truncated ? " · 截断或省略 " + recall.droppedSessionCount + " 个" : ""}</div>}
+      <div className="recall-hint recall-hint-compact">
+        <div className="recall-hint-heading"><strong>搜索历史会话</strong><p>输入关键词查找相关内容，或留空查看最近活跃的会话。</p></div>
+        {recall && <div className="recall-hint-stats">
+          <span className="recall-stat">查询上限 {recall.requestedLimit} 个会话</span>
+          <span className="recall-stat">已返回 {recall.returnedSessionCount} 个</span>
+          {recall.truncated && <span>部分结果已截断或省略（省略 {recall.droppedSessionCount} 个会话）。</span>}
+        </div>}
+      </div>
       {recall?.sessions.map((result) => <RecallCard key={result.session.id} result={result} read={read} />)}
     </div>}
     {tab === "procedural" && <Card className="procedural-editor"><div className="panel-header"><span><FileText size={15} /> System Prompt</span><code>.everything/EVERYTHING.md</code></div><Textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} /><Button onClick={() => void saveSystemPrompt(prompt).then(() => setMessage("EVERYTHING.md 已保存"))}>保存 Procedural Memory</Button></Card>}
@@ -98,12 +108,18 @@ export function MemoryPage() {
 }
 
 function RecallCard({ result, read }: { result: SessionRecallResult; read(result: SessionRecallResult, fromStart?: boolean): Promise<void> }) {
-  return <article className="panel memory-card"><div>
+  return <article className="panel memory-card recall-card"><div>
     <span className="memory-id">#{result.rank} · {retrievalScoreLabel(result)}</span>
     <strong>{result.session.title}</strong>
     <small>{local(result.session.updatedAt)} · 返回 {result.returnedMessageCount}/{result.totalMessageCount} · {result.isComplete ? "完整 Session" : "部分范围"}</small>
     {result.expandLimitReached && <small>完整扩窗已达到预算，请从头分页读取。</small>}
-    <pre>{result.entries.map((entry) => "[" + entry.id + " · " + entry.kind + " · " + (entry.runComplete ? "完整" : "未完成") + "] " + contentText(entry.content)).join("\\n\\n")}</pre>
+    <div className="recall-entries">{result.entries.map((entry) => <section className="recall-entry" key={entry.id}>
+      <span className="memory-id recall-entry-number">{entry.id}</span>
+      <div className="recall-entry-body">
+        <div className="memory-id">{entry.kind}</div>
+        <MemoryContent value={entry.content} />
+      </div>
+    </section>)}</div>
   </div><div>
       {result.nextCursor && !result.isComplete && <Button size="sm" onClick={() => void read(result)}>扩大 / 继续</Button>}
       {!result.isComplete && <Button size="sm" onClick={() => void read(result, true)}>从头读取</Button>}
