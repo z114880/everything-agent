@@ -7,6 +7,7 @@ import { MemoryPage } from "./components/MemoryPage";
 import { TracePage } from "./components/TracePage";
 import { GraphCanvas, type VisualNodeState } from "./components/GraphCanvas";
 import { ResultPanel, RunPanel } from "./components/RunPanel";
+import { Button } from "./components/ui/button";
 import {
   loadLocalWorkflow,
   runLocalWorkflow,
@@ -197,17 +198,17 @@ export default function App() {
         <div className="brand-row">
           <div className="brand-mark"><Sparkles size={15} /></div>
           <div><strong>Everything Agent</strong><span>可视化Agent控制台</span></div>
-          <button className="sidebar-toggle" onClick={() => setSidebarOpen(false)} aria-label="收起侧边栏"><PanelLeftClose size={16} /></button>
+          <Button variant="ghost" size="icon-sm" className="sidebar-toggle" onClick={() => setSidebarOpen(false)} aria-label="收起侧边栏"><PanelLeftClose size={16} /></Button>
         </div>
-        <button className={`nav-item ${page === "workflow" ? "active" : ""}`} onClick={() => setPage("workflow")}><GitBranch size={15} /><span>Workflow</span></button>
+        <Button variant="ghost" className={`nav-item ${page === "workflow" ? "active" : ""}`} onClick={() => setPage("workflow")}><GitBranch size={15} /><span>Workflow</span></Button>
         <div className="nav-divider" aria-hidden="true" />
-        <button className={`nav-item ${page === "agent" ? "active" : ""}`} onClick={() => setPage("agent")}><Bot size={15} /><span>Agent</span></button>
-        <button className={`nav-item ${page === "memory" ? "active" : ""}`} onClick={() => setPage("memory")}><Brain size={15} /><span>Memory</span></button>
-        <button className={`nav-item ${page === "traces" ? "active" : ""}`} onClick={() => setPage("traces")}><Activity size={15} /><span>Trace</span></button>
-        <button className={`nav-item ${page === "config" ? "active" : ""}`} onClick={() => setPage("config")}><Settings size={15} /><span>配置</span></button>
+        <Button variant="ghost" className={`nav-item ${page === "agent" ? "active" : ""}`} onClick={() => setPage("agent")}><Bot size={15} /><span>Agent</span></Button>
+        <Button variant="ghost" className={`nav-item ${page === "memory" ? "active" : ""}`} onClick={() => setPage("memory")}><Brain size={15} /><span>Memory</span></Button>
+        <Button variant="ghost" className={`nav-item ${page === "traces" ? "active" : ""}`} onClick={() => setPage("traces")}><Activity size={15} /><span>Trace</span></Button>
+        <Button variant="ghost" className={`nav-item ${page === "config" ? "active" : ""}`} onClick={() => setPage("config")}><Settings size={15} /><span>配置</span></Button>
         <div className="sidebar-note"><span className="signal bg-emerald-500" />本地 Engine 已连接</div>
       </aside>
-      {!sidebarOpen && <button className="sidebar-reopen" onClick={() => setSidebarOpen(true)} aria-label="展开侧边栏"><PanelLeftOpen size={17} /></button>}
+      {!sidebarOpen && <Button variant="outline" size="icon" className="sidebar-reopen" onClick={() => setSidebarOpen(true)} aria-label="展开侧边栏"><PanelLeftOpen size={17} /></Button>}
 
       <main className={`main-content ${page === "agent" ? "agent-main-content" : ""}`}>
         {page === "agent" ? <AgentPage onOpenConfig={() => setPage("config")} /> : page === "config" ? <ConfigPage /> : page === "memory" ? <MemoryPage /> : page === "traces" ? <TracePage /> : <>

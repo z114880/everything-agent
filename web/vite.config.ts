@@ -6,6 +6,9 @@ import { localEnginePlugin } from "./server/local-engine-plugin.ts";
 
 export default defineConfig({
   root: fileURLToPath(new URL(".", import.meta.url)),
+  resolve: {
+    alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
+  },
   plugins: [react(), tailwindcss(), localEnginePlugin()],
   build: {
     outDir: fileURLToPath(new URL("../dist-web", import.meta.url)),

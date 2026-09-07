@@ -1,5 +1,6 @@
 import { Check, Code2, RefreshCw } from "lucide-react";
 import { useMemo, useRef } from "react";
+import { Button } from "./ui/button";
 
 interface CodeEditorProps {
   code: string;
@@ -38,10 +39,10 @@ export function CodeEditor(props: CodeEditorProps) {
             </select>
           </label>
         </div>
-        <button className="icon-button" onClick={onReset} title="从本地文件重新读取">
+        <Button variant="ghost" size="sm" className="icon-button" onClick={onReset} title="从本地文件重新读取">
           <RefreshCw size={14} />
           重新读取
-        </button>
+        </Button>
       </div>
       <div className="code-shell">
         <div ref={gutterRef} className="line-numbers" aria-hidden="true">

@@ -1,4 +1,4 @@
-import { AlertTriangle, Gauge, KeyRound, RotateCcw, Save, Server, ShieldCheck, Trash2 } from "lucide-react";
+import { AlertTriangle, BrainCircuit, Gauge, Info, KeyRound, RotateCcw, Save, Server, ShieldCheck, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   loadAgent,
@@ -13,6 +13,17 @@ import {
   type AgentSettings,
   type RetrievalMode,
 } from "../agent-api";
+import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "./ui/alert-dialog";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
+import { Input } from "./ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 export function ConfigPage() {
   const [settings, setSettings] = useState<AgentSettings | null>(null);
@@ -80,7 +91,6 @@ export function ConfigPage() {
   }
 
   async function clearSavedApiKey() {
-    if (!window.confirm(`确认清除 ${provider} 已保存的 API Key？清除后 Agent 将无法调用该 Provider，直到重新配置密钥。`)) return;
     setClearingApiKey(true);
     setModelMessage("正在清除 API Key…");
     try {
@@ -119,7 +129,6 @@ export function ConfigPage() {
   }
 
   async function clearAllData() {
-    if (!window.confirm("确认清除全部记忆、会话、运行记录和数据库数据？此操作不可撤销，保留 EVERYTHING.md 和 .env 配置。")) return;
     setClearingData(true);
     setClearMessage("正在清理本地数据…");
     try {
@@ -152,7 +161,6 @@ export function ConfigPage() {
   }
 
   async function clearSavedEmbeddingKey() {
-    if (!window.confirm("确认清除独立 Embedding API Key？检索模式将回到 FTS5 + BM25。")) return;
     const result = await clearEmbeddingApiKey();
     setSettings(result.settings);
     applyRuntimeSettings(result.settings);
@@ -163,125 +171,133 @@ export function ConfigPage() {
   return (
     <div className="content-wrap config-page">
       <div className="config-page-header">
-        <div className="eyebrow">本地运行 / 安全配置</div>
-        <h1>配置</h1>
-        <p className="config-storage-warning">所有模型与运行配置仅保存在本项目的本地 <code>.env</code> 文件中，不会上传或同步至云端；保存后下一回合立即生效。</p>
+        <div>
+          <div className="eyebrow">本地运行 / 安全配置</div>
+          <h1>配置中心</h1>
+          <p>管理模型连接、记忆检索与运行边界。</p>
+        </div>
+        <Badge variant="success"><ShieldCheck size={12} />仅存储在本地</Badge>
       </div>
+      <Alert variant="info" className="config-local-alert">
+        <ShieldCheck />
+        <AlertTitle>配置不会离开当前项目</AlertTitle>
+        <AlertDescription>模型与运行配置保存在本地 <code>.env</code> 文件中；保存后下一回合立即生效。</AlertDescription>
+      </Alert>
+
       <div className="config-grid">
-        <section className="panel config-card config-settings-card">
-          <div className="panel-header"><span><Server size={15} /> Agent 配置</span><span className="status-pill">热更新</span></div>
-          <div className="config-settings-grid">
-            <div className="config-section">
-              <div className="config-section-heading"><Server size={16} /><div><strong>模型连接</strong><p>选择模型提供方，并配置访问凭证。</p></div></div>
-              <label className="config-field">Provider
-                <select value={provider} onChange={(event) => {
-                  setProvider(event.target.value as AgentProvider);
-                  setForceAvailable(false);
-                }}>
-                  <option value="anthropic">Anthropic</option>
-                  <option value="openai-compatible">OpenAI Compatible</option>
-                </select>
-              </label>
-              <label className="config-field">Model
-                <input value={model} onChange={(event) => setModel(event.target.value)} list="agent-model-list" placeholder="输入模型 ID" />
+        <Card className="config-card config-model-card">
+          <CardHeader className="config-card-header">
+            <div className="config-card-icon"><Server size={18} /></div>
+            <div><CardTitle>模型连接</CardTitle><CardDescription>选择模型提供方，并配置主模型和访问凭证。</CardDescription></div>
+            <Badge variant="outline">热更新</Badge>
+          </CardHeader>
+          <CardContent className="config-card-content">
+            <div className="config-form-grid">
+              <ConfigField label="Provider">
+                <Select value={provider} onValueChange={(value) => { setProvider(value as AgentProvider); setForceAvailable(false); }}>
+                  <SelectTrigger aria-label="Provider"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="anthropic">Anthropic</SelectItem><SelectItem value="openai-compatible">OpenAI Compatible</SelectItem></SelectContent>
+                </Select>
+              </ConfigField>
+              <ConfigField label="Model">
+                <Input value={model} onChange={(event) => setModel(event.target.value)} list="agent-model-list" placeholder="输入模型 ID" />
                 <datalist id="agent-model-list">{models.map((value) => <option key={value} value={value} />)}</datalist>
-              </label>
-              <label className="config-field">Small Model
-                <input value={smallModel} onChange={(event) => setSmallModel(event.target.value)} list="agent-model-list" placeholder="留空时使用主模型" />
-                <span className="field-help">用于 retrieval gate 与 consolidation，复用当前 Provider 和密钥。</span>
-              </label>
+              </ConfigField>
+              <ConfigField label="Small Model" help="用于 retrieval gate 与 consolidation，复用当前 Provider 和密钥。">
+                <Input value={smallModel} onChange={(event) => setSmallModel(event.target.value)} list="agent-model-list" placeholder="留空时使用主模型" />
+              </ConfigField>
               {provider === "openai-compatible" && (
-                <label className="config-field">Base URL
-                  <input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://api.openai.com/v1" />
-                </label>
+                <ConfigField label="Base URL"><Input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://api.openai.com/v1" /></ConfigField>
               )}
-              <label className="config-field">API Key
-                <span className="secret-label"><KeyRound size={13} /> {selectedKeyKnown && settings?.keyConfigured ? `已配置 ····${settings.keyLast4}` : selectedKeyKnown ? "尚未配置" : "切换后由服务端检测已保存的值"}</span>
-                <input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={selectedKeyKnown && settings?.keyConfigured ? "留空以保留已保存的值" : "输入 API Key，或留空使用已保存的值"} />
-              </label>
-              <div className="security-note"><ShieldCheck size={15} /><span>API Key 仅写入本地 `.env`，不会由本项目上传或同步至云端；本地服务仅在调用所选模型提供商时使用，读取接口只返回配置状态与末四位。</span></div>
+              <ConfigField className="config-field-wide" label="API Key" help={selectedKeyKnown && settings?.keyConfigured ? `已配置 ····${settings.keyLast4}` : selectedKeyKnown ? "尚未配置" : "切换 Provider 后由服务端检测已保存的值"} icon={<KeyRound size={13} />}>
+                <Input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={selectedKeyKnown && settings?.keyConfigured ? "留空以保留已保存的值" : "输入 API Key，或留空使用已保存的值"} />
+              </ConfigField>
             </div>
+            {selectedKeyKnown && settings?.keyConfigured && <div className="config-card-actions"><ApiKeyClearDialog provider={provider} disabled={clearingApiKey} onConfirm={() => void clearSavedApiKey()} /></div>}
+          </CardContent>
+        </Card>
 
-            <div className="config-section">
-              <div className="config-section-heading"><Gauge size={16} /><div><strong>Memory Retrieval</strong><p>检索模式控制 Semantic Memory；Session 历史始终使用 FTS。Dense 调用远程 OpenAI-compatible API。</p></div></div>
-              <label className="config-field">Retrieval Mode
-                <select value={retrievalMode} onChange={(event) => setRetrievalMode(event.target.value as RetrievalMode)}>
-                  <option value="lexical_only">FTS5 + BM25</option>
-                  <option value="dense_only">Dense</option>
-                  <option value="hybrid">Hybrid（RRF + MMR）</option>
-                </select>
-              </label>
-              <label className="config-field">Embedding Base URL
-                <input value={embeddingBaseUrl} onChange={(event) => setEmbeddingBaseUrl(event.target.value)} placeholder="https://api.openai.com/v1" />
-              </label>
-              <label className="config-field">Embedding Model
-                <input value={embeddingModel} onChange={(event) => setEmbeddingModel(event.target.value)} placeholder="text-embedding-3-large" />
-                <span className="field-help">请求固定 dimensions=1024；模型不支持或返回其他维度时直接失败。</span>
-              </label>
-              <label className="config-field">Embedding API Key
-                <span className="secret-label"><KeyRound size={13} /> {settings?.embeddingKeyConfigured ? `已配置 ····${settings.embeddingKeyLast4}` : "尚未配置"}</span>
-                <input type="password" value={embeddingApiKey} onChange={(event) => setEmbeddingApiKey(event.target.value)} placeholder={settings?.embeddingKeyConfigured ? "留空保留已保存的独立密钥" : "输入独立 Embedding API Key"} />
-              </label>
-              <div className="security-note"><AlertTriangle size={15} /><span>配置 Embedding 后，Semantic Memory 正文会发送到该远程服务；Session 历史不生成向量。</span></div>
-              <label className="config-field"><span className="config-field-heading">Minimum Similarity <span className="config-help" tabIndex={0} aria-label="最低相似度说明" aria-describedby="minimum-similarity-help">?<span id="minimum-similarity-help" role="tooltip">建议起点：OpenAI 0.30、BGE 0.45、Qwen3 0.50、GTE/Nomic 0.40、Multilingual-E5 0.80；需按数据校准。</span></span></span>
-                <input type="number" min={-1} max={1} step={0.05} value={embeddingMinimumSimilarity} onChange={(event) => setEmbeddingMinimumSimilarity(Number(event.target.value))} />
-              </label>
-              <div className="security-note"><ShieldCheck size={15} /><span>向量索引状态：{settings?.embeddingIndex.ready
+        <Card className="config-card config-retrieval-card">
+          <CardHeader className="config-card-header">
+            <div className="config-card-icon"><BrainCircuit size={18} /></div>
+            <div><CardTitle>Memory Retrieval</CardTitle><CardDescription>配置 Semantic Memory 的词法、向量或混合检索。</CardDescription></div>
+            <Badge variant={settings?.embeddingIndex.ready ? "success" : "outline"}>{settings?.embeddingIndex.ready ? "索引就绪" : "本地优先"}</Badge>
+          </CardHeader>
+          <CardContent className="config-card-content">
+            <div className="config-form-grid">
+              <ConfigField label="Retrieval Mode">
+                <Select value={retrievalMode} onValueChange={(value) => setRetrievalMode(value as RetrievalMode)}>
+                  <SelectTrigger aria-label="Retrieval Mode"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="lexical_only">FTS5 + BM25</SelectItem><SelectItem value="dense_only">Dense</SelectItem><SelectItem value="hybrid">Hybrid（RRF + MMR）</SelectItem></SelectContent>
+                </Select>
+              </ConfigField>
+              <ConfigField label="Minimum Similarity" labelSuffix={<SimilarityHelp />}>
+                <Input type="number" min={-1} max={1} step={0.05} value={embeddingMinimumSimilarity} onChange={(event) => setEmbeddingMinimumSimilarity(Number(event.target.value))} />
+              </ConfigField>
+              <ConfigField label="Embedding Base URL"><Input value={embeddingBaseUrl} onChange={(event) => setEmbeddingBaseUrl(event.target.value)} placeholder="https://api.openai.com/v1" /></ConfigField>
+              <ConfigField label="Embedding Model" help="请求固定 dimensions=1024；维度不一致时直接失败。"><Input value={embeddingModel} onChange={(event) => setEmbeddingModel(event.target.value)} placeholder="text-embedding-3-large" /></ConfigField>
+              <ConfigField className="config-field-wide" label="Embedding API Key" help={settings?.embeddingKeyConfigured ? `已配置 ····${settings.embeddingKeyLast4}` : "尚未配置"} icon={<KeyRound size={13} />}>
+                <Input type="password" value={embeddingApiKey} onChange={(event) => setEmbeddingApiKey(event.target.value)} placeholder={settings?.embeddingKeyConfigured ? "留空保留已保存的独立密钥" : "输入独立 Embedding API Key"} />
+              </ConfigField>
+            </div>
+            <Alert variant="warning" className="mt-5"><AlertTriangle /><AlertTitle>远程数据边界</AlertTitle><AlertDescription>启用 Embedding 后，Semantic Memory 正文会发送到对应远程服务；Session 历史不会生成向量。</AlertDescription></Alert>
+            <div className="config-index-status">
+              <div><strong>向量索引</strong><span>{settings?.embeddingIndex.ready
                 ? `当前配置已就绪 · ${settings.embeddingIndex.generationId?.slice(0, 8)}`
-                : settings?.embeddingIndex.generationId
-                  ? `当前配置待重建 · 旧索引 ${settings.embeddingIndex.generationId.slice(0, 8)} 仍可用`
-                  : "未建立"}。保存 profile 后需重建；失败不会替换旧索引。</span></div>
-              {rebuildingEmbedding
-                ? <button className="danger-ghost" onClick={() => void cancelRebuild()}><Trash2 size={14} /> 取消重建</button>
-                : <button className="ghost-action" onClick={() => void rebuildEmbeddings()} disabled={!settings?.embeddingKeyConfigured || !embeddingModel}><RotateCcw size={14} /> 重建 Embedding 索引</button>}
-              {settings?.embeddingKeyConfigured && <button className="danger-ghost" onClick={() => void clearSavedEmbeddingKey()}><Trash2 size={14} /> 清除 Embedding Key</button>}
+                : settings?.embeddingIndex.generationId ? `配置待重建 · 旧索引 ${settings.embeddingIndex.generationId.slice(0, 8)} 仍可用` : "尚未建立索引"}</span></div>
+              <div className="config-inline-actions">{rebuildingEmbedding
+                ? <Button variant="destructive-outline" size="sm" onClick={() => void cancelRebuild()}><Trash2 size={14} />取消重建</Button>
+                : <Button variant="outline" size="sm" onClick={() => void rebuildEmbeddings()} disabled={!settings?.embeddingKeyConfigured || !embeddingModel}><RotateCcw size={14} />重建索引</Button>}
+                {settings?.embeddingKeyConfigured && <EmbeddingKeyClearDialog onConfirm={() => void clearSavedEmbeddingKey()} />}
+              </div>
             </div>
+          </CardContent>
+        </Card>
 
-            <div className="config-section config-runtime-section">
-              <div className="config-section-heading"><Gauge size={16} /><div><strong>运行参数</strong><p>控制记忆召回范围和模型上下文上限。</p></div></div>
-              <label className="config-field">Session Search Window
-                <input type="number" min={settings?.limits.sessionSearchWindow?.min ?? 1} max={settings?.limits.sessionSearchWindow?.max ?? 20} value={sessionSearchWindow} onChange={(event) => setSessionSearchWindow(Number(event.target.value))} />
-                <span className="field-help">命中点初始单侧窗口，默认 5。</span>
-              </label>
-              <label className="config-field">Session Scroll Step
-                <input type="number" min={settings?.limits.sessionScrollStep?.min ?? 1} max={settings?.limits.sessionScrollStep?.max ?? 50} value={sessionScrollStep} onChange={(event) => setSessionScrollStep(Number(event.target.value))} />
-                <span className="field-help">每次完整扩窗的单侧增量，默认 10。</span>
-              </label>
-              <label className="config-field">Session Recall Message Limit
-                <input type="number" min={settings?.limits.sessionRecallMessageLimit?.min ?? 1} max={settings?.limits.sessionRecallMessageLimit?.max ?? 200} value={sessionRecallMessageLimit} onChange={(event) => setSessionRecallMessageLimit(Number(event.target.value))} />
-                <span className="field-help">单次 Session Recall 最多返回条目数，默认 100。</span>
-              </label>
-              <label className="config-field">Session Recall Token Limit
-                <input type="number" min={settings?.limits.sessionRecallTokenLimit?.min ?? 256} max={settings?.limits.sessionRecallTokenLimit?.max ?? 131072} value={sessionRecallTokenLimit} onChange={(event) => setSessionRecallTokenLimit(Number(event.target.value))} />
-                <span className="field-help">单次 Session Recall 的估算 token 预算，默认 8,192。</span>
-              </label>
-              <label className="config-field">Model Context Window（tokens）
-                <input type="number" min={settings?.limits.modelContextWindow?.min ?? 4096} max={settings?.limits.modelContextWindow?.max ?? 2000000} value={modelContextWindow} onChange={(event) => setModelContextWindow(Number(event.target.value))} />
-                <span className="field-help">输入按统一启发式规则估算；默认 32,768，并预留 2,048 output tokens 与 512-token 安全余量。</span>
-              </label>
+        <Card className="config-card config-runtime-card">
+          <CardHeader className="config-card-header"><div className="config-card-icon"><Gauge size={18} /></div><div><CardTitle>运行参数</CardTitle><CardDescription>控制会话召回范围和模型上下文预算。</CardDescription></div></CardHeader>
+          <CardContent className="config-card-content">
+            <div className="config-runtime-grid">
+              <ConfigField label="Session Search Window" help="命中点初始单侧窗口，默认 5。"><Input type="number" min={settings?.limits.sessionSearchWindow?.min ?? 1} max={settings?.limits.sessionSearchWindow?.max ?? 20} value={sessionSearchWindow} onChange={(event) => setSessionSearchWindow(Number(event.target.value))} /></ConfigField>
+              <ConfigField label="Session Scroll Step" help="每次完整扩窗的单侧增量，默认 10。"><Input type="number" min={settings?.limits.sessionScrollStep?.min ?? 1} max={settings?.limits.sessionScrollStep?.max ?? 50} value={sessionScrollStep} onChange={(event) => setSessionScrollStep(Number(event.target.value))} /></ConfigField>
+              <ConfigField label="Recall Message Limit" help="单次最多返回条目数，默认 100。"><Input type="number" min={settings?.limits.sessionRecallMessageLimit?.min ?? 1} max={settings?.limits.sessionRecallMessageLimit?.max ?? 200} value={sessionRecallMessageLimit} onChange={(event) => setSessionRecallMessageLimit(Number(event.target.value))} /></ConfigField>
+              <ConfigField label="Recall Token Limit" help="估算 token 预算，默认 8,192。"><Input type="number" min={settings?.limits.sessionRecallTokenLimit?.min ?? 256} max={settings?.limits.sessionRecallTokenLimit?.max ?? 131072} value={sessionRecallTokenLimit} onChange={(event) => setSessionRecallTokenLimit(Number(event.target.value))} /></ConfigField>
+              <ConfigField className="config-field-wide" label="Model Context Window（tokens）" help="默认 32,768，并预留 2,048 output tokens 与 512-token 安全余量。"><Input type="number" min={settings?.limits.modelContextWindow?.min ?? 4096} max={settings?.limits.modelContextWindow?.max ?? 2000000} value={modelContextWindow} onChange={(event) => setModelContextWindow(Number(event.target.value))} /></ConfigField>
             </div>
-          </div>
-          <div className="config-save-bar">
-            <div className="config-actions">
-              <button className="primary-action" onClick={() => void saveModel(false)} disabled={savingModel || !model.trim()}><Save size={14} /> 保存配置</button>
-              <button className="ghost-action" onClick={() => void resetRuntime()}><RotateCcw size={14} /> 恢复运行默认值</button>
-              {selectedKeyKnown && settings?.keyConfigured && (
-                <button className="danger-ghost" type="button" disabled={clearingApiKey} onClick={() => void clearSavedApiKey()}><Trash2 size={13} /> {clearingApiKey ? "正在清除…" : "清除 API Key"}</button>
-              )}
-              {forceAvailable && <button className="danger-ghost" onClick={() => void saveModel(true)} disabled={savingModel}>仍然保存</button>}
-              <span>{modelMessage}</span>
-            </div>
-          </div>
-        </section>
+            <div className="config-card-actions"><Button variant="outline" onClick={() => void resetRuntime()}><RotateCcw size={14} />恢复运行默认值</Button></div>
+          </CardContent>
+        </Card>
 
-        <section className="panel config-card config-danger-card">
-          <div className="panel-header"><span><AlertTriangle size={15} /> 数据清理</span><span className="status-pill">不可撤销</span></div>
-          <div className="config-card-body config-danger-body">
-            <div><strong>清除全部本地数据</strong><p>删除数据库、Session、Chat Log、Semantic Memory、Session Recall 索引和全部运行记录，保留 <code>.everything/EVERYTHING.md</code> 和 <code>.env</code> 配置。</p></div>
-            <div className="config-danger-actions"><button className="danger-ghost" disabled={clearingData} onClick={() => void clearAllData()}><Trash2 size={14} /> {clearingData ? "正在清理…" : "一键清理"}</button>{clearMessage && <span>{clearMessage}</span>}</div>
-          </div>
-        </section>
+        <div className="config-global-actions">
+          <div><strong>保存配置</strong><span>模型连接、检索和运行参数将在下一回合统一生效。</span></div>
+          <div className="config-inline-actions"><Button onClick={() => void saveModel(false)} disabled={savingModel || !model.trim()}><Save size={14} />{savingModel ? "正在保存…" : "保存全部配置"}</Button>{forceAvailable && <Button variant="destructive-outline" onClick={() => void saveModel(true)} disabled={savingModel}>仍然保存</Button>}</div>
+        </div>
+
+        {modelMessage && <Alert className="config-feedback" variant={forceAvailable ? "warning" : "default"}><Info /><AlertDescription>{modelMessage}</AlertDescription></Alert>}
+
+        <Card className="config-danger-card">
+          <CardHeader className="config-card-header"><div className="config-card-icon danger"><AlertTriangle size={18} /></div><div><CardTitle>危险区域</CardTitle><CardDescription>永久删除本地运行数据，此操作无法撤销。</CardDescription></div><Badge variant="destructive">不可撤销</Badge></CardHeader>
+          <CardContent className="config-danger-body"><div><strong>清除全部本地数据</strong><p>删除数据库、Session、Chat Log、Semantic Memory、Session Recall 索引和全部运行记录，保留 <code>.everything/EVERYTHING.md</code> 和 <code>.env</code> 配置。</p></div><AllDataClearDialog disabled={clearingData} onConfirm={() => void clearAllData()} />{clearMessage && <span className="config-danger-message">{clearMessage}</span>}</CardContent>
+        </Card>
       </div>
     </div>
   );
+}
+
+function ConfigField({ label, labelSuffix, help, icon, className = "", children }: { label: string; labelSuffix?: React.ReactNode; help?: string; icon?: React.ReactNode; className?: string; children: React.ReactNode }) {
+  return <label className={`config-field ${className}`}><span className="config-field-label">{label}{labelSuffix}</span>{children}{help && <span className="field-help">{icon}{help}</span>}</label>;
+}
+
+function SimilarityHelp() {
+  return <TooltipProvider><Tooltip><TooltipTrigger asChild><button type="button" className="config-help" aria-label="最低相似度说明" aria-describedby="minimum-similarity-help">?</button></TooltipTrigger><TooltipContent id="minimum-similarity-help" role="tooltip">建议起点：OpenAI 0.30、BGE 0.45、Qwen3 0.50、GTE/Nomic 0.40、Multilingual-E5 0.80；需按数据校准。</TooltipContent></Tooltip></TooltipProvider>;
+}
+
+function ApiKeyClearDialog({ provider, disabled, onConfirm }: { provider: AgentProvider; disabled: boolean; onConfirm(): void }) {
+  return <AlertDialog><AlertDialogTrigger asChild><Button variant="destructive-outline" disabled={disabled}><Trash2 size={14} />{disabled ? "正在清除…" : "清除 API Key"}</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>清除 {provider} API Key？</AlertDialogTitle><AlertDialogDescription>清除后 Agent 将无法调用该 Provider，直到重新配置密钥。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction onClick={onConfirm}>确认清除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>;
+}
+function EmbeddingKeyClearDialog({ onConfirm }: { onConfirm(): void }) {
+  return <AlertDialog><AlertDialogTrigger asChild><Button variant="destructive-outline" size="sm"><Trash2 size={14} />清除密钥</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>清除 Embedding API Key？</AlertDialogTitle><AlertDialogDescription>检索模式将回到 FTS5 + BM25。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction onClick={onConfirm}>确认清除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>;
+}
+function AllDataClearDialog({ disabled, onConfirm }: { disabled: boolean; onConfirm(): void }) {
+  return <AlertDialog><AlertDialogTrigger asChild><Button variant="destructive-outline" disabled={disabled}><Trash2 size={14} />{disabled ? "正在清理…" : "清除全部数据"}</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>永久清除全部本地数据？</AlertDialogTitle><AlertDialogDescription>数据库、会话、记忆、索引和运行记录都会被删除。EVERYTHING.md 与 .env 配置将保留。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction onClick={onConfirm}>确认永久删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>;
 }

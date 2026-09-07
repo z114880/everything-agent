@@ -1,6 +1,8 @@
 import { ArrowRight, Check, CircleAlert, LoaderCircle, Play, Sparkles } from "lucide-react";
 import type { GraphExecutionResult, WaveResult, Workflow } from "../workflow-api";
 import type { VisualNodeState } from "./GraphCanvas";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
 
 interface RunPanelProps {
   workflow: Workflow;
@@ -25,7 +27,7 @@ export function RunPanel(props: RunPanelProps) {
           <div className="run-row">
             <div className="relative min-w-0 flex-1">
               <Sparkles className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--muted)]" size={16} />
-              <input
+              <Input
                 className="run-input"
                 value={input}
                 onChange={(event) => onInput(event.target.value)}
@@ -33,10 +35,10 @@ export function RunPanel(props: RunPanelProps) {
                 placeholder="输入一个任务，例如：帮我规划今天的工作"
               />
             </div>
-            <button className="run-button" onClick={onRun} disabled={running}>
+            <Button className="run-button" onClick={onRun} disabled={running}>
               {running ? <LoaderCircle className="animate-spin" size={16} /> : <Play size={15} fill="currentColor" />}
               {running ? "执行中" : "执行工作流"}
-            </button>
+            </Button>
           </div>
           <p className="mt-3 text-xs text-[var(--muted)]">图展示真实拓扑，下面的卡片按 Engine 的 wave_start 事件展示节点如何并发发生。代码在本地 Node.js 进程执行；当前示例节点不会产生外部写操作。</p>
       </div>

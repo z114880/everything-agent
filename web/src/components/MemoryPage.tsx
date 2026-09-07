@@ -4,6 +4,11 @@ import {
   loadAgent, loadMemory, memoryAction, saveSystemPrompt,
   type MemoryDashboard, type SemanticMemory, type SessionReadResult, type SessionRecallResult, type SessionSearchResult,
 } from "../agent-api";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
+import { Card } from "./ui/card";
+import { Input } from "./ui/input";
+import { Textarea } from "./ui/textarea";
 
 type MemoryTab = "overview" | "semantic" | "episodic" | "procedural" | "chat" | "consolidation";
 const tabs: Array<{ id: MemoryTab; label: string }> = [
@@ -67,8 +72,8 @@ export function MemoryPage() {
   if (!data) return <div className="content-wrap"><div className="panel loading-panel">正在加载 Memory… {message}</div></div>;
   const semantic = semanticResults ?? data.semantic;
   return <div className="content-wrap memory-page">
-    <div className="memory-header"><div><div className="eyebrow">SQLite / Lexical + Dense</div><h1>Memory</h1><p>Semantic Memory、Session Recall、会话日志与整理状态。</p></div><button className="ghost-action" onClick={() => void reload()}><RefreshCw size={14} /> 刷新</button></div>
-    <div className="memory-tabs">{tabs.map((item) => <button key={item.id} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)}>{item.label}</button>)}</div>
+    <div className="memory-header"><div><div className="eyebrow">SQLite / Lexical + Dense</div><h1>Memory</h1><p>Semantic Memory、Session Recall、会话日志与整理状态。</p></div><Button variant="outline" size="sm" onClick={() => void reload()}><RefreshCw size={14} /> 刷新</Button></div>
+    <div className="memory-tabs">{tabs.map((item) => <Button variant="ghost" size="sm" key={item.id} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)}>{item.label}</Button>)}</div>
     {message && <div className="memory-message">{message}</div>}
     {tab === "overview" && <div className="metric-grid">
       <Metric label="Semantic" value={data.overview.semanticCount} />
@@ -76,18 +81,18 @@ export function MemoryPage() {
       <Metric label="已索引消息" value={data.overview.indexedMessageCount} />
       <Metric label="Sessions" value={data.overview.sessionCount} />
       <Metric label="整理次数" value={data.consolidations.length} />
-      <div className="panel path-card"><Database size={18} /><div><strong>Database</strong><code>{data.overview.databasePath}</code></div></div>
+      <Card className="path-card"><Database size={18} /><div><strong>Database</strong><code>{data.overview.databasePath}</code></div></Card>
     </div>}
-    {(tab === "semantic" || tab === "episodic") && <div className="memory-search"><Search size={14} /><input value={query} onChange={(event) => { setQuery(event.target.value); if (!event.target.value) setSemanticResults(null); }} onKeyDown={(event) => { if (event.key === "Enter") void search(); }} placeholder={tab === "episodic" ? "留空返回最近 Session，或按当前模式检索" : "按当前检索模式搜索"} /><button className="ghost-action" onClick={() => void search()}>{tab === "episodic" && !query.trim() ? "最近 Session" : "搜索"}</button>{tab === "semantic" && <button className="primary-action" onClick={() => createSemantic(mutate)}>新建</button>}</div>}
+    {(tab === "semantic" || tab === "episodic") && <div className="memory-search"><Search size={15} /><Input value={query} onChange={(event) => { setQuery(event.target.value); if (!event.target.value) setSemanticResults(null); }} onKeyDown={(event) => { if (event.key === "Enter") void search(); }} placeholder={tab === "episodic" ? "留空返回最近 Session，或按当前模式检索" : "按当前检索模式搜索"} /><Button variant="outline" onClick={() => void search()}>{tab === "episodic" && !query.trim() ? "最近 Session" : "搜索"}</Button>{tab === "semantic" && <Button onClick={() => createSemantic(mutate)}>新建</Button>}</div>}
     {tab === "semantic" && <div className="memory-list">{semantic.map((item) => <SemanticCard key={item.id} item={item} mutate={mutate} />)}</div>}
     {tab === "episodic" && <div className="memory-list">
       {!recall && <div className="panel loading-panel">输入查询验证真实 Session Recall；留空可查看最近活跃 Session。</div>}
       {recall && <div className="memory-message">{recall.retrievalMode} · 返回 {recall.returnedSessionCount}/{recall.requestedLimit} 个 Session{recall.truncated ? " · 截断或省略 " + recall.droppedSessionCount + " 个" : ""}</div>}
       {recall?.sessions.map((result) => <RecallCard key={result.session.id} result={result} read={read} />)}
     </div>}
-    {tab === "procedural" && <section className="panel procedural-editor"><div className="panel-header"><span><FileText size={15} /> System Prompt</span><code>.everything/EVERYTHING.md</code></div><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} /><button className="primary-action" onClick={() => void saveSystemPrompt(prompt).then(() => setMessage("EVERYTHING.md 已保存"))}>保存 Procedural Memory</button></section>}
+    {tab === "procedural" && <Card className="procedural-editor"><div className="panel-header"><span><FileText size={15} /> System Prompt</span><code>.everything/EVERYTHING.md</code></div><Textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} /><Button onClick={() => void saveSystemPrompt(prompt).then(() => setMessage("EVERYTHING.md 已保存"))}>保存 Procedural Memory</Button></Card>}
     {tab === "chat" && (<div className="panel table-scroll"><table><thead><tr><th>ID</th><th>Session ID</th><th>Run ID</th><th>Role</th><th>Kind</th><th>内容</th><th>时间</th></tr></thead><tbody>{data.chatLog.map((item) => (<tr key={item.id}><td>{item.id}</td><td><code>{short(item.sessionId)}</code></td><td><code>{short(item.runId)}</code></td><td>{item.role}</td><td>{item.kind}</td><td><pre>{contentText(item.content)}</pre></td><td>{local(item.createdAt)}</td></tr>))}</tbody></table></div>)}
-    {tab === "consolidation" && <div className="panel table-scroll"><table><thead><tr><th>Status</th><th>Run ID</th><th>Trigger</th><th>批次 / 未解决冲突</th><th>Facts</th><th>时间</th></tr></thead><tbody>{data.consolidations.map((item) => <tr key={item.id}><td><span className={"status-pill " + item.status}>{item.status}</span>{item.errorType && <small>{item.errorType}</small>}</td><td><code>{short(item.runId)}</code></td><td>{item.trigger}</td><td>{item.completedBatches} / {item.totalBatches} · 冲突 {item.unresolvedConflicts}</td><td>新增 {item.factsCreated} / 更新 {item.factsUpdated} / 删除 {item.factsDeleted} / 合并 {item.factsMerged} / 跳过 {item.factsSkipped}</td><td>{local(item.startedAt)}</td></tr>)}</tbody></table></div>}
+    {tab === "consolidation" && <div className="panel table-scroll"><table><thead><tr><th>Status</th><th>Run ID</th><th>Trigger</th><th>批次 / 未解决冲突</th><th>Facts</th><th>时间</th></tr></thead><tbody>{data.consolidations.map((item) => <tr key={item.id}><td><Badge variant={item.status === "completed" ? "success" : item.status === "failed" ? "destructive" : "outline"}>{item.status}</Badge>{item.errorType && <small>{item.errorType}</small>}</td><td><code>{short(item.runId)}</code></td><td>{item.trigger}</td><td>{item.completedBatches} / {item.totalBatches} · 冲突 {item.unresolvedConflicts}</td><td>新增 {item.factsCreated} / 更新 {item.factsUpdated} / 删除 {item.factsDeleted} / 合并 {item.factsMerged} / 跳过 {item.factsSkipped}</td><td>{local(item.startedAt)}</td></tr>)}</tbody></table></div>}
   </div>;
 }
 
@@ -111,7 +116,7 @@ function retrievalScoreLabel(result: SessionRecallResult): string {
   if (signals.bm25 !== undefined) return `BM25 ${signals.bm25.toFixed(3)}`;
   return "recent";
 }
-function Metric({ label, value }: { label: string; value: number }) { return <div className="panel metric-card"><span>{label}</span><strong>{value}</strong></div> }
+function Metric({ label, value }: { label: string; value: number }) { return <Card className="metric-card"><span>{label}</span><strong>{value}</strong></Card> }
 function SemanticCard({ item, mutate }: { item: SemanticMemory; mutate(action: Record<string, unknown>): Promise<void> }) {
   return <article className="panel memory-card"><div><span className="memory-id">Semantic #{item.id}</span><strong>{item.subject}</strong><p>{item.content}</p><small>{item.source} · 创建 {local(item.createdAt)} · 更新 {local(item.updatedAt)}</small></div><div><button onClick={() => editSemantic(item, mutate)}>编辑</button><button className="danger" onClick={() => window.confirm("确认彻底删除这条记忆？") && void mutate({ action: "delete_semantic", id: item.id })}><Trash2 size={13} /></button></div></article>;
 }
