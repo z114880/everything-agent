@@ -3,12 +3,20 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const buttonSource = fileURLToPath(new URL("../src/components/ui/button.tsx", import.meta.url));
+const textareaSource = fileURLToPath(new URL("../src/components/ui/textarea.tsx", import.meta.url));
 const styleSheet = fileURLToPath(new URL("../src/index.css", import.meta.url));
 const pageHeadingSource = fileURLToPath(new URL("../src/components/PageHeading.tsx", import.meta.url));
 const pageSources = ["App.tsx", "components/AgentPage.tsx", "components/ConfigPage.tsx", "components/DatabasePage.tsx", "components/MemoryPage.tsx", "components/SkillsPage.tsx", "components/TracePage.tsx"]
   .map((path) => fileURLToPath(new URL(`../src/${path}`, import.meta.url)));
 
 describe("管理页面视觉一致性", () => {
+  it("文本输入区域不绘制 textarea 外部聚焦轮廓", async () => {
+    const textarea = await readFile(textareaSource, "utf8");
+
+    expect(textarea).toContain("outline-none");
+    expect(textarea).not.toMatch(/focus-visible:ring(?:-|\b)/);
+  });
+
   it("统一页面标题层级，并让标准与危险操作按钮使用实心底色", async () => {
     const [buttons, styles, pageHeading] = await Promise.all([
       readFile(buttonSource, "utf8"),
