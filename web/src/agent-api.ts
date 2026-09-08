@@ -139,6 +139,21 @@ export interface AgentSkill {
   path: string;
 }
 
+export interface AgentTool {
+  name: string;
+  description: string;
+  origin: "内置" | "Tavily";
+  enabled: boolean;
+  configurable: boolean;
+  configured: boolean;
+  configurationLabel?: string;
+}
+
+export interface ToolsCatalog {
+  tools: AgentTool[];
+  tavily: { keyConfigured: boolean; keyLast4: string };
+}
+
 export interface DatabaseColumn {
   name: string;
   type: string;
@@ -310,6 +325,25 @@ export function deleteSkill(name: string): Promise<{ ok: true }> {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
+  });
+}
+
+/** 读取 Agent 当前工具目录；外部凭证只返回状态和末四位。 */
+export function loadTools(): Promise<ToolsCatalog> {
+  return requestJson(`${endpoint}/tools`);
+}
+
+/** 保存工具开关和 Tavily 配置，下一回合立即生效。 */
+export function saveTools(value: {
+  getCurrentTimeEnabled: boolean;
+  searchWebEnabled: boolean;
+  tavilyApiKey: string;
+  clearTavilyApiKey: boolean;
+}): Promise<{ ok: true } & ToolsCatalog> {
+  return requestJson(`${endpoint}/tools`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(value),
   });
 }
 

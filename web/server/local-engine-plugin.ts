@@ -24,6 +24,8 @@ import {
   loadSkills,
   saveSkill,
   deleteSkill,
+  loadTools,
+  saveTools,
 } from "./agent-service.ts";
 import { executeDatabaseSql, loadDatabaseDashboard } from "./database-service.ts";
 
@@ -217,6 +219,16 @@ async function handleAgentRequest(
   if (request.method === "DELETE" && pathname === `${agentApiPrefix}/skills`) {
     await deleteSkill(await readJsonBody(request));
     sendJson(response, 200, { ok: true });
+    return;
+  }
+
+  if (request.method === "GET" && pathname === `${agentApiPrefix}/tools`) {
+    sendJson(response, 200, await loadTools());
+    return;
+  }
+
+  if (request.method === "PUT" && pathname === `${agentApiPrefix}/tools`) {
+    sendJson(response, 200, { ok: true, ...await saveTools(await readJsonBody(request)) });
     return;
   }
 

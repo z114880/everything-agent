@@ -40,6 +40,21 @@ export function deleteSkill(body: Record<string, unknown>) {
   return runtime.deleteSkill(requiredText(body.name, "Skill Name", 200));
 }
 
+/** 读取脱敏后的工具目录与配置状态。 */
+export function loadTools() {
+  return runtime.getTools();
+}
+
+/** 只允许修改可配置工具的开关与 Tavily 凭证。 */
+export function saveTools(body: Record<string, unknown>) {
+  return runtime.saveToolSettings({
+    getCurrentTimeEnabled: requiredBoolean(body.getCurrentTimeEnabled, "get_current_time enabled"),
+    searchWebEnabled: requiredBoolean(body.searchWebEnabled, "search_web enabled"),
+    tavilyApiKey: optionalText(body.tavilyApiKey, "Tavily API Key", 10_000),
+    clearTavilyApiKey: body.clearTavilyApiKey === true,
+  });
+}
+
 /** 确保本地数据库 Schema 已初始化，供独立管理页面复用。 */
 export async function startLocalAgent(): Promise<void> {
   await runtime.start();
@@ -157,6 +172,11 @@ function optionalText(value: unknown, field: string, maxLength: number): string 
     throw new TypeError(`${field} 必须是小于 ${maxLength} 字符的字符串`);
   }
   return value.trim();
+}
+
+function requiredBoolean(value: unknown, field: string): boolean {
+  if (typeof value !== "boolean") throw new TypeError(`${field} 必须是布尔值`);
+  return value;
 }
 
 

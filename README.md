@@ -27,6 +27,7 @@ pnpm run example
 - **Workflow**：枚举 `src/workflows/` 下的 TypeScript 文件，可编辑和执行任一工作流。拓扑来自真实 `Graph.describe()`，执行由本地 Node.js 进程调用 `runGraph()`。
 - **Memory**：通过 Overview、Semantic、Session Recall、Procedural、Chat Log 和 Consolidation 查看本地记忆与真实历史检索窗口。Session Recall 结果按消息分段展示，结构化内容保留缩进、正文换行；查询留空可查看最近活跃会话。
 - **Skills**：新建、编辑、重命名和删除 `.everything/skills/<skill-name>/SKILL.md`。每轮 Agent 只注入 Skill 名称与描述，需要使用时通过受控 `read_skill` 工具加载正文；目录发现、加载和工具调用均进入 observer 与 JSONL trace。
+- **Tools**：按来源展示 Agent 的真实工具目录。`manage_memory`、`session_search`、`session_read` 与 `read_skill` 固定启用；`get_current_time` 和 Tavily `search_web` 可独立启停。Tavily 密钥写入根目录 `.env`，浏览器只读取配置状态和末四位。
 - **Database**：列出 `.everything/database/state.db` 的全部普通表、字段类型、行数和最多 200 条最新数据，不展示 SQLite 内部表、FTS5 虚拟表及其索引中间表。SQL Console 支持单条 `SELECT`、只读 `WITH`、`INSERT`、`UPDATE` 和 `DELETE`；数据写操作执行前必须在页面二次确认，DDL 始终禁止。
 - **运行记录**：只读列出 `.everything/traces/<日期>/<序号>-<sessionId>.jsonl` 中的 classic loop 与 memory 执行事实，页面按 JSONL 文件直接展示已脱敏事件，不额外推导 Session 或 Agent 回合结构。trace 不记录 Session 创建、选择，以及 Memory 页面手动搜索记忆或历史会话这类 UI 活动；Agent 内部检索仍记录执行事件。“配置”页面提供带二次确认的“清除全部数据”，可删除数据库、Session、Memory 与 trace，保留 `.everything/EVERYTHING.md`、`.everything/skills` 和 `.env` 配置。
 - **配置**：Agent Model 与 Small Model 各自拥有独立的 Provider、Model、Base URL 和 API Key；Session Recall 预算、Context Limit 等运行参数同样写入根目录 `.env`，System Prompt 保存到 `.everything/EVERYTHING.md`。浏览器只能读取各密钥是否存在及末四位。
@@ -47,6 +48,9 @@ EVERYTHING_SESSION_SCROLL_STEP="10"
 EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT="100"
 EVERYTHING_SESSION_RECALL_TOKEN_LIMIT="8192"
 EVERYTHING_MODEL_CONTEXT_WINDOW="32768"
+EVERYTHING_TOOL_GET_CURRENT_TIME_ENABLED="true"
+EVERYTHING_TOOL_SEARCH_WEB_ENABLED="false"
+TAVILY_API_KEY=""
 ```
 
 Agent Model 用于主 Agent 推理、工具调用、记忆写入和 consolidation；Small Model 仅用于 retrieval gate，两者不会互相回退或复用连接。`pnpm run dev:web` 同时启动页面与本地 Engine/Agent 桥接接口；浏览器不会执行工作流源码，也不会读取完整模型密钥。修改任一连接的新密钥、Provider 或 Base URL 时，服务端会先对该连接进行只读测试；失败不会覆盖旧配置，除非用户显式选择“仍然保存”。`.env` 已被 Git 忽略，不应提交。`pnpm run build:web` 可验证并构建浏览器静态资源到 `dist-web/`，但执行仍需要本地开发服务器。
@@ -76,7 +80,7 @@ Everything Agent 的目标是构建一个真正可长期使用的个人助理 Ag
 | 执行事件 | 基础能力完成 | observer 可接收生命周期、真实 wave 及节点自定义事件 |
 | Agent Loop | 基础能力完成 | 支持模型推理、工具调用、结果观察、流式文本、迭代限制、超时和取消 |
 | 模型客户端 | 基础能力完成 | 支持 Anthropic Messages 与 OpenAI Compatible，包含普通响应、SSE 流式响应和降级 |
-| Tool Registry | 基础能力完成 | 注册 `get_current_time`、Semantic-only `manage_memory`、只读 `session_search` 与 `session_read` |
+| Tool Registry | 基础能力完成 | 固定注册记忆、会话召回与 Skill 工具；支持可配置的 `get_current_time` 和 Tavily `search_web`，Tools 页面开关下一回合生效 |
 | Session / Memory | 基础闭环完成 | SQLite Session、结构化 Chat Log、消息级 FTS5 + BM25 Session Recall、基于 RetrievalIntent 的 gated retrieval；聊天异步记忆写入；每日与手动全量 semantic facts 整理 |
 | Graph 前端 | 本地闭环完成 | 浏览器读写本地 TypeScript 工作流，消费真实 describe 与 observer 事件，并展示 wave、耗时和结果 |
 | Agent Harness 前端 | 基础闭环完成 | 真实 Agent Loop、动态 SVG、流式 Reply、持久多轮 Session、停止与 60 秒超时 |

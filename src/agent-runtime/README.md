@@ -59,6 +59,7 @@ try {
 - `getSettings()`、`saveAgentSettings(input)`、密钥清除与预算重置方法：管理配置，返回不含完整密钥的配置快照。
 - `readSystemPrompt()`、`saveSystemPrompt(text)`：读写本地规则；首次读取时可从指定默认文件初始化。
 - `listSkills()`、`saveSkill(input)`、`deleteSkill(name)`：管理 `.everything/skills/<name>/SKILL.md`；名称受限，写入采用临时文件加 rename，重命名保留目录中的配套资源。
+- `getTools()`、`saveToolSettings(input)`：读取脱敏工具目录并保存可配置工具开关。`TAVILY_API_KEY` 只保存在 `.env`，公开目录仅返回是否配置及末四位；下一回合重新读取配置。
 - `rebuildEmbeddingIndex()`、`cancelEmbeddingIndexRebuild()`：维护影子索引，退出重建时恢复正常检索配置。
 - `clearLocalAgentData()`：停止取后台任务、等待在途处理、刷新 trace 并关闭资源，再清理数据，保留 `EVERYTHING.md`、`skills/` 和 `.env` 配置。调用方负责取得用户确认。
 - `close()`：等待后台任务与 trace 落盘并关闭资源；活动回合、数据清理或索引重建期间拒绝关闭。关闭后不允许重新创建资源。
@@ -73,7 +74,7 @@ try {
 
 ## 本地配置
 
-`local-config.ts` 负责文件持久化。读取时合并允许的进程环境字段与配置文件，文件优先；写入采用临时文件加 rename，不修改 `process.env`。清除密钥时持久化空值，防止下次读取重新继承环境密钥。只更新指定字段、保留无关配置与注释，并折叠被更新字段的重复定义。
+`local-config.ts` 负责文件持久化。读取时合并允许的进程环境字段与配置文件，文件优先；写入采用临时文件加 rename，不修改 `process.env`。清除密钥时持久化空值，防止下次读取重新继承环境密钥。只更新指定字段、保留无关配置与注释，并折叠被更新字段的重复定义。工具设置使用 `EVERYTHING_TOOL_GET_CURRENT_TIME_ENABLED`、`EVERYTHING_TOOL_SEARCH_WEB_ENABLED` 和 `TAVILY_API_KEY`；没有密钥时拒绝启用 `search_web`。
 
 Web 的请求校验、Memory action 字符串分发、bootstrap/dashboard 数据和清理确认检查保留在 `web/server/agent-service.ts`。目前尚未提供 CLI 交互入口，但宿主可以直接调用本模块执行回合。
 

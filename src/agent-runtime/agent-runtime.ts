@@ -15,6 +15,8 @@ import { createRuntimeClient } from "./integrations/model.ts";
 import { configureMemoryRuntime, recallSettings } from "./integrations/memory.ts";
 import { publicToolEvent } from "./events/tool-events.ts";
 import { formatSkillCatalog, SkillStore } from "../skills/index.ts";
+import { createToolSettings } from "../tools/tool-settings.ts";
+import type { ToolSettingsInput } from "../tools/tool-settings.ts";
 import type { AgentRunInput, AgentRunOptions, AgentRunResult } from "./types.ts";
 
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -25,6 +27,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
   const config = createLocalConfig(paths);
   const { readSystemPrompt } = config;
   const settingsStore = createRuntimeSettings(config);
+  const toolSettingsStore = createToolSettings(config);
   const loadRuntimeSettings = settingsStore.load;
   let closed = false;
   let memoryRuntime: MemoryRuntime | null = null;
@@ -103,6 +106,13 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
     return systemPrompt.trimEnd();
   }
 
+  /** 保存可配置工具的启用状态与凭证，并返回脱敏后的完整目录。 */
+  async function saveToolSettings(input: ToolSettingsInput) {
+    assertOpen();
+    await toolSettingsStore.save(input);
+    return toolSettingsStore.publicCatalog();
+  }
+
   /** 执行一次真实 Agent 回合，并通过 observer 流式暴露可观察事件。 */
   async function runLocalAgent(
     input: AgentRunInput,
@@ -113,6 +123,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
     const prompt = requiredText(input.prompt, "User Prompt", 40_000);
     const sessionId = requiredText(input.sessionId, "Session ID", 200);
     const settings = await loadRuntimeSettings();
+    const toolSettings = await toolSettingsStore.load();
     assertModelConnectionConfigured(settings.agentModel, "Agent Model");
     assertModelConnectionConfigured(settings.smallModel, "Small Model");
 
@@ -201,7 +212,11 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
           }), {
             currentSessionId: sessionId,
             settings: recallSettings(settings, tokenEstimator),
-          }, skills),
+          }, skills, {
+            getCurrentTimeEnabled: toolSettings.getCurrentTimeEnabled,
+            searchWebEnabled: toolSettings.searchWebEnabled,
+            tavilyApiKey: toolSettings.tavilyApiKey,
+          }),
           maxIterations: 10,
           timeoutMs: DEFAULT_TIMEOUT_MS,
           stream: true,
@@ -388,9 +403,11 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
     },
     saveAgentSettings, clearModelApiKey, clearEmbeddingApiKey, resetRuntimeSettings,
     rebuildEmbeddingIndex, cancelEmbeddingIndexRebuild, saveSystemPrompt,
+    saveToolSettings,
     clearLocalAgentData, readTraces,
     readSystemPrompt,
     listSkills, saveSkill, deleteSkill,
+    getTools() { assertOpen(); return toolSettingsStore.publicCatalog(); },
     async getSettings() { return publicSettings(await loadRuntimeSettings(), getMemoryRuntime()); },
     async start() {
       assertOpen();

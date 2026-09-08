@@ -104,6 +104,23 @@ describe("个人助理 Runtime", () => {
     expect(events.every(({ event }) => event.runId === result.runId && event.sessionId === session.id)).toBe(true);
   });
 
+  it("每个新回合按最新配置向模型公开可用工具", async () => {
+    const runtime = await setup();
+    await runtime.saveToolSettings({ getCurrentTimeEnabled: false, searchWebEnabled: true, tavilyApiKey: "tvly-secret" });
+    const session = await runtime.createSession();
+    const toolNames: string[][] = [];
+    create.mockImplementation(async (request) => {
+      if (!Array.isArray(request.tools) || request.tools.length === 0) return response('{"intent":"none"}');
+      toolNames.push(request.tools.map((tool: { name: string }) => tool.name));
+      return response("完成");
+    });
+
+    await runtime.run({ sessionId: session.id, prompt: "搜索最新消息" }, options());
+
+    expect(toolNames[0]).toEqual(expect.arrayContaining(["manage_memory", "session_search", "session_read", "read_skill", "search_web"]));
+    expect(toolNames[0]).not.toContain("get_current_time");
+  });
+
   it("每轮发现最新 Skills，并通过 read_skill 按需加载正文和记录事件", async () => {
     const runtime = await setup();
     await runtime.saveSkill({ name: "daily-plan", description: "规划当天任务", instructions: "先列出三件要事" });
@@ -217,6 +234,33 @@ describe("Runtime 配置与维护", () => {
     expect(await runtime.readTraces()).toEqual(expect.any(Array));
     await runtime.start();
     await runtime.start();
+  });
+
+  it("保存工具开关与 Tavily 密钥，并且公开结果不泄露凭证", async () => {
+    const runtime = await setup();
+    const catalog = await runtime.saveToolSettings({
+      getCurrentTimeEnabled: false,
+      searchWebEnabled: true,
+      tavilyApiKey: "tvly-runtime-secret",
+    });
+    expect(catalog.tools.find((tool) => tool.name === "get_current_time")).toMatchObject({ enabled: false, configurable: true });
+    expect(catalog.tools.find((tool) => tool.name === "manage_memory")).toMatchObject({ enabled: true, configurable: false });
+    expect(catalog.tools.find((tool) => tool.name === "search_web")).toMatchObject({ enabled: true, configured: true });
+    expect(catalog.tavily).toEqual({ keyConfigured: true, keyLast4: "cret" });
+    expect(JSON.stringify(catalog)).not.toContain("tvly-runtime-secret");
+    const env = await readFile(join(homes.at(-1)!, ".env"), "utf8");
+    expect(env).toContain('EVERYTHING_TOOL_GET_CURRENT_TIME_ENABLED="false"');
+    expect(env).toContain('EVERYTHING_TOOL_SEARCH_WEB_ENABLED="true"');
+    expect(env).toContain('TAVILY_API_KEY="tvly-runtime-secret"');
+
+    const cleared = await runtime.saveToolSettings({ getCurrentTimeEnabled: true, searchWebEnabled: false, clearTavilyApiKey: true });
+    expect(cleared.tavily.keyConfigured).toBe(false);
+    expect(await readFile(join(homes.at(-1)!, ".env"), "utf8")).toContain('TAVILY_API_KEY=""');
+  });
+
+  it("没有 Tavily 密钥时拒绝启用 search_web", async () => {
+    const runtime = await setup();
+    await expect(runtime.saveToolSettings({ getCurrentTimeEnabled: true, searchWebEnabled: true })).rejects.toThrow("必须配置 Tavily API Key");
   });
 
   it("探测模型连接，失败时允许显式强制保存并隐藏密钥", async () => {

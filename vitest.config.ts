@@ -14,6 +14,8 @@ export default defineConfig({
         "src/skills/**/*.ts",
         "src/tools/manage-memory.ts",
         "src/tools/tool-registry.ts",
+        "src/tools/tavily-search.ts",
+        "src/tools/tool-settings.ts",
         "src/tracing/**/*.ts",
         "src/index.ts",
       ],

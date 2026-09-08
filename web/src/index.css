@@ -424,6 +424,33 @@ button { cursor: pointer; }
 
 /* Skills：左侧目录负责选择，右侧编辑器直接映射 SKILL.md。 */
 .skills-message { display: flex; align-items: center; margin-bottom: 14px; border-radius: 8px; background: var(--good-soft); padding: 9px 11px; color: #287653; font-size: 11px; }
+.tools-page code { font-family: var(--font-mono); font-size: .92em; }
+.tools-message { margin: 0 0 14px; border-radius: 8px; background: var(--good-soft); padding: 9px 11px; color: #287653; font-size: 11px; }
+.tools-page > .error-message { margin: 0 0 14px; }
+.tools-loading { display: grid; min-height: 240px; place-items: center; color: var(--muted); font-size: 12px; }
+.tools-section { margin-top: 22px; }
+.tools-section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 10px; }
+.tools-section-heading h2 { margin: 0; font-size: 15px; }
+.tools-section-heading p { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
+.tools-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.tool-card { min-width: 0; transition: border-color .15s ease, opacity .15s ease; }
+.tool-card.disabled { opacity: .68; }
+.tool-card-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 12px; padding: 16px 17px 12px; }
+.tool-card-header h3 { font-size: 13px; }
+.tool-card-header p { margin-top: 6px; font-size: 11px; line-height: 1.55; }
+.tool-card-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 9px; background: var(--accent-soft); color: var(--accent); }
+.tool-lock { margin: 7px 3px 0 0; color: var(--muted); }
+.tool-switch { position: relative; width: 34px; height: 19px; margin-top: 6px; border: 0; border-radius: 999px; background: var(--line-strong); padding: 0; transition: background .15s ease; }
+.tool-switch[aria-checked="true"] { background: var(--accent); }
+.tool-switch span { position: absolute; top: 3px; left: 3px; width: 13px; height: 13px; border-radius: 50%; background: white; box-shadow: 0 1px 3px rgb(0 0 0 / .2); transition: transform .15s ease; }
+.tool-switch[aria-checked="true"] span { transform: translateX(15px); }
+.tool-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line); padding: 10px 17px 12px; }
+.tool-card-footer > span { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 10px; }
+.tavily-config-card { margin-top: 22px; overflow: hidden; }
+.tavily-config-body { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 18px; padding: 18px 20px 20px; }
+.tavily-config-actions { display: flex; align-items: center; gap: 12px; padding-bottom: 1px; }
+.tavily-config-actions a { color: var(--accent); font-size: 11px; text-decoration: none; }
+.tavily-config-actions a:hover { text-decoration: underline; }
 .skills-page > .error-message { margin: 0 0 14px; }
 .skills-layout { display: grid; grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); gap: 14px; align-items: stretch; min-height: 610px; }
 .skills-list-panel, .skill-editor-panel { min-width: 0; overflow: hidden; }
@@ -451,6 +478,8 @@ button { cursor: pointer; }
 
 @media (max-width: 760px) {
   .skills-layout { grid-template-columns: 1fr; }
+  .tools-grid { grid-template-columns: 1fr; }
+  .tavily-config-body { align-items: stretch; grid-template-columns: 1fr; }
   .skills-list-panel { max-height: 260px; }
   .skill-editor-actions { flex-wrap: wrap; }
 }
