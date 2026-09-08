@@ -384,13 +384,27 @@ export function databaseSqlNeedsConfirmation(sql: string): boolean {
   return /^(insert|update|delete)\b/.test(statement);
 }
 
-/** 清除所有本地 Agent 运行数据；服务端保留 EVERYTHING.md、Skills 和 .env。 */
-export function clearAllAgentData(): Promise<{ ok: true; cleared: true }> {
-  return requestJson(`${endpoint}/clear-data`, {
+/** 清除所有本地 Agent 运行数据；已配置 Embedding 时随后建立新的空索引。 */
+export async function clearAllAgentData(rebuildEmbeddings = false): Promise<{
+  ok: true;
+  cleared: true;
+  embeddingRebuild: Awaited<ReturnType<typeof rebuildEmbeddingIndex>> | null;
+}> {
+  const cleared = await requestJson<{ ok: true; cleared: true }>(`${endpoint}/clear-data`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ confirmation: "DELETE_ALL_LOCAL_DATA" }),
   });
+  let embeddingRebuild: Awaited<ReturnType<typeof rebuildEmbeddingIndex>> | null = null;
+  if (rebuildEmbeddings) {
+    try {
+      embeddingRebuild = await rebuildEmbeddingIndex();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`本地数据已清理，但自动重建向量索引失败：${message}`, { cause: error });
+    }
+  }
+  return { ...cleared, embeddingRebuild };
 }
 
 /** 执行一次 Agent 回合并消费服务端 NDJSON observer 事件。 */

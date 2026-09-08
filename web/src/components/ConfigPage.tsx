@@ -170,11 +170,21 @@ export function ConfigPage() {
   }
 
   async function clearAllData() {
+    const shouldRebuildEmbeddings = Boolean(
+      settings?.embeddingKeyConfigured && settings.embeddingBaseUrl && settings.embeddingModel,
+    );
     setClearingData(true);
-    setClearMessage("正在清理本地数据…");
+    setClearMessage(shouldRebuildEmbeddings
+      ? "正在清理本地数据，完成后将自动重建向量索引…"
+      : "正在清理本地数据…");
     try {
-      await clearAllAgentData();
-      setClearMessage("清理完成。数据库、会话、记忆和运行记录已删除，EVERYTHING.md、Skills 和 .env 配置已保留。");
+      const result = await clearAllAgentData(shouldRebuildEmbeddings);
+      if (result.embeddingRebuild) {
+        setSettings(result.embeddingRebuild.settings);
+        setClearMessage(`清理完成，向量索引已自动重建并原子激活，共 ${result.embeddingRebuild.result.chunkCount} 个 chunks。EVERYTHING.md、Skills 和 .env 配置已保留。`);
+      } else {
+        setClearMessage("清理完成。数据库、会话、记忆和运行记录已删除，EVERYTHING.md、Skills 和 .env 配置已保留。");
+      }
     } catch (error) {
       setClearMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -299,7 +309,7 @@ export function ConfigPage() {
               <div className="config-index-action">
                 {rebuildingEmbedding
                   ? <Button variant="destructive-outline" size="sm" onClick={() => void cancelRebuild()}><Trash2 size={14} />取消重建</Button>
-                  : <Button size="sm" onClick={() => void rebuildEmbeddings()} disabled={!settings?.embeddingKeyConfigured || !embeddingModel}><RotateCcw size={14} />重建索引</Button>}
+                  : <Button size="sm" onClick={() => void rebuildEmbeddings()} disabled={clearingData || !settings?.embeddingKeyConfigured || !embeddingModel}><RotateCcw size={14} />重建索引</Button>}
               </div>
             </div>
             <div className="config-card-actions"><Button onClick={() => void saveSection("retrieval")} disabled={savingSection !== null || !settings || embeddingMinimumSimilarity === ""}><Save size={14} />{savingSection === "retrieval" ? "正在保存…" : "保存检索配置"}</Button>{settings?.embeddingKeyConfigured && <EmbeddingKeyClearDialog onConfirm={() => void clearSavedEmbeddingKey()} />}</div>
@@ -365,5 +375,5 @@ function EmbeddingKeyClearDialog({ onConfirm }: { onConfirm(): void }) {
   return <AlertDialog><AlertDialogTrigger asChild><Button variant="destructive-outline" size="sm"><Trash2 size={14} />清除 API Key</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>清除 Embedding API Key？</AlertDialogTitle><AlertDialogDescription>检索模式将回到 FTS5 + BM25。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction onClick={onConfirm}>确认清除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>;
 }
 function AllDataClearDialog({ disabled, onConfirm }: { disabled: boolean; onConfirm(): void }) {
-  return <AlertDialog><AlertDialogTrigger asChild><Button variant="destructive-outline" disabled={disabled}><Trash2 size={14} />{disabled ? "正在清理…" : "清除全部数据"}</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>永久清除全部本地数据？</AlertDialogTitle><AlertDialogDescription>数据库、会话、记忆、索引和运行记录都会被删除。EVERYTHING.md、Skills 与 .env 配置将保留。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction onClick={onConfirm}>确认永久删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>;
+  return <AlertDialog><AlertDialogTrigger asChild><Button variant="destructive-outline" disabled={disabled}><Trash2 size={14} />{disabled ? "正在清理…" : "清除全部数据"}</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>永久清除全部本地数据？</AlertDialogTitle><AlertDialogDescription>数据库、会话、记忆、索引和运行记录都会被删除。EVERYTHING.md、Skills 与 .env 配置将保留；如已完整配置 Embedding，清理后会自动重建向量索引。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction onClick={onConfirm}>确认永久删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>;
 }
