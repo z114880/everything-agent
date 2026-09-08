@@ -132,6 +132,43 @@ export interface TraceDashboard {
   files: TraceFile[];
 }
 
+export interface AgentSkill {
+  name: string;
+  description: string;
+  instructions: string;
+  path: string;
+}
+
+export interface DatabaseColumn {
+  name: string;
+  type: string;
+  notNull: boolean;
+  primaryKey: boolean;
+  defaultValue: unknown;
+}
+
+export interface DatabaseTable {
+  name: string;
+  count: number;
+  columns: DatabaseColumn[];
+  rows: unknown[][];
+}
+
+export interface DatabaseDashboard {
+  path: string;
+  size: number;
+  tables: DatabaseTable[];
+}
+
+export interface DatabaseQueryResult {
+  kind: "read" | "write";
+  columns: string[];
+  rows: unknown[][];
+  truncated: boolean;
+  changes: number;
+  lastInsertRowid: number | string | null;
+}
+
 export interface ClientHistoryMessage {
   role: "user" | "assistant";
   content: string;
@@ -248,6 +285,34 @@ export function saveSystemPrompt(systemPrompt: string): Promise<{ ok: true; syst
   });
 }
 
+/** 读取 `.everything/skills` 中的全部有效 Skill。 */
+export function loadSkills(): Promise<{ skills: AgentSkill[] }> {
+  return requestJson(`${endpoint}/skills`);
+}
+
+/** 新建、编辑或重命名一个 Skill。 */
+export function saveSkill(value: {
+  originalName?: string;
+  name: string;
+  description: string;
+  instructions: string;
+}): Promise<{ ok: true; skill: AgentSkill }> {
+  return requestJson(`${endpoint}/skills`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(value),
+  });
+}
+
+/** 永久删除 Skill 目录及其中的配套资源。 */
+export function deleteSkill(name: string): Promise<{ ok: true }> {
+  return requestJson(`${endpoint}/skills`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
 export function loadMemory(): Promise<MemoryDashboard> {
   return requestJson(`${endpoint}/memory`);
 }
@@ -265,7 +330,27 @@ export function loadTraces(): Promise<TraceDashboard> {
   return requestJson(`${endpoint}/traces`);
 }
 
-/** 清除所有本地 Agent 数据；服务端只保留 EVERYTHING.md。 */
+/** 读取 state.db 中排除索引中间表后的普通表。 */
+export function loadDatabase(): Promise<DatabaseDashboard> {
+  return requestJson(`${endpoint}/database`);
+}
+
+/** 执行 SQL；数据写操作仅在页面完成二次确认后携带确认令牌。 */
+export function runDatabaseSql(sql: string, confirmed = false): Promise<DatabaseQueryResult> {
+  return requestJson(`${endpoint}/database/query`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sql, confirmation: confirmed ? "CONFIRM_DATABASE_WRITE" : undefined }),
+  });
+}
+
+/** 判断页面是否需要在提交 SQL 前展示写操作确认框。 */
+export function databaseSqlNeedsConfirmation(sql: string): boolean {
+  const statement = sql.replace(/^(?:\s|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)+/, "").toLowerCase();
+  return /^(insert|update|delete)\b/.test(statement);
+}
+
+/** 清除所有本地 Agent 运行数据；服务端保留 EVERYTHING.md、Skills 和 .env。 */
 export function clearAllAgentData(): Promise<{ ok: true; cleared: true }> {
   return requestJson(`${endpoint}/clear-data`, {
     method: "POST",

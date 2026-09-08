@@ -38,6 +38,10 @@
     "./agent-runtime": {
       "types": "./src/agent-runtime/index.ts",
       "default": "./src/agent-runtime/index.ts"
+    },
+    "./skills": {
+      "types": "./src/skills/index.ts",
+      "default": "./src/skills/index.ts"
     }
   },
   "scripts": {

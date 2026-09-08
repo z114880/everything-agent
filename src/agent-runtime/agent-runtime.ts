@@ -14,6 +14,7 @@ import { createRuntimeSettings, publicSettings } from "./configuration/settings.
 import { createRuntimeClient } from "./integrations/model.ts";
 import { configureMemoryRuntime, recallSettings } from "./integrations/memory.ts";
 import { publicToolEvent } from "./events/tool-events.ts";
+import { formatSkillCatalog, SkillStore } from "../skills/index.ts";
 import type { AgentRunInput, AgentRunOptions, AgentRunResult } from "./types.ts";
 
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -33,6 +34,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
   const backgroundObservers = new Set<AgentObserver>();
   const sessionLocks = new Map<string, Promise<void>>();
   const tokenEstimator = new RoughTokenEstimator();
+  const skills = new SkillStore(everythingHome);
   // 基础检索配置事件直接落盘；聊天与后台队列在各自执行入口发布事件。
   const recordMemoryEvent: AgentObserver = (kind, event) => getTracer().record(kind, event);
 
@@ -150,7 +152,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
           "embedding_started", "embedding_completed", "embedding_failed",
           "dense_retrieval_completed", "lexical_retrieval_completed", "rrf_completed", "mmr_completed",
           "model_request", "model_response", "model_failed", "stream_fallback",
-          "tool_started", "tool_completed", "tool_failed",
+          "tool_started", "tool_completed", "tool_failed", "skills_discovered", "skill_loaded",
         ].includes(kind) || kind.startsWith("memory_")) {
           const modelFields = kind.startsWith("model_") ? { provider: settings.agentModel.provider, model: settings.agentModel.model } : {};
           await trace.record(kind, { ...enriched, ...modelFields });
@@ -170,6 +172,8 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
         const messages: AgentMessage[] = [...history, { role: "user", content: prompt }];
         const appendedFrom = messages.length;
         const baseSystem = await readSystemPrompt();
+        const availableSkills = await skills.list();
+        const skillCatalog = formatSkillCatalog(availableSkills);
         contextMetadata = {
           historyMessageCount: history.length,
           semanticMemoryIds: retrieval.semantic.map((item) => item.id),
@@ -180,11 +184,16 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
             ? tokenEstimator.estimateText(JSON.stringify(retrieval.sessionRecall.sessions.flatMap((item) => item.entries)))
             : 0,
           sessionRecallTruncated: retrieval.sessionRecall?.truncated ?? false,
+          availableSkills: availableSkills.map((skill) => skill.name),
         };
+        await emit("skills_discovered", {
+          skills: availableSkills.map((skill) => ({ name: skill.name, description: skill.description })),
+          count: availableSkills.length,
+        });
         const result = await runAgentLoop({
           client: agentClient,
           model: settings.agentModel.model,
-          system: [baseSystem, retrieval.context].filter(Boolean).join("\n\n"),
+          system: [baseSystem, skillCatalog, retrieval.context].filter(Boolean).join("\n\n"),
           messages,
           tools: new LocalToolRegistry(memory, new ManageMemoryTool(memory, {
             client: agentClient, model: settings.agentModel.model, currentSessionId: sessionId,
@@ -192,7 +201,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
           }), {
             currentSessionId: sessionId,
             settings: recallSettings(settings, tokenEstimator),
-          }),
+          }, skills),
           maxIterations: 10,
           timeoutMs: DEFAULT_TIMEOUT_MS,
           stream: true,
@@ -247,7 +256,25 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
     return readTraceFiles(everythingHome, 2_000);
   }
 
-  /** 清除数据库、Session、Memory 与 trace，保留 EVERYTHING.md 和 .env 配置。 */
+  /** 列出可用 Skills；损坏的 SKILL.md 会阻止返回不完整目录。 */
+  async function listSkills() {
+    assertOpen();
+    return skills.list();
+  }
+
+  /** 保存或重命名 Skill，并让后续回合重新发现。 */
+  async function saveSkill(input: import("../skills/index.ts").SaveSkillInput) {
+    assertOpen();
+    return skills.save(input);
+  }
+
+  /** 删除 Skill 目录及其中的配套资源。 */
+  async function deleteSkill(name: string) {
+    assertOpen();
+    return skills.delete(name);
+  }
+
+  /** 清除数据库、Session、Memory 与 trace，保留 EVERYTHING.md、Skills 和 .env 配置。 */
   async function clearLocalAgentData(): Promise<{ cleared: true }> {
     assertOpen();
     if (dataClearing) throw new Error("本地数据正在清理");
@@ -363,6 +390,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
     rebuildEmbeddingIndex, cancelEmbeddingIndexRebuild, saveSystemPrompt,
     clearLocalAgentData, readTraces,
     readSystemPrompt,
+    listSkills, saveSkill, deleteSkill,
     async getSettings() { return publicSettings(await loadRuntimeSettings(), getMemoryRuntime()); },
     async start() {
       assertOpen();

@@ -1,5 +1,6 @@
 import { describeHarnessRetrieval, harnessEdgeLabels } from "../../src/agent-graph/harness-graph.ts";
 import { fileURLToPath, URL } from "node:url";
+import { join } from "node:path";
 import { agentHarnessGraph, createAgentRuntime } from "../../src/index.ts";
 import type { AgentObserver, AgentSettingsInput, AgentProvider, ModelConnectionInput, ModelConnectionTarget, RetrievalMode } from "../../src/index.ts";
 export { AgentConfigError } from "../../src/index.ts";
@@ -7,14 +8,42 @@ export { AgentConfigError } from "../../src/index.ts";
 // 页面手动搜索不属于 Agent 执行，显式覆盖默认 observer，避免写入 trace。
 const manualSearchObserver: AgentObserver = () => {};
 
+export const localAgentHome = fileURLToPath(new URL("../../.everything/", import.meta.url));
+export const localAgentDatabasePath = join(localAgentHome, "database", "state.db");
+
 const runtime = createAgentRuntime({
-  home: fileURLToPath(new URL("../../.everything/", import.meta.url)),
+  home: localAgentHome,
   envPath: fileURLToPath(new URL("../../.env", import.meta.url)),
   defaultSystemPromptPath: fileURLToPath(new URL("../../EVERYTHING.md", import.meta.url)),
 });
 export const { subscribeBackgroundEvents, clearEmbeddingApiKey,
   resetRuntimeSettings, rebuildEmbeddingIndex, cancelEmbeddingIndexRebuild,
 } = runtime;
+
+/** 列出 `.everything/skills` 中的可用 Skill。 */
+export function loadSkills() {
+  return runtime.listSkills();
+}
+
+/** 校验并原子保存 Skill；originalName 存在时允许重命名目录。 */
+export function saveSkill(body: Record<string, unknown>) {
+  return runtime.saveSkill({
+    originalName: body.originalName === undefined ? undefined : optionalText(body.originalName, "Original Skill Name", 200),
+    name: requiredText(body.name, "Skill Name", 200),
+    description: requiredText(body.description, "Skill Description", 500),
+    instructions: requiredText(body.instructions, "Skill Instructions", 100_000),
+  });
+}
+
+/** 删除一个 Skill 目录；调用方负责用户确认。 */
+export function deleteSkill(body: Record<string, unknown>) {
+  return runtime.deleteSkill(requiredText(body.name, "Skill Name", 200));
+}
+
+/** 确保本地数据库 Schema 已初始化，供独立管理页面复用。 */
+export async function startLocalAgent(): Promise<void> {
+  await runtime.start();
+}
 
 /** 组装 Web 首屏数据；静态拓扑来自 Graph.describe()。 */
 export async function loadAgentBootstrap(): Promise<Record<string, unknown>> {

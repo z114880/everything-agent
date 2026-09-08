@@ -4,6 +4,7 @@ import type {
   ToolRegistry,
 } from "../agent-loop/agent-loop.ts";
 import type { MemoryRuntime } from "../memory/index.ts";
+import { READ_SKILL_TOOL, ReadSkillTool, readSkillSchema, type SkillStore } from "../skills/index.ts";
 import { MANAGE_MEMORY_TOOL, ManageMemoryTool, manageMemorySchema } from "./manage-memory.ts";
 import {
   SESSION_READ_TOOL,
@@ -19,14 +20,17 @@ const TIME_TOOL = "get_current_time";
 export class LocalToolRegistry implements ToolRegistry {
   private readonly manageMemory: ManageMemoryTool | null;
   private readonly sessionRecall: SessionRecallTools | null;
+  private readonly readSkill: ReadSkillTool | null;
 
   constructor(
     memory?: MemoryRuntime,
     manageMemory?: ManageMemoryTool,
     recall?: { currentSessionId: string; settings: import("../memory/index.ts").SessionRecallSettings },
+    skills?: SkillStore,
   ) {
     this.manageMemory = manageMemory ?? (memory ? new ManageMemoryTool(memory) : null);
     this.sessionRecall = memory && recall ? new SessionRecallTools(memory, recall.currentSessionId, recall.settings) : null;
+    this.readSkill = skills ? new ReadSkillTool(skills) : null;
   }
 
   schemas(): unknown {
@@ -41,6 +45,7 @@ export class LocalToolRegistry implements ToolRegistry {
     }];
     if (this.manageMemory) schemas.push(manageMemorySchema);
     if (this.sessionRecall) schemas.push(sessionSearchSchema, sessionReadSchema);
+    if (this.readSkill) schemas.push(readSkillSchema);
     return schemas;
   }
 
@@ -55,6 +60,7 @@ export class LocalToolRegistry implements ToolRegistry {
     if ((name === SESSION_SEARCH_TOOL || name === SESSION_READ_TOOL) && this.sessionRecall) {
       return this.sessionRecall.execute(name, args);
     }
+    if (name === READ_SKILL_TOOL && this.readSkill) return this.readSkill.execute(args, _notify, context);
     if (name !== TIME_TOOL) throw new Error(`工具未注册：${name}`);
     if (!isEmptyObject(args)) throw new TypeError(`${TIME_TOOL} 不接受参数`);
 

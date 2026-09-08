@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const buttonSource = fileURLToPath(new URL("../src/components/ui/button.tsx", import.meta.url));
 const styleSheet = fileURLToPath(new URL("../src/index.css", import.meta.url));
 const pageHeadingSource = fileURLToPath(new URL("../src/components/PageHeading.tsx", import.meta.url));
-const pageSources = ["App.tsx", "components/AgentPage.tsx", "components/ConfigPage.tsx", "components/MemoryPage.tsx", "components/TracePage.tsx"]
+const pageSources = ["App.tsx", "components/AgentPage.tsx", "components/ConfigPage.tsx", "components/DatabasePage.tsx", "components/MemoryPage.tsx", "components/SkillsPage.tsx", "components/TracePage.tsx"]
   .map((path) => fileURLToPath(new URL(`../src/${path}`, import.meta.url)));
 
 describe("管理页面视觉一致性", () => {

@@ -8,4 +8,5 @@ export type {
 export type { AgentRunInput, AgentRunOptions, AgentRunResult } from "./types.ts";
 export { createLocalConfig, parseEnv, updateEnvText } from "./local-config.ts";
 export type { LocalConfigPaths } from "./local-config.ts";
+export type { AgentSkill, SaveSkillInput } from "../skills/index.ts";
 export { clearEverythingData } from "./local-data.ts";

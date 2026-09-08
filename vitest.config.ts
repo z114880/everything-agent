@@ -11,6 +11,7 @@ export default defineConfig({
         "src/agent-loop/agent-loop.ts",
         "src/agent-runtime/**/*.ts",
         "src/memory/**/*.ts",
+        "src/skills/**/*.ts",
         "src/tools/manage-memory.ts",
         "src/tools/tool-registry.ts",
         "src/tracing/**/*.ts",

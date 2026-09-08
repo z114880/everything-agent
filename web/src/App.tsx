@@ -1,11 +1,13 @@
-import { Activity, Bot, Brain, GitBranch, PanelLeftClose, PanelLeftOpen, Settings, Sparkles } from "lucide-react";
+import { Activity, Bot, BookOpen, Brain, Database, GitBranch, PanelLeftClose, PanelLeftOpen, Settings, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CodeEditor } from "./components/CodeEditor";
 import { AgentPage } from "./components/AgentPage";
 import { ConfigPage } from "./components/ConfigPage";
+import { DatabasePage } from "./components/DatabasePage";
 import { MemoryPage } from "./components/MemoryPage";
 import { PageHeading } from "./components/PageHeading";
 import { TracePage } from "./components/TracePage";
+import { SkillsPage } from "./components/SkillsPage";
 import { GraphCanvas, type VisualNodeState } from "./components/GraphCanvas";
 import { ResultPanel, RunPanel } from "./components/RunPanel";
 import { Button } from "./components/ui/button";
@@ -20,7 +22,7 @@ import {
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [page, setPage] = useState<"agent" | "workflow" | "memory" | "traces" | "config">("agent");
+  const [page, setPage] = useState<"agent" | "workflow" | "skills" | "memory" | "database" | "traces" | "config">("agent");
   const [code, setCode] = useState("");
   const [workflowFiles, setWorkflowFiles] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState("");
@@ -204,7 +206,9 @@ export default function App() {
         <Button variant="ghost" className={`nav-item ${page === "workflow" ? "active" : ""}`} onClick={() => setPage("workflow")}><GitBranch size={15} /><span>Workflow</span></Button>
         <div className="nav-divider" aria-hidden="true" />
         <Button variant="ghost" className={`nav-item ${page === "agent" ? "active" : ""}`} onClick={() => setPage("agent")}><Bot size={15} /><span>Agent</span></Button>
+        <Button variant="ghost" className={`nav-item ${page === "skills" ? "active" : ""}`} onClick={() => setPage("skills")}><BookOpen size={15} /><span>Skills</span></Button>
         <Button variant="ghost" className={`nav-item ${page === "memory" ? "active" : ""}`} onClick={() => setPage("memory")}><Brain size={15} /><span>Memory</span></Button>
+        <Button variant="ghost" className={`nav-item ${page === "database" ? "active" : ""}`} onClick={() => setPage("database")}><Database size={15} /><span>Database</span></Button>
         <Button variant="ghost" className={`nav-item ${page === "traces" ? "active" : ""}`} onClick={() => setPage("traces")}><Activity size={15} /><span>Trace</span></Button>
         <Button variant="ghost" className={`nav-item ${page === "config" ? "active" : ""}`} onClick={() => setPage("config")}><Settings size={15} /><span>配置</span></Button>
         <div className="sidebar-note"><span className="signal bg-emerald-500" />本地 Engine 已连接</div>
@@ -212,7 +216,7 @@ export default function App() {
       {!sidebarOpen && <Button variant="outline" size="icon" className="sidebar-reopen" onClick={() => setSidebarOpen(true)} aria-label="展开侧边栏"><PanelLeftOpen size={17} /></Button>}
 
       <main className={`main-content ${page === "agent" ? "agent-main-content" : ""}`}>
-        {page === "agent" ? <AgentPage onOpenConfig={() => setPage("config")} /> : page === "config" ? <ConfigPage /> : page === "memory" ? <MemoryPage /> : page === "traces" ? <TracePage /> : <div className="content-wrap workflow-page">
+        {page === "agent" ? <AgentPage onOpenConfig={() => setPage("config")} /> : page === "config" ? <ConfigPage /> : page === "skills" ? <SkillsPage /> : page === "memory" ? <MemoryPage /> : page === "database" ? <DatabasePage /> : page === "traces" ? <TracePage /> : <div className="content-wrap workflow-page">
           <PageHeading eyebrow="工作流 / 可视化执行" title="Workflow" description="用代码定义智能体工作流，并实时观察节点、路由、并行 wave 和最终结果。" />
           <div className="intro-note"><GitBranch size={16} /><p><strong>本地代码是事实来源。</strong> 下方编辑器直接读写 <code>src/workflows/{selectedFile || "…"}</code>；拓扑来自 <code>Graph.describe()</code>，执行过程来自本地 <code>runGraph()</code> 的 observer 事件。</p></div>
           <div className="workspace-grid">

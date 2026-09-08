@@ -13,13 +13,19 @@ import {
   loadAgentBootstrap,
   handleMemoryAction,
   loadTraceDashboard,
+  localAgentDatabasePath,
   runLocalAgent,
   saveAgentSettings,
   resetRuntimeSettings,
   rebuildEmbeddingIndex,
   cancelEmbeddingIndexRebuild,
   saveSystemPrompt,
+  startLocalAgent,
+  loadSkills,
+  saveSkill,
+  deleteSkill,
 } from "./agent-service.ts";
+import { executeDatabaseSql, loadDatabaseDashboard } from "./database-service.ts";
 
 const workflowDirectory = fileURLToPath(new URL("../../src/workflows/", import.meta.url));
 const workflowApiPrefix = "/api/local-workflow";
@@ -61,7 +67,7 @@ async function handleLocalApiRequest(
   }
 
   try {
-    if ((request.method === "PUT" || request.method === "POST") && !isLocalOrigin(request.headers.origin)) {
+    if (["PUT", "POST", "DELETE"].includes(request.method ?? "") && !isLocalOrigin(request.headers.origin)) {
       sendJson(response, 403, { error: "本地工作流接口只接受本机页面请求" });
       return;
     }
@@ -198,6 +204,22 @@ async function handleAgentRequest(
     return;
   }
 
+  if (request.method === "GET" && pathname === `${agentApiPrefix}/skills`) {
+    sendJson(response, 200, { skills: await loadSkills() });
+    return;
+  }
+
+  if (request.method === "PUT" && pathname === `${agentApiPrefix}/skills`) {
+    sendJson(response, 200, { ok: true, skill: await saveSkill(await readJsonBody(request)) });
+    return;
+  }
+
+  if (request.method === "DELETE" && pathname === `${agentApiPrefix}/skills`) {
+    await deleteSkill(await readJsonBody(request));
+    sendJson(response, 200, { ok: true });
+    return;
+  }
+
   if (request.method === "GET" && pathname === `${agentApiPrefix}/memory`) {
     sendJson(response, 200, await handleMemoryAction({ action: "bootstrap" }));
     return;
@@ -210,6 +232,19 @@ async function handleAgentRequest(
 
   if (request.method === "GET" && pathname === `${agentApiPrefix}/traces`) {
     sendJson(response, 200, await loadTraceDashboard());
+    return;
+  }
+
+  if (request.method === "GET" && pathname === `${agentApiPrefix}/database`) {
+    await startLocalAgent();
+    sendJson(response, 200, loadDatabaseDashboard(localAgentDatabasePath));
+    return;
+  }
+
+  if (request.method === "POST" && pathname === `${agentApiPrefix}/database/query`) {
+    await startLocalAgent();
+    const body = await readJsonBody(request);
+    sendJson(response, 200, executeDatabaseSql(localAgentDatabasePath, body.sql, body.confirmation));
     return;
   }
 

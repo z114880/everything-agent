@@ -58,8 +58,9 @@ try {
 - `memory`：现有 MemoryRuntime 的公开操作；`prepareMemory()` 根据当前配置准备检索，并返回 Session Recall 预算。Web 用这些接口组装列表、检索结果等页面响应。
 - `getSettings()`、`saveAgentSettings(input)`、密钥清除与预算重置方法：管理配置，返回不含完整密钥的配置快照。
 - `readSystemPrompt()`、`saveSystemPrompt(text)`：读写本地规则；首次读取时可从指定默认文件初始化。
+- `listSkills()`、`saveSkill(input)`、`deleteSkill(name)`：管理 `.everything/skills/<name>/SKILL.md`；名称受限，写入采用临时文件加 rename，重命名保留目录中的配套资源。
 - `rebuildEmbeddingIndex()`、`cancelEmbeddingIndexRebuild()`：维护影子索引，退出重建时恢复正常检索配置。
-- `clearLocalAgentData()`：停止取后台任务、等待在途处理、刷新 trace 并关闭资源，再清理数据，保留 `EVERYTHING.md` 和 `.env` 配置。调用方负责取得用户确认。
+- `clearLocalAgentData()`：停止取后台任务、等待在途处理、刷新 trace 并关闭资源，再清理数据，保留 `EVERYTHING.md`、`skills/` 和 `.env` 配置。调用方负责取得用户确认。
 - `close()`：等待后台任务与 trace 落盘并关闭资源；活动回合、数据清理或索引重建期间拒绝关闭。关闭后不允许重新创建资源。
 
 ## 执行与可观察性
@@ -68,7 +69,7 @@ try {
 
 同一会话的回合串行执行，后续回合读取前一回合保存的工作记忆。不同会话可以并行。Loop 仍限制 10 次迭代和 60 秒超时，并接收宿主取消信号；检索与排队阶段不在 Loop 超时范围内。
 
-沿用现有 AgentObserver 事件名称和含义，为转发事件关联 `runId`、`sessionId`，补充上下文来源元数据。工具事件在共享执行层进行凭证移除，Session Recall 工具只公开检索元数据。JSONL Tracer 保留既有回合开始、完成、失败及模型/工具追踪语义。静态 Harness 拓扑仍由 `agentHarnessGraph.describe()` 提供，Web 负责转换为画布格式；Runtime 不伪造 Graph 执行事件。
+沿用现有 AgentObserver 事件名称和含义，为转发事件关联 `runId`、`sessionId`，补充上下文来源元数据。每轮以 `skills_discovered` 记录可用目录，`read_skill` 成功后产生不含正文的 `skill_loaded`；对应工具完成事件也只公开名称、描述和正文长度。工具事件在共享执行层进行凭证移除，Session Recall 工具只公开检索元数据。JSONL Tracer 保留既有回合开始、完成、失败及模型/工具追踪语义。静态 Harness 拓扑仍由 `agentHarnessGraph.describe()` 提供，Web 负责转换为画布格式；Runtime 不伪造 Graph 执行事件。
 
 ## 本地配置
 

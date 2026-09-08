@@ -104,6 +104,42 @@ describe("个人助理 Runtime", () => {
     expect(events.every(({ event }) => event.runId === result.runId && event.sessionId === session.id)).toBe(true);
   });
 
+  it("每轮发现最新 Skills，并通过 read_skill 按需加载正文和记录事件", async () => {
+    const runtime = await setup();
+    await runtime.saveSkill({ name: "daily-plan", description: "规划当天任务", instructions: "先列出三件要事" });
+    const session = await runtime.createSession();
+    let agentCalls = 0;
+    create.mockImplementation(async (request) => {
+      if (!Array.isArray(request.tools) || request.tools.length === 0) return response('{"intent":"none"}');
+      agentCalls += 1;
+      if (agentCalls === 1) {
+        expect(request.system).toContain("- daily-plan: 规划当天任务");
+        expect(request.system).not.toContain("先列出三件要事");
+        expect(request.tools).toEqual(expect.arrayContaining([expect.objectContaining({ name: "read_skill" })]));
+        return { content: [{ type: "tool_use", id: "skill-tool", name: "read_skill", input: { name: "daily-plan" } }], stop_reason: "tool_use" };
+      }
+      expect(JSON.stringify(request.messages)).toContain("先列出三件要事");
+      return response("计划完成");
+    });
+    const events: Array<{ kind: string; event: Record<string, unknown> }> = [];
+
+    const result = await runtime.run({ sessionId: session.id, prompt: "规划今天" }, {
+      ...options(), observer: (kind, event) => { events.push({ kind, event }); },
+    });
+
+    expect(result.reply).toBe("计划完成");
+    expect(events.find((item) => item.kind === "skills_discovered")?.event).toMatchObject({ count: 1 });
+    expect(events.find((item) => item.kind === "skill_loaded")?.event).toMatchObject({ skill: "daily-plan", instructionLength: 7 });
+    expect(events.find((item) => item.kind === "tool_completed")?.event.result).toEqual({ name: "daily-plan", description: "规划当天任务", instructionLength: 7 });
+    expect(JSON.stringify(events.filter((item) => ["skill_loaded", "tool_completed"].includes(item.kind)))).not.toContain("先列出三件要事");
+    const kinds = events.map((item) => item.kind);
+    expect(kinds.indexOf("skills_discovered")).toBeLessThan(kinds.indexOf("model_request"));
+    expect(kinds.indexOf("tool_started")).toBeLessThan(kinds.indexOf("skill_loaded"));
+    expect(kinds.indexOf("skill_loaded")).toBeLessThan(kinds.indexOf("tool_completed"));
+    const traceTypes = (await runtime.readTraces()).flatMap((file) => file.records.map((record) => record.type));
+    expect(traceTypes).toEqual(expect.arrayContaining(["skills_discovered", "skill_loaded", "tool_completed"]));
+  });
+
   it("活动回合阻止清理和关闭，同会话排队后读取前一回合结果", async () => {
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
@@ -143,6 +179,8 @@ describe("个人助理 Runtime", () => {
     await runtime.run({ sessionId: session.id, prompt: "继续" }, options());
     await runtime.close();
     await expect(runtime.createSession()).rejects.toThrow("已关闭");
+    await expect(runtime.listSkills()).rejects.toThrow("已关闭");
+    await expect(runtime.saveSkill({ name: "closed", description: "关闭", instructions: "关闭" })).rejects.toThrow("已关闭");
     await expect(runtime.run({ sessionId: session.id, prompt: "继续" }, options())).rejects.toThrow("已关闭");
   });
 });
