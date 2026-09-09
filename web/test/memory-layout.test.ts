@@ -17,6 +17,9 @@ describe("Memory 页面布局", () => {
     expect(styles).toContain(".page-heading-description { display: flex; align-items: center;");
     expect(styles).toContain(".page-heading-description-actions { display: flex; align-items: center; margin-top: 7px; }");
     expect(styles).toContain(".memory-refresh { flex: 0 0 auto;");
+    expect(page).toContain('if (await reload(MINIMUM_FEEDBACK_DURATION_MS)) setSaveMessage("已刷新")');
+    expect(page).toContain("onClick={() => void refresh()}");
+    expect(page).toContain("<SaveMessage message={saveMessage} setMessage={setSaveMessage} />");
   });
 
   it("切换标签时保持标签宽度稳定", async () => {

@@ -26,7 +26,26 @@ describe("记忆流程事件映射", () => {
     expect(advanceHarnessMemory("tool_completed", { tool: "manage_memory", result: [] }, {}).edges).toEqual([]);
   });
   it("上下文事件标记真实输入来源完成", () => {
-    expect(advanceHarnessMemory("context_assembled", {}, {}).states).toMatchObject({ session_chat_history: "done", procedural_memory: "done", working_memory: "done" });
+    const assembled = advanceHarnessMemory("context_assembled", {}, {});
+    expect(assembled.states).toMatchObject({
+      session_chat_history: "done",
+      everything_md: "done",
+      skills_catalog: "done",
+      procedural_memory: "done",
+      working_memory: "running",
+    });
+    expect(assembled.edges).toEqual(expect.arrayContaining([
+      "everything_md->procedural_memory",
+      "skills_catalog->procedural_memory",
+      "procedural_memory->working_memory",
+    ]));
+    expect(assembled.edges).not.toContain("procedural_memory->system_prompt");
+  });
+  it("首次模型请求把 Tool Schemas 汇入 Working Memory", () => {
+    const first = advanceHarnessMemory("model_request", { iteration: 1 }, { working_memory: "running" });
+    expect(first.states).toMatchObject({ tool_schemas: "done", working_memory: "done" });
+    expect(first.edges).toEqual(["tool_schemas->working_memory"]);
+    expect(advanceHarnessMemory("model_request", { iteration: 2 }, first.states).edges).toEqual([]);
   });
 });
 

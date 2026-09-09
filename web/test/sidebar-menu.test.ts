@@ -58,4 +58,13 @@ describe("侧栏菜单", () => {
     expect(source).toContain('aria-controls="app-sidebar"');
     expect(source).toContain("aria-expanded={sidebarOpen}");
   });
+
+  it("品牌文字样式不会偏移收起按钮内的箭头", async () => {
+    const source = await readFile(app, "utf8");
+    const styles = await readFile(styleSheet, "utf8");
+
+    expect(source).toContain('<div className="brand-copy">');
+    expect(styles).toContain(".brand-copy span { display: block;");
+    expect(styles).not.toContain(".brand-row span {");
+  });
 });

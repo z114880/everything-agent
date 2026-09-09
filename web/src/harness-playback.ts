@@ -28,8 +28,20 @@ export function advanceHarnessMemory(kind: string, event: AgentEvent, states: Re
     }
   }
   if (kind === "context_assembled") {
-    for (const id of ["user_prompt", "session_chat_history", "system_prompt", "procedural_memory", "working_memory"]) next[id] = "done";
-    edges.push("procedural_memory->system_prompt", "user_prompt->working_memory", "session_chat_history->working_memory", "system_prompt->working_memory");
+    for (const id of ["user_prompt", "session_chat_history", "everything_md", "skills_catalog", "procedural_memory"]) next[id] = "done";
+    next.working_memory = "running";
+    edges.push(
+      "everything_md->procedural_memory",
+      "skills_catalog->procedural_memory",
+      "procedural_memory->working_memory",
+      "user_prompt->working_memory",
+      "session_chat_history->working_memory",
+    );
+  }
+  if (kind === "model_request" && (event.iteration ?? 1) === 1) {
+    next.tool_schemas = "done";
+    next.working_memory = "done";
+    edges.push("tool_schemas->working_memory");
   }
   if (kind === "tool_completed" && event.tool === "manage_memory" && !event.isError && event.result && typeof event.result === "object" && "status" in event.result && event.result.status === "queued") {
     next.memory_queue = "done";

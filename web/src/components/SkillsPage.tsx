@@ -1,6 +1,10 @@
-import { BookOpen, FileCode2, LoaderCircle, Plus, RefreshCw, Save, Sparkles, Trash2 } from "lucide-react";
+import { BookOpen, CheckCircle2, FileCode2, LoaderCircle, Plus, RefreshCw, Save, Sparkles, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { deleteSkill, loadSkills, saveSkill, type AgentSkill } from "../agent-api";
+import {
+  MINIMUM_FEEDBACK_DURATION_MS,
+  withMinimumDuration,
+} from "../lib/minimum-duration";
 import { PageHeading } from "./PageHeading";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -18,7 +22,6 @@ interface SkillDraft {
 }
 
 const EMPTY_DRAFT: SkillDraft = { name: "", description: "", instructions: "" };
-const MINIMUM_REFRESH_DURATION_MS = 300;
 
 /** 编辑 Agent Skills，并将变更同步到 `.everything/skills`。 */
 export function SkillsPage() {
@@ -26,6 +29,7 @@ export function SkillsPage() {
   const [draft, setDraft] = useState<SkillDraft>(EMPTY_DRAFT);
   const [savedDraft, setSavedDraft] = useState<SkillDraft>(EMPTY_DRAFT);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [messageIsError, setMessageIsError] = useState(false);
@@ -34,13 +38,18 @@ export function SkillsPage() {
   const isCreating = draft.originalName === undefined;
   const isInitialLoading = loading && skills.length === 0;
 
+  useEffect(() => {
+    if (!message || messageIsError) return;
+    const timeout = window.setTimeout(() => setMessage(""), 2_500);
+    return () => window.clearTimeout(timeout);
+  }, [message, messageIsError]);
+
   const reload = async (preferredName?: string, minimumDurationMs = 0) => {
-    const startedAt = Date.now();
     setMessage("");
     setMessageIsError(false);
     setLoading(true);
     try {
-      const result = await loadSkills();
+      const result = await withMinimumDuration(loadSkills, minimumDurationMs);
       setSkills(result.skills);
       const selected = result.skills.find((skill) => skill.name === preferredName)
         ?? result.skills.find((skill) => skill.name === draft.originalName)
@@ -52,9 +61,6 @@ export function SkillsPage() {
       setMessage(errorMessage(error));
       setMessageIsError(true);
     } finally {
-      const remainingDuration = minimumDurationMs - (Date.now() - startedAt);
-      // 手动刷新过快时保留最短反馈周期，避免按钮状态一闪而过。
-      if (remainingDuration > 0) await wait(remainingDuration);
       setLoading(false);
     }
   };
@@ -71,6 +77,7 @@ export function SkillsPage() {
   }
 
   function create() {
+    if (loading) return;
     if (dirty && !window.confirm("当前修改尚未保存，确认放弃修改？")) return;
     setDraft(EMPTY_DRAFT);
     setSavedDraft(EMPTY_DRAFT);
@@ -79,9 +86,15 @@ export function SkillsPage() {
     requestAnimationFrame(() => nameInputRef.current?.focus());
   }
 
-  function refresh() {
+  async function refresh() {
+    if (loading) return;
     if (dirty && !window.confirm("当前修改尚未保存，确认从本地重新读取？")) return;
-    void reload(undefined, MINIMUM_REFRESH_DURATION_MS);
+    setRefreshing(true);
+    try {
+      await reload(undefined, MINIMUM_FEEDBACK_DURATION_MS);
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   async function persist() {
@@ -89,9 +102,11 @@ export function SkillsPage() {
     setMessage("");
     setMessageIsError(false);
     try {
-      const result = await saveSkill(draft);
-      await reload(result.skill.name);
-      setMessage(`${result.skill.path} 已保存，下一轮 Agent 立即生效。`);
+      await withMinimumDuration(async () => {
+        const result = await saveSkill(draft);
+        await reload(result.skill.name);
+        setMessage(`${result.skill.path} 已保存，下一轮 Agent 立即生效。`);
+      });
     } catch (error) {
       setMessage(errorMessage(error));
       setMessageIsError(true);
@@ -106,9 +121,11 @@ export function SkillsPage() {
     setMessage("");
     setMessageIsError(false);
     try {
-      await deleteSkill(draft.originalName);
-      await reload();
-      setMessage("Skill 已删除。");
+      await withMinimumDuration(async () => {
+        await deleteSkill(draft.originalName!);
+        await reload();
+        setMessage("Skill 已删除。");
+      });
     } catch (error) {
       setMessage(errorMessage(error));
       setMessageIsError(true);
@@ -118,16 +135,17 @@ export function SkillsPage() {
   }
 
   return <div className="content-wrap skills-page">
-    <PageHeading eyebrow="Agent 能力 / 按需加载" title="Skills" description="管理 Agent 可发现并按需读取的本地技能。" actions={<Button disabled={loading || saving} onClick={create}><Plus size={14} /> 新建 Skill</Button>} />
+    <PageHeading eyebrow="Agent 能力 / 按需加载" title="Skills" description="管理 Agent 可发现并按需读取的本地技能。" actions={<Button disabled={saving} onClick={create}><Plus size={14} /> 新建 Skill</Button>} />
     <div className="intro-note"><BookOpen size={16} /><p><strong>Skill 文件是唯一事实来源。</strong> 页面直接读写 <code>.everything/skills/&lt;skill-name&gt;/SKILL.md</code>；Agent 只接收名称和描述，决定使用后通过 <code>read_skill</code> 读取完整指令。</p></div>
-    {message && <div className={messageIsError ? "error-message" : "skills-message"} role={messageIsError ? "alert" : "status"}>{message}</div>}
+    {message && (messageIsError
+      ? <div className="error-message" role="alert">{message}</div>
+      : <div className="skills-message" role="status" aria-live="polite"><CheckCircle2 size={15} />{message}</div>)}
     <div className="skills-layout">
       <aside className="panel skills-list-panel">
         <div className="panel-header skills-list-header">
           <div><span>本地 Skills</span><small>{loading ? "正在同步" : `${skills.length} 个`}</small></div>
-          <Button className="skills-refresh" variant="ghost" size="sm" aria-label={loading ? "正在重新读取 Skills" : "重新读取 Skills"} aria-busy={loading} disabled={loading || saving} onClick={refresh}>
-            {loading ? <LoaderCircle className="animate-spin" size={14} /> : <RefreshCw size={14} />}
-            <span>{loading ? "读取中" : "刷新"}</span>
+          <Button className="skills-refresh" variant="ghost" size="sm" aria-label="重新读取 Skills" loading={refreshing} disabled={saving} onClick={() => void refresh()}>
+            <RefreshCw size={14} /><span>刷新</span>
           </Button>
         </div>
         <div className={`skills-list ${loading ? "is-loading" : ""}`} aria-busy={loading}>
@@ -155,7 +173,7 @@ export function SkillsPage() {
           <footer className="skill-editor-actions">
             {draft.originalName && <DeleteSkillDialog name={draft.originalName} disabled={saving} onConfirm={() => void remove()} />}
             <span className={dirty ? "is-dirty" : ""}>{dirty && <i aria-hidden="true" />}{dirty ? "有未保存的修改" : draft.originalName ? "已与本地文件同步" : "填写完整后即可保存"}</span>
-            <Button disabled={saving || !dirty || !draft.name.trim() || !draft.description.trim() || !draft.instructions.trim()} aria-busy={saving} onClick={() => void persist()}>{saving ? <LoaderCircle className="animate-spin" size={14} /> : <Save size={14} />} {saving ? "正在保存…" : "保存 Skill"}</Button>
+            <Button disabled={!dirty || !draft.name.trim() || !draft.description.trim() || !draft.instructions.trim()} loading={saving} onClick={() => void persist()}><Save size={14} /> 保存 Skill</Button>
           </footer>
         </>}
       </section>
@@ -173,8 +191,4 @@ function toDraft(skill: AgentSkill): SkillDraft {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function wait(durationMs: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, durationMs));
 }

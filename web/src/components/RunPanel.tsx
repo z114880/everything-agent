@@ -35,9 +35,8 @@ export function RunPanel(props: RunPanelProps) {
                 placeholder="输入一个任务，例如：帮我规划今天的工作"
               />
             </div>
-            <Button className="run-button" onClick={onRun} disabled={running}>
-              {running ? <LoaderCircle className="animate-spin" size={16} /> : <Play size={15} fill="currentColor" />}
-              {running ? "执行中" : "执行工作流"}
+            <Button className="run-button" onClick={onRun} loading={running}>
+              <Play size={15} fill="currentColor" />执行工作流
             </Button>
           </div>
           <p className="mt-3 text-xs text-[var(--muted)]">图展示真实拓扑，下面的卡片按 Engine 的 wave_start 事件展示节点如何并发发生。代码在本地 Node.js 进程执行；当前示例节点不会产生外部写操作。</p>

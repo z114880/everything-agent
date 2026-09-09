@@ -9,14 +9,17 @@ describe("Agent Harness", () => {
   it("业务拓扑从用户输入开始并包含召回和独立后台记忆关系", () => {
     const graph = agentHarnessGraph.describe();
     expect(graph.nodes.map((node) => node.name)).toEqual(expect.arrayContaining([
-      "user_prompt", "session_chat_history", "system_prompt", "procedural_memory",
+      "user_prompt", "session_chat_history", "everything_md", "skills_catalog", "procedural_memory", "tool_schemas",
       "retrieval_gate", "semantic_recall", "session_recall", "working_memory",
       "memory_queue", "consolidate_trigger", "consolidation", "memory_review", "memory_commit", "semantic_store",
     ]));
     const edges = graph.edges.map((edge) => `${edge.source}->${edge.target}`);
     expect(edges).toContain("START->user_prompt");
     expect(edges).not.toContain("START->working_memory");
+    expect(graph.nodes.map((node) => node.name)).not.toContain("system_prompt");
     expect(edges).toEqual(expect.arrayContaining([
+      "everything_md->procedural_memory", "skills_catalog->procedural_memory",
+      "procedural_memory->working_memory", "tool_schemas->working_memory",
       "retrieval_gate->working_memory", "retrieval_gate->semantic_recall", "retrieval_gate->session_recall",
       "llm->tools", "tools->llm", "llm->reply", "tools->memory_queue",
       "consolidate_trigger->consolidate_snapshot", "consolidation->consolidate_commit", "memory_queue->memory_review",

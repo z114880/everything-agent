@@ -4,12 +4,14 @@ import {
   loadAgent, loadMemory, memoryAction, saveSystemPrompt,
   type MemoryDashboard, type SemanticMemory, type SessionReadResult, type SessionRecallResult, type SessionSearchResult,
 } from "../agent-api";
+import { MINIMUM_FEEDBACK_DURATION_MS, withMinimumDuration } from "../lib/minimum-duration";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Input } from "./ui/input";
 import { MemoryContent } from "./MemoryContent";
 import { PageHeading } from "./PageHeading";
+import { SaveMessage } from "./SaveMessage";
 import { Textarea } from "./ui/textarea";
 
 type MemoryTab = "overview" | "semantic" | "episodic" | "procedural" | "chat" | "consolidation";
@@ -26,26 +28,51 @@ export function MemoryPage() {
   const [query, setQuery] = useState("");
   const [semanticResults, setSemanticResults] = useState<SemanticMemory[] | null>(null);
   const [recall, setRecall] = useState<SessionSearchResult | null>(null);
-  const [message, setMessage] = useState("");
-  const reload = async () => setData(await loadMemory());
+  const [saveMessage, setSaveMessage] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const reload = async (minimumDurationMs = 0) => {
+    setError("");
+    setLoading(true);
+    try {
+      setData(await withMinimumDuration(loadMemory, minimumDurationMs));
+      return true;
+    } catch (reason) {
+      setError(errorMessage(reason));
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
   useEffect(() => {
-    void Promise.all([reload(), loadAgent().then((value) => setPrompt(value.systemPrompt))])
-      .catch((error: unknown) => setMessage(error instanceof Error ? error.message : String(error)));
+    void reload();
+    void loadAgent().then((value) => setPrompt(value.systemPrompt)).catch((reason: unknown) => setError(errorMessage(reason)));
   }, []);
 
+  async function refresh() {
+    setSaveMessage("");
+    if (await reload(MINIMUM_FEEDBACK_DURATION_MS)) setSaveMessage("已刷新");
+  }
+
   async function mutate(action: Record<string, unknown>) {
-    try { await memoryAction(action); await reload(); setMessage("已保存"); }
-    catch (error) { setMessage(error instanceof Error ? error.message : String(error)); }
+    setSaveMessage("");
+    setError("");
+    try {
+      await memoryAction(action);
+      if (await reload()) setSaveMessage("已保存");
+    } catch (reason) { setError(errorMessage(reason)); }
   }
   async function search() {
+    setError("");
     try {
       if (tab === "semantic") setSemanticResults(query.trim() ? await memoryAction({ action: "search_semantic", query }) : null);
       if (tab === "episodic") setRecall(await memoryAction<SessionSearchResult>(
         query.trim() ? { action: "session_search", query } : { action: "session_search", recent: true },
       ));
-    } catch (error) { setMessage(error instanceof Error ? error.message : String(error)); }
+    } catch (reason) { setError(errorMessage(reason)); }
   }
   async function read(result: SessionRecallResult, fromStart = false) {
+    setError("");
     try {
       const value = await memoryAction<SessionReadResult>(fromStart || !result.nextCursor
         ? { action: "session_read", sessionId: result.session.id }
@@ -68,15 +95,25 @@ export function MemoryPage() {
           }
           : item),
       } : current);
-    } catch (error) { setMessage(error instanceof Error ? error.message : String(error)); }
+    } catch (reason) { setError(errorMessage(reason)); }
   }
 
-  if (!data) return <div className="content-wrap"><div className="panel loading-panel">正在加载 Memory… {message}</div></div>;
+  async function persistSystemPrompt() {
+    setSaveMessage("");
+    setError("");
+    try {
+      await saveSystemPrompt(prompt);
+      setSaveMessage("EVERYTHING.md 已保存");
+    } catch (reason) { setError(errorMessage(reason)); }
+  }
+
+  if (!data) return <div className="content-wrap"><div className="panel loading-panel">正在加载 Memory… {error}</div></div>;
   const semantic = semanticResults ?? data.semantic;
   return <div className="content-wrap memory-page">
-    <PageHeading eyebrow="SQLite / Lexical + Dense" title="Memory" description="Semantic Memory、Session Recall、会话日志与整理状态。" descriptionActions={<Button size="sm" className="memory-refresh" onClick={() => void reload()}><RefreshCw size={14} /> 刷新数据</Button>} />
+    <PageHeading eyebrow="SQLite / Lexical + Dense" title="Memory" description="Semantic Memory、Session Recall、会话日志与整理状态。" descriptionActions={<Button size="sm" className="memory-refresh" loading={loading} onClick={() => void refresh()}><RefreshCw size={14} /> 刷新数据</Button>} />
+    <SaveMessage message={saveMessage} setMessage={setSaveMessage} />
+    {error && <div className="error-message" role="alert">{error}</div>}
     <div className="memory-tabs">{tabs.map((item) => <Button variant="ghost" size="sm" key={item.id} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)}>{item.label}</Button>)}</div>
-    {message && <div className="memory-message">{message}</div>}
     {tab === "overview" && <div className="metric-grid">
       <Metric label="Semantic" value={data.overview.semanticCount} />
       <Metric label="已索引 Session" value={data.overview.indexedSessionCount} />
@@ -101,7 +138,7 @@ export function MemoryPage() {
       </div>
       {recall?.sessions.map((result) => <RecallCard key={result.session.id} result={result} read={read} />)}
     </div>}
-    {tab === "procedural" && <Card className="procedural-editor"><div className="panel-header"><span><FileText size={15} /> System Prompt</span><code>.everything/EVERYTHING.md</code></div><Textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} /><Button onClick={() => void saveSystemPrompt(prompt).then(() => setMessage("EVERYTHING.md 已保存"))}>保存 Procedural Memory</Button></Card>}
+    {tab === "procedural" && <Card className="procedural-editor"><div className="panel-header"><span><FileText size={15} /> System Prompt</span><code>.everything/EVERYTHING.md</code></div><Textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} /><Button onClick={() => void persistSystemPrompt()}>保存 Procedural Memory</Button></Card>}
     {tab === "chat" && (<div className="panel table-scroll"><table><thead><tr><th>ID</th><th>Session ID</th><th>Run ID</th><th>Role</th><th>Kind</th><th>内容</th><th>时间</th></tr></thead><tbody>{data.chatLog.map((item) => (<tr key={item.id}><td>{item.id}</td><td><code>{short(item.sessionId)}</code></td><td><code>{short(item.runId)}</code></td><td>{item.role}</td><td>{item.kind}</td><td><pre>{contentText(item.content)}</pre></td><td>{local(item.createdAt)}</td></tr>))}</tbody></table></div>)}
     {tab === "consolidation" && <div className="panel table-scroll"><table><thead><tr><th>Status</th><th>Run ID</th><th>Trigger</th><th>批次 / 未解决冲突</th><th>Facts</th><th>时间</th></tr></thead><tbody>{data.consolidations.map((item) => <tr key={item.id}><td><Badge variant={item.status === "completed" ? "success" : item.status === "failed" ? "destructive" : "outline"}>{item.status}</Badge>{item.errorType && <small>{item.errorType}</small>}</td><td><code>{short(item.runId)}</code></td><td>{item.trigger}</td><td>{item.completedBatches} / {item.totalBatches} · 冲突 {item.unresolvedConflicts}</td><td>新增 {item.factsCreated} / 更新 {item.factsUpdated} / 删除 {item.factsDeleted} / 合并 {item.factsMerged} / 跳过 {item.factsSkipped}</td><td>{local(item.startedAt)}</td></tr>)}</tbody></table></div>}
   </div>;
@@ -148,3 +185,4 @@ function editSemantic(item: SemanticMemory, mutate: (action: Record<string, unkn
 function contentText(value: unknown) { return typeof value === "string" ? value : JSON.stringify(value, null, 2) }
 function short(value: string) { return value.slice(0, 8) }
 function local(value: string) { return new Date(value).toLocaleString(undefined, { hour12: false }) }
+function errorMessage(value: unknown) { return value instanceof Error ? value.message : String(value) }

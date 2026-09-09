@@ -65,7 +65,8 @@ export async function loadAgentBootstrap(): Promise<Record<string, unknown>> {
   await runtime.start();
   const settings = await runtime.getSettings();
   return { workflow: toWorkflow(settings.retrievalMode), settings,
-    systemPrompt: await runtime.readSystemPrompt(), sessions: runtime.memory.listSessions() };
+    systemPrompt: await runtime.readSystemPrompt(), sessions: runtime.memory.listSessions(),
+    semanticCount: runtime.memory.overview().semanticCount };
 }
 /** 校验 Web 输入并将事件交给传输层。 */
 export function runLocalAgent(body: Record<string, unknown>, observer: AgentObserver, signal: AbortSignal) {
@@ -81,6 +82,7 @@ export function clearLocalAgentData(body: Record<string, unknown>) {
 export async function handleMemoryAction(body: Record<string, unknown>): Promise<unknown> {
   const memory = runtime.memory;
   const action = requiredText(body.action, "action", 80);
+  if (action === "semantic_count") return memory.overview().semanticCount;
   if (action === "consolidate") return runtime.consolidate(body.trigger === "daily" ? "daily" : "manual");
   if (action === "consolidation_status") return memory.listBackgroundTasks().filter((task) => task.kind === "consolidation").at(-1) ?? null;
   if (action === "bootstrap") return memoryDashboard(memory);

@@ -201,18 +201,18 @@ export default function App() {
       <aside id="app-sidebar" className={`sidebar ${sidebarOpen ? "open" : "closed"}`}>
         <div className="brand-row">
           <div className="brand-mark"><Sparkles size={15} /></div>
-          <div><strong>Everything Agent</strong><span>可视化Agent控制台</span></div>
+          <div className="brand-copy"><strong>Everything Agent</strong><span>可视化Agent控制台</span></div>
           <Button variant="ghost" size="icon-sm" className="panel-collapse-toggle sidebar-toggle" onClick={() => setSidebarOpen(false)} aria-label="收起侧边栏" aria-expanded={sidebarOpen} aria-controls="app-sidebar"><ChevronLeft size={16} /></Button>
         </div>
         <Button variant="ghost" className={`nav-item ${page === "workflow" ? "active" : ""}`} onClick={() => setPage("workflow")}><GitBranch size={15} /><span>Workflow</span></Button>
         <div className="nav-divider" aria-hidden="true" />
-        <Button variant="ghost" className={`nav-item ${page === "agent" ? "active" : ""}`} onClick={() => setPage("agent")}><Bot size={15} /><span>Agent</span></Button>
-        <Button variant="ghost" className={`nav-item ${page === "skills" ? "active" : ""}`} onClick={() => setPage("skills")}><BookOpen size={15} /><span>Skills</span></Button>
-        <Button variant="ghost" className={`nav-item ${page === "tools" ? "active" : ""}`} onClick={() => setPage("tools")}><Wrench size={15} /><span>Tools</span></Button>
-        <Button variant="ghost" className={`nav-item ${page === "memory" ? "active" : ""}`} onClick={() => setPage("memory")}><Brain size={15} /><span>Memory</span></Button>
-        <Button variant="ghost" className={`nav-item ${page === "database" ? "active" : ""}`} onClick={() => setPage("database")}><Database size={15} /><span>Database</span></Button>
-        <Button variant="ghost" className={`nav-item ${page === "traces" ? "active" : ""}`} onClick={() => setPage("traces")}><Activity size={15} /><span>Trace</span></Button>
-        <Button variant="ghost" className={`nav-item ${page === "config" ? "active" : ""}`} onClick={() => setPage("config")}><Settings size={15} /><span>配置</span></Button>
+        <Button variant="ghost" className={`nav-item mb-1 ${page === "agent" ? "active" : ""}`} onClick={() => setPage("agent")}><Bot size={15} /><span>Agent</span></Button>
+        <Button variant="ghost" className={`nav-item mb-1 ${page === "skills" ? "active" : ""}`} onClick={() => setPage("skills")}><BookOpen size={15} /><span>Skills</span></Button>
+        <Button variant="ghost" className={`nav-item mb-1 ${page === "tools" ? "active" : ""}`} onClick={() => setPage("tools")}><Wrench size={15} /><span>Tools</span></Button>
+        <Button variant="ghost" className={`nav-item mb-1 ${page === "memory" ? "active" : ""}`} onClick={() => setPage("memory")}><Brain size={15} /><span>Memory</span></Button>
+        <Button variant="ghost" className={`nav-item mb-1 ${page === "database" ? "active" : ""}`} onClick={() => setPage("database")}><Database size={15} /><span>Database</span></Button>
+        <Button variant="ghost" className={`nav-item mb-1 ${page === "traces" ? "active" : ""}`} onClick={() => setPage("traces")}><Activity size={15} /><span>Trace</span></Button>
+        <Button variant="ghost" className={`nav-item mb-1 ${page === "config" ? "active" : ""}`} onClick={() => setPage("config")}><Settings size={15} /><span>配置</span></Button>
         <div className="sidebar-note"><span className="signal bg-emerald-500" />本地 Engine 已连接</div>
       </aside>
       {!sidebarOpen && <Button variant="ghost" size="icon-sm" className="panel-collapse-toggle sidebar-reopen" onClick={() => setSidebarOpen(true)} aria-label="展开侧边栏" aria-expanded={sidebarOpen} aria-controls="app-sidebar"><ChevronRight size={16} /></Button>}

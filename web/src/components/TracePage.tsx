@@ -1,8 +1,10 @@
 import { ChevronRight, FileJson, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { loadTraces, type TraceDashboard } from "../agent-api";
+import { MINIMUM_FEEDBACK_DURATION_MS, withMinimumDuration } from "../lib/minimum-duration";
 import { Button } from "./ui/button";
 import { PageHeading } from "./PageHeading";
+import { SaveMessage } from "./SaveMessage";
 
 const EMPTY_DASHBOARD: TraceDashboard = { files: [] };
 
@@ -10,16 +12,39 @@ const EMPTY_DASHBOARD: TraceDashboard = { files: [] };
 export function TracePage() {
   const [dashboard, setDashboard] = useState<TraceDashboard>(EMPTY_DASHBOARD);
   const [error, setError] = useState("");
-  const reload = () => {
+  const [saveMessage, setSaveMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const reload = async (minimumDurationMs = 0) => {
     setError("");
-    return loadTraces().then(setDashboard)
-      .catch((value: unknown) => setError(value instanceof Error ? value.message : String(value)));
+    setLoading(true);
+    try {
+      setDashboard(await withMinimumDuration(loadTraces, minimumDurationMs));
+      return true;
+    } catch (value) {
+      setError(value instanceof Error ? value.message : String(value));
+      return false;
+    } finally {
+      setLoading(false);
+    }
   };
   useEffect(() => { void reload(); }, []);
 
+  async function refresh() {
+    if (loading) return;
+    setSaveMessage("");
+    setRefreshing(true);
+    try {
+      if (await reload(MINIMUM_FEEDBACK_DURATION_MS)) setSaveMessage("已刷新");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   return <div className="content-wrap trace-page">
-    <PageHeading eyebrow="JSONL traces" title="Traces" description="按文件查看已脱敏的 JSONL 事件。" descriptionActions={<Button size="sm" onClick={() => void reload()}><RefreshCw size={14} /> 刷新数据</Button>} />
-    {error && <div className="error-message">{error}</div>}
+    <PageHeading eyebrow="JSONL traces" title="Traces" description="按文件查看已脱敏的 JSONL 事件。" descriptionActions={<Button size="sm" loading={refreshing} onClick={() => void refresh()}><RefreshCw size={14} /> 刷新数据</Button>} />
+    <SaveMessage message={saveMessage} setMessage={setSaveMessage} />
+    {error && <div className="error-message" role="alert">{error}</div>}
     {!error && dashboard.files.length === 0 && <div className="panel trace-empty">No traces yet.</div>}
     <div className="trace-file-list">
       {dashboard.files.slice().reverse().map((file) => <details className="panel trace-file" open key={file.path}>

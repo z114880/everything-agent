@@ -16,4 +16,12 @@ describe("API Key 清除入口", () => {
     expect(page).not.toContain("window.confirm");
     expect(await readFile(agentApi, "utf8")).toContain("/config/clear-api-key");
   });
+
+  it("检索配置的保存与清除按钮使用相同尺寸", async () => {
+    const page = await readFile(configPage, "utf8");
+    const embeddingDialog = page.slice(page.indexOf("function EmbeddingKeyClearDialog"));
+
+    expect(embeddingDialog).toContain('<Button variant="destructive-outline">');
+    expect(embeddingDialog).not.toContain('<Button variant="destructive-outline" size="sm">');
+  });
 });

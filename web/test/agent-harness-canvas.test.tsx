@@ -20,7 +20,41 @@ describe("Agent 业务画布", () => {
     expect(html).not.toContain('data-node="START"');
     expect(html).not.toContain('data-node="END"');
     expect(html).not.toContain("Client Chat History");
-    expect(html).toContain("Session Chat History");
+    expect(html).not.toContain("Session Chat History");
+    expect(html).toContain("Current Session");
+    expect(html).toContain("当前会话");
+    expect(html).toContain("最近 3 个已完成回合");
+    expect(html).toContain("全部已完成回合");
+    expect(html).toContain("EVERYTHING.md");
+    expect(html).toContain("Skills Catalog");
+    expect(html).toContain("Procedural Memory");
+    expect(html).toContain("Tool Schemas");
+    expect(html).not.toContain("System Prompt");
+    for (const subtitle of ["用户输入", "System instructions", "Instructions + available skills", "Names &amp; descriptions", "assembled per turn"]) {
+      expect(html).toContain(subtitle);
+    }
+    expect(html).not.toContain("Context budget");
+    expect(harnessPresentation.tool_schemas).toMatchObject({
+      x: harnessPresentation.procedural_memory!.x,
+      y: expect.any(Number),
+    });
+    expect(harnessPresentation.procedural_memory!.y).toBe(
+      harnessPresentation.everything_md!.y,
+    );
+    expect(harnessPresentation.tool_schemas!.y).toBeGreaterThan(
+      harnessPresentation.procedural_memory!.y,
+    );
+    expect(harnessPresentation.skills_catalog!.y).toBe(
+      harnessPresentation.tool_schemas!.y,
+    );
+    expect(html).toContain('data-edge="tool_schemas-&gt;working_memory"');
+    expect(html).toContain('d="M 326 460 V 420 H 729 V 395"');
+    expect(html).toContain('data-edge="session_chat_history-&gt;working_memory"');
+    expect(html).toContain('d="M 106 290 V 315 H 729 V 345"');
+    expect(html).toContain('data-edge="retrieval_gate-&gt;working_memory"');
+    expect(html).toContain('d="M 326 135 V 105 H 766 V 345"');
+    expect(html).toContain('data-edge="user_prompt-&gt;working_memory"');
+    expect(html).toContain('d="M 106 135 V 75 H 803 V 345"');
     expect(html).toContain("后台写入 · 独立串行队列，不阻塞回复");
     expect(html).toContain("Memory Retrieval &amp; Agent Loop");
     expect(html).toContain("记忆任务入队");

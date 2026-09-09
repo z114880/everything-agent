@@ -1,6 +1,7 @@
 import { CheckCircle2, Clock3, KeyRound, LockKeyhole, Search, Wrench } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { loadTools, saveTools, type AgentTool, type ToolsCatalog } from "../agent-api";
+import { withMinimumDuration } from "../lib/minimum-duration";
 import { PageHeading } from "./PageHeading";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -72,12 +73,14 @@ export function ToolsPage() {
     setMessage("");
     setError("");
     try {
-      const next = await saveTools({
-        getCurrentTimeEnabled: nextGetCurrentTimeEnabled,
-        searchWebEnabled: clearTavilyApiKey ? false : nextSearchWebEnabled,
-        tavilyApiKey,
-        clearTavilyApiKey,
-      });
+      const next = await withMinimumDuration(() =>
+        saveTools({
+          getCurrentTimeEnabled: nextGetCurrentTimeEnabled,
+          searchWebEnabled: clearTavilyApiKey ? false : nextSearchWebEnabled,
+          tavilyApiKey,
+          clearTavilyApiKey,
+        }),
+      );
       applyCatalog(next);
       setMessage(clearTavilyApiKey ? "Tavily API Key 已清除，search_web 已停用。" : "工具配置已保存，下一回合立即生效。");
       if (closeDialog) setTavilyDialogOpen(false);
@@ -156,7 +159,7 @@ export function ToolsPage() {
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={saving}>取消</AlertDialogCancel>
-            <Button disabled={saving} onClick={() => void persist({ closeDialog: true })}>{saving ? "正在保存…" : "保存 Tavily 配置"}</Button>
+            <Button loading={saving} onClick={() => void persist({ closeDialog: true })}>保存 Tavily 配置</Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

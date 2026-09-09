@@ -41,7 +41,8 @@ it("Web 空库的每日与手动入口都不创建后台任务或占用每日配
     await writeFile(join(home, "default.md"), "测试助手");
     vi.resetModules();
     const { handleMemoryAction, loadAgentBootstrap } = await import("../server/agent-service.ts");
-    await loadAgentBootstrap();
+    expect(await loadAgentBootstrap()).toMatchObject({ semanticCount: 0 });
+    expect(await handleMemoryAction({ action: "semantic_count" })).toBe(0);
     expect(runtime.memory.listBackgroundTasks()).toEqual([]);
     expect(await handleMemoryAction({ action: "consolidate", trigger: "daily" })).toBeNull();
     await expect(handleMemoryAction({ action: "consolidate" })).rejects.toThrow("请先配置模型");
@@ -58,5 +59,7 @@ it("Web 空库的每日与手动入口都不创建后台任务或占用每日配
     await runtime.memory.waitForBackgroundTasks();
     expect(await handleMemoryAction({ action: "consolidation_status" })).toBeNull();
     expect(runtime.memory.listBackgroundTasks()).toEqual([]);
+    await handleMemoryAction({ action: "create_semantic", subject: "偏好", content: "偏好喝茶" });
+    expect(await handleMemoryAction({ action: "semantic_count" })).toBe(1);
   } finally { await runtime.close(); state.runtime = null; await rm(home, { recursive: true, force: true }); }
 });

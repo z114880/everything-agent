@@ -28,5 +28,10 @@ describe("Trace 页面", () => {
     expect(source).toMatch(/<PageHeading eyebrow="JSONL traces" title="Traces" description="按文件查看已脱敏的 JSONL 事件。" descriptionActions=\{<Button size="sm"[^\n]*刷新数据/);
     expect(source).toContain("No traces yet.");
     expect(source).not.toContain("运行记录");
+    expect(source).toContain('if (await reload(MINIMUM_FEEDBACK_DURATION_MS)) setSaveMessage("已刷新")');
+    expect(source).toContain("loading={refreshing}");
+    expect(source).not.toContain("loading={loading}");
+    expect(source).toContain("onClick={() => void refresh()}");
+    expect(source).toContain("<SaveMessage message={saveMessage} setMessage={setSaveMessage} />");
   });
 });

@@ -4,11 +4,11 @@
 
 ## 当前拓扑
 
-- User Prompt、Session Chat History、System Prompt 均属于 Graph 的正式节点。START 连接 User Prompt；画布隐藏 START 与 END。
-- Session Chat History 来自服务端 SQLite 当前会话全部完整回合，最近 3 个回合另供检索意图判断。
-- Procedural Memory（EVERYTHING.md）进入 System Prompt。
+- User Prompt、Current Session、EVERYTHING.md、Skills Catalog、Procedural Memory 与 Tool Schemas 均属于 Graph 的正式节点。START 连接 User Prompt；画布隐藏 START 与 END。
+- Current Session 来自服务端 SQLite 当前会话的全部已完成回合，不包含本轮输入；最近 3 个已完成回合另供检索意图判断。
+- EVERYTHING.md 的常驻规则与 Skills Catalog 的名称、描述共同组成 Procedural Memory；完整 Skill 正文仍由模型按需调用 `read_skill` 读取。
 - 小模型判断记忆需求：`none` 跳过召回；`past_episode` 召回历史对话；`fact_with_evidence` 同时召回长期事实和历史对话。图中两条召回边表示检索依赖，不表示并行执行。
-- 当前输入、会话历史、系统指令和召回证据进入 Working Memory，检查上下文预算后交给模型推理；工具结果回到模型，最终回复用户。
+- 当前输入、会话历史、Procedural Memory、Tool Schemas 和召回证据进入 Working Memory，检查上下文预算后交给模型推理；工具结果回到模型，最终回复用户。Tool Schemas 表示本轮注册工具的名称、用途和参数结构，不属于 Procedural Memory。
 - 工具提交的记忆进入后台队列并立即返回任务 ID。
 - Consolidation 独立成区，与其他流程没有连线：每日首次使用 / 手动 Consolidate → 全量事实与分批 → 模型整理 → 校验提交 → 结果汇总。仅处理 semantic facts。
 - 两种后台入口共用检索旧记忆、小模型判断、证据及版本校验、事务提交和审计，执行新增、更新、删除、合并或跳过。

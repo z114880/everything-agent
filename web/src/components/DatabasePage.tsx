@@ -8,12 +8,14 @@ import {
   type DatabaseQueryResult,
   type DatabaseTable,
 } from "../agent-api";
+import { MINIMUM_FEEDBACK_DURATION_MS, withMinimumDuration } from "../lib/minimum-duration";
 import { Button } from "./ui/button";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "./ui/alert-dialog";
 import { PageHeading } from "./PageHeading";
+import { SaveMessage } from "./SaveMessage";
 
 type DatabaseTab = "overview" | "query";
 const DEFAULT_SQL = "SELECT * FROM sessions ORDER BY updated_at DESC LIMIT 20";
@@ -27,19 +29,22 @@ export function DatabasePage() {
   const [pendingWrite, setPendingWrite] = useState<string | null>(null);
   const [queryResult, setQueryResult] = useState<DatabaseQueryResult | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
+  const [saveMessage, setSaveMessage] = useState("");
 
-  const reload = async () => {
+  const reload = async (minimumDurationMs = 0) => {
     setError("");
     setLoading(true);
     try {
-      const data = await loadDatabase();
+      const data = await withMinimumDuration(loadDatabase, minimumDurationMs);
       setDashboard(data);
       setSelectedTableName((current) => current && data.tables.some((table) => table.name === current) ? current : null);
+      return true;
     } catch (value) {
       setError(errorText(value));
+      return false;
     } finally {
       setLoading(false);
     }
@@ -47,9 +52,20 @@ export function DatabasePage() {
 
   useEffect(() => { void reload(); }, []);
 
+  async function refresh() {
+    if (loading) return;
+    setSaveMessage("");
+    setRefreshing(true);
+    try {
+      if (await reload(MINIMUM_FEEDBACK_DURATION_MS)) setSaveMessage("已刷新");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   async function requestRun() {
     setError("");
-    setMessage("");
+    setSaveMessage("");
     if (databaseSqlNeedsConfirmation(sql)) {
       setPendingWrite(sql);
       return;
@@ -61,10 +77,12 @@ export function DatabasePage() {
     setRunning(true);
     setError("");
     try {
-      const result = await runDatabaseSql(statement, confirmed);
+      const result = await withMinimumDuration(() =>
+        runDatabaseSql(statement, confirmed),
+      );
       setQueryResult(result);
       if (result.kind === "write") {
-        setMessage(`写入成功，影响 ${result.changes} 行${result.lastInsertRowid === null ? "" : `，新增 ID ${result.lastInsertRowid}`}`);
+        setSaveMessage(`写入成功，影响 ${result.changes} 行${result.lastInsertRowid === null ? "" : `，新增 ID ${result.lastInsertRowid}`}`);
         await reload();
         setTab("query");
       }
@@ -81,17 +99,18 @@ export function DatabasePage() {
       eyebrow="SQLite / state.db"
       title="Database"
       description="查看所有普通持久化表，并使用受限 SQL Console 查询或修改数据。"
-      descriptionActions={<Button size="sm" onClick={() => void reload()} disabled={loading}><RefreshCw size={14} />刷新数据</Button>}
+      descriptionActions={<Button size="sm" onClick={() => void refresh()} loading={refreshing}><RefreshCw size={14} />刷新数据</Button>}
     />
+    <SaveMessage message={saveMessage} setMessage={setSaveMessage} />
     {dashboard && <div className="database-tabs" role="tablist" aria-label="数据库视图">
       <button className={tab === "overview" ? "active" : ""} onClick={() => { setTab("overview"); setSelectedTableName(null); }}>Overview</button>
       <button className={tab === "query" ? "active" : ""} onClick={() => { setTab("query"); setSelectedTableName(null); }}>SQL Console</button>
     </div>}
-    {error && <div className="error-message">{error}</div>}
+    {error && <div className="error-message" role="alert">{error}</div>}
     {loading && !dashboard && <div className="panel loading-panel">正在读取 Database…</div>}
     {dashboard && tab === "overview" && !selectedTable && <DatabaseOverview dashboard={dashboard} onSelect={setSelectedTableName} />}
     {tab === "overview" && selectedTable && <DatabaseTableView table={selectedTable} onBack={() => setSelectedTableName(null)} />}
-    {dashboard && tab === "query" && <SqlConsole sql={sql} result={queryResult} running={running} message={message} onSql={setSql} onRun={() => void requestRun()} />}
+    {dashboard && tab === "query" && <SqlConsole sql={sql} result={queryResult} running={running} onSql={setSql} onRun={() => void requestRun()} />}
     <AlertDialog open={pendingWrite !== null} onOpenChange={(open) => { if (!open) setPendingWrite(null); }}>
       <AlertDialogContent>
         <AlertDialogHeader>
@@ -131,15 +150,14 @@ function DatabaseTableView({ table, onBack }: { table: DatabaseTable; onBack(): 
   </>;
 }
 
-function SqlConsole(props: { sql: string; result: DatabaseQueryResult | null; running: boolean; message: string; onSql(value: string): void; onRun(): void }) {
-  const { sql, result, running, message, onSql, onRun } = props;
+function SqlConsole(props: { sql: string; result: DatabaseQueryResult | null; running: boolean; onSql(value: string): void; onRun(): void }) {
+  const { sql, result, running, onSql, onRun } = props;
   return <div className="database-query-layout">
     <section className="panel database-query-editor">
       <div className="panel-header"><span>SQL Console</span><span>SELECT 直接执行 · INSERT / UPDATE / DELETE 需要确认</span></div>
       <textarea aria-label="SQL 查询" value={sql} spellCheck={false} onChange={(event) => onSql(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter") onRun(); }} />
-      <div className="database-query-actions"><span>仅允许单条语句，最多返回 200 行；不允许 DDL。</span><Button onClick={onRun} disabled={running || !sql.trim()}><Play size={14} />{running ? "执行中…" : "运行 SQL"}</Button></div>
+      <div className="database-query-actions"><span>仅允许单条语句，最多返回 200 行；不允许 DDL。</span><Button onClick={onRun} disabled={!sql.trim()} loading={running}><Play size={14} />运行 SQL</Button></div>
     </section>
-    {message && <div className="database-write-message">{message}</div>}
     {result?.kind === "read" && <section className="database-query-result">
       <div className="database-table-summary"><strong>查询结果</strong><span>{result.rows.length} 行{result.truncated ? " · 结果已截断" : ""}</span></div>
       <DataTable columns={result.columns} rows={result.rows} empty="查询返回 0 行" />

@@ -45,6 +45,11 @@ describe("Database 页面", () => {
     expect(source).toContain("<AlertDialog");
     expect(source).toContain("确认执行数据库写操作？");
     expect(source).toContain("仅允许单条语句，最多返回 200 行；不允许 DDL");
+    expect(source).toContain('if (await reload(MINIMUM_FEEDBACK_DURATION_MS)) setSaveMessage("已刷新")');
+    expect(source).toContain("loading={refreshing}");
+    expect(source).not.toContain("loading={loading}");
+    expect(source).toContain("onClick={() => void refresh()}");
+    expect(source).toContain("<SaveMessage message={saveMessage} setMessage={setSaveMessage} />");
   });
 
   it("切换顶层标签时保持文字宽度稳定", async () => {

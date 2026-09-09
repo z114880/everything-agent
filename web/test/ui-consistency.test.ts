@@ -1,6 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { Button } from "../src/components/ui/button";
+import { withMinimumDuration } from "../src/lib/minimum-duration";
 
 const buttonSource = fileURLToPath(new URL("../src/components/ui/button.tsx", import.meta.url));
 const textareaSource = fileURLToPath(new URL("../src/components/ui/textarea.tsx", import.meta.url));
@@ -10,6 +14,7 @@ const pageSources = ["App.tsx", "components/AgentPage.tsx", "components/ConfigPa
   .map((path) => fileURLToPath(new URL(`../src/${path}`, import.meta.url)));
 
 describe("管理页面视觉一致性", () => {
+  afterEach(() => vi.useRealTimers());
   it("文本输入区域不绘制 textarea 默认或聚焦外部轮廓", async () => {
     const textarea = await readFile(textareaSource, "utf8");
 
@@ -18,7 +23,7 @@ describe("管理页面视觉一致性", () => {
     expect(textarea).not.toMatch(/focus-visible:ring(?:-|\b)/);
   });
 
-  it("统一页面标题层级，并让标准与危险操作按钮使用实心底色", async () => {
+  it("统一页面标题层级，并让标准与危险操作按钮使用清晰的语义层级", async () => {
     const [buttons, styles, pageHeading] = await Promise.all([
       readFile(buttonSource, "utf8"),
       readFile(styleSheet, "utf8"),
@@ -30,9 +35,110 @@ describe("管理页面视觉一致性", () => {
     expect(styles).toMatch(/\.eyebrow\s*\{[^}]*font-size:\s*11px/);
     expect(styles).toMatch(/\.page-heading h1\s*\{[^}]*font-size:\s*30px/);
     expect(styles).toMatch(/\.page-heading p\s*\{[^}]*font-size:\s*13px/);
-    expect(buttons).toContain('outline: "border border-secondary bg-secondary');
-    expect(buttons).toContain('"destructive-outline": "border border-destructive bg-destructive text-white');
-    expect(buttons).not.toContain("bg-destructive/5");
+    expect(buttons).toContain('outline: "border-input bg-card');
+    expect(buttons).toContain('"destructive-outline": "border-destructive/35 bg-[var(--destructive-soft)]');
+    expect(buttons).toContain("disabled:bg-[var(--button-disabled)]");
+  });
+
+  it("按钮加载时展示统一进度反馈并自动进入不可点击状态", () => {
+    const html = renderToStaticMarkup(
+      createElement(Button, { loading: true }, "保存"),
+    );
+
+    expect(html).toContain('data-loading="true"');
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain("disabled");
+    expect(html).toContain("animate-spin");
+    expect(html).toContain("保存");
+  });
+
+  it("按钮在两种状态间切换图标并保留文字与原图标占位", () => {
+    const normalHtml = renderToStaticMarkup(
+      createElement(
+        Button,
+        null,
+        createElement("svg", { width: 14, height: 14 }),
+        "保存",
+      ),
+    );
+    const loadingHtml = renderToStaticMarkup(
+      createElement(
+        Button,
+        { loading: true },
+        createElement("svg", { width: 14, height: 14 }),
+        "保存",
+      ),
+    );
+
+    expect(normalHtml).not.toContain("animate-spin");
+    expect(normalHtml).toContain("保存");
+    expect(loadingHtml).toContain("absolute");
+    expect(loadingHtml).toContain("[&amp;&gt;svg]:invisible");
+    expect(loadingHtml).toContain('data-slot="button-loading-indicator"');
+    expect(loadingHtml.indexOf('data-slot="button-loading-indicator"')).toBeGreaterThan(loadingHtml.indexOf("</span>"));
+    expect(loadingHtml).toContain("保存");
+  });
+
+  it("按钮进入 loading 时文字保持可见", () => {
+    const html = renderToStaticMarkup(
+      createElement(Button, { loading: true }, "保存"),
+    );
+
+    expect(html).not.toContain('class="contents invisible"');
+  });
+
+  it("按钮和菜单在悬停及点击时不产生缩放或位移", async () => {
+    const buttons = await readFile(buttonSource, "utf8");
+
+    expect(buttons).not.toContain("enabled:hover:-translate-y-px");
+    expect(buttons).not.toContain("enabled:active:translate-y-0");
+    expect(buttons).not.toMatch(/(?:hover|active):scale-/);
+    expect(buttons).not.toContain("box-shadow,transform");
+  });
+
+  it("loading 只隐藏原图标并保留文字，不允许调用方传入另一套文案", async () => {
+    const buttons = await readFile(buttonSource, "utf8");
+
+    expect(buttons).toContain('loading && "[&>svg]:invisible"');
+    expect(buttons).not.toContain("[&>svg]:hidden");
+    expect(buttons).not.toContain("loadingText");
+  });
+
+  it("瞬时操作的 loading 至少保留 300ms，慢操作结束后不追加等待", async () => {
+    vi.useFakeTimers();
+    let completed = false;
+    const task = withMinimumDuration(() => Promise.resolve()).then(() => {
+      completed = true;
+    });
+
+    await vi.advanceTimersByTimeAsync(299);
+    expect(completed).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await task;
+    expect(completed).toBe(true);
+  });
+
+  it("页面切换后的首次读取不强制展示 300ms loading", async () => {
+    const [tools, database, memory, traces, skills] = await Promise.all(
+      ["ToolsPage.tsx", "DatabasePage.tsx", "MemoryPage.tsx", "TracePage.tsx", "SkillsPage.tsx"]
+        .map((name) => readFile(fileURLToPath(new URL(`../src/components/${name}`, import.meta.url)), "utf8")),
+    );
+
+    expect(tools).toContain("applyCatalog(await loadTools())");
+    for (const source of [database, memory, traces, skills]) {
+      expect(source).toContain("minimumDurationMs = 0");
+      expect(source).toContain("void reload();");
+    }
+  });
+
+  it("使用雾海青蓝主题，并为不可用按钮提供独立的可读色阶", async () => {
+    const styles = await readFile(styleSheet, "utf8");
+
+    expect(styles).toContain("--primary: #176b87;");
+    expect(styles).toContain("--accent-surface: #e4f2f3;");
+    expect(styles).toContain("--good: #2f7d68;");
+    expect(styles).toContain("--button-disabled: #e5eaec;");
+    expect(styles).toContain("--button-disabled-foreground: #8a989e;");
   });
 
   it("所有一级页面复用同一个头部组件和页面 padding", async () => {

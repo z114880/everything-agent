@@ -19,6 +19,8 @@ it.each(["semantic", "episodic"])("%s 搜索无结果时保留搜索提示", (ta
     tab === "semantic" ? [] : null,
     tab === "episodic" ? { sessions: [], retrievalMode: "search", requestedLimit: 4, returnedSessionCount: 0 } : null,
     "",
+    "",
+    false,
   ];
   for (const value of values) useState.mockReturnValueOnce([value, vi.fn()]);
   const html = renderToStaticMarkup(<MemoryPage />);
@@ -32,7 +34,7 @@ it("会话查询统计合并到搜索说明中，数量使用响应值", () => {
   const values = [
     "episodic", { semantic: [] }, "", "", null,
     { sessions: [], retrievalMode: "recent", requestedLimit: 6, returnedSessionCount: 0, truncated: true, droppedSessionCount: 2 },
-    "",
+    "", "", false,
   ];
   for (const value of values) useState.mockReturnValueOnce([value, vi.fn()]);
   const html = renderToStaticMarkup(<MemoryPage />);
@@ -49,7 +51,7 @@ it("语义搜索返回记忆后仍保留搜索说明", () => {
   const values = [
     "semantic", { semantic: [] }, "", "偏好",
     [{ id: 1, subject: "偏好", content: "喜欢简洁回答", source: "用户", createdAt: "2026-09-07", updatedAt: "2026-09-07" }],
-    null, "",
+    null, "", "", false,
   ];
   for (const value of values) useState.mockReturnValueOnce([value, vi.fn()]);
   const html = renderToStaticMarkup(<MemoryPage />);

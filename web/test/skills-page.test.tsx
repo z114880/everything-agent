@@ -25,15 +25,19 @@ describe("Skills 页面", () => {
     expect(html).toContain("新建 Skill");
   });
 
-  it("初次读取时展示独立加载态，并反馈刷新状态", () => {
+  it("初次读取时展示页面加载态，但按钮不闪现 loading 或禁用样式", () => {
     const html = renderToStaticMarkup(<SkillsPage />);
+    const buttonTags = html.match(/<button[^>]*>/g) ?? [];
+    const createButton = buttonTags[0] ?? "";
+    const refreshButton = buttonTags.find((tag) => tag.includes('aria-label="重新读取 Skills"')) ?? "";
 
     expect(html).toContain('data-mode="loading"');
     expect(html).toContain("正在准备编辑器");
     expect(html).not.toContain("未保存的新 Skill");
-    expect(html).toContain('aria-label="正在重新读取 Skills"');
-    expect(html).toContain('aria-busy="true"');
-    expect(html).toContain("读取中");
+    expect(refreshButton).not.toContain('aria-busy="true"');
+    expect(refreshButton).not.toMatch(/\sdisabled(?:=""|\s|>)/);
+    expect(createButton).not.toMatch(/\sdisabled(?:=""|\s|>)/);
+    expect(html).toContain("刷新");
     expect(html).toContain("animate-spin");
   });
 
@@ -47,12 +51,24 @@ describe("Skills 页面", () => {
     expect(source.indexOf("未保存的新 Skill")).toBeGreaterThan(source.indexOf("skills.map((skill)"));
   });
 
-  it("手动刷新至少展示 300ms 加载反馈", async () => {
+  it("页面切换不补足 loading 延迟，手动刷新至少展示 300ms 加载反馈", async () => {
     const source = await readFile(new URL("../src/components/SkillsPage.tsx", import.meta.url), "utf8");
 
-    expect(source).toContain("MINIMUM_REFRESH_DURATION_MS = 300");
-    expect(source).toContain("reload(undefined, MINIMUM_REFRESH_DURATION_MS)");
-    expect(source).toContain("if (remainingDuration > 0) await wait(remainingDuration)");
+    expect(source).toContain("MINIMUM_FEEDBACK_DURATION_MS");
+    expect(source).toContain("minimumDurationMs = 0");
+    expect(source).toContain("void reload()");
+    expect(source).toContain("reload(undefined, MINIMUM_FEEDBACK_DURATION_MS)");
+    expect(source).toContain("withMinimumDuration(loadSkills, minimumDurationMs)");
+  });
+
+  it("保存成功消息悬浮展示且自动消失，不占用页面布局", async () => {
+    const source = await readFile(new URL("../src/components/SkillsPage.tsx", import.meta.url), "utf8");
+    const css = await readFile(stylePath, "utf8");
+
+    expect(source).toContain('className="skills-message" role="status" aria-live="polite"');
+    expect(source).toContain('window.setTimeout(() => setMessage(""), 2_500)');
+    expect(css).toMatch(/\.save-message, \.skills-message, \.tools-toast\s*\{[^}]*position:\s*fixed/);
+    expect(css).not.toMatch(/\.skills-message\s*\{[^}]*margin-bottom:/);
   });
 
   it("为创建态、刷新态和未保存状态提供清晰样式", async () => {

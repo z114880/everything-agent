@@ -23,7 +23,7 @@ describe("Agent 会话窗口布局", () => {
   });
 
   it("提供始终可用且标明展开状态的对话列表切换按钮", async () => {
-    const source = await readFile(new URL("../src/components/AgentPage.tsx", import.meta.url), "utf8");
+    const source = compactSource(await readFile(new URL("../src/components/AgentPage.tsx", import.meta.url), "utf8"));
     expect(source).toContain('[sessionRailCollapsed, setSessionRailCollapsed] = useState(true)');
     expect(source).toContain('hidden={sessionRailCollapsed}');
     expect(source).not.toContain("当前 Session 全部完整回合进入上下文");
@@ -43,6 +43,27 @@ describe("Agent 会话窗口布局", () => {
     expect(source.indexOf('aria-controls="agent-session-rail"')).toBeGreaterThan(source.indexOf('<div className="chat-pane">'));
     expect(ruleFor(await readFile(stylePath, "utf8"), '.new-session:not(:disabled):hover')).toMatch(/background:\s*var\(--accent-soft\)/);
     expect(ruleFor(await readFile(stylePath, "utf8"), '.history-toggle:hover, .history-toggle[aria-expanded="true"]')).toMatch(/background:\s*var\(--accent-soft\)/);
+  });
+
+  it("新建对话与历史对话复用同一套按钮尺寸和排版", async () => {
+    const source = await readFile(new URL("../src/components/AgentPage.tsx", import.meta.url), "utf8");
+    const css = await readFile(stylePath, "utf8");
+
+    expect(source.match(/session-toolbar-button/g)).toHaveLength(2);
+    expect(ruleFor(css, ".session-toolbar-button")).toMatch(/min-height:\s*34px/);
+    expect(ruleFor(css, ".session-toolbar-button")).toMatch(/padding:\s*0 10px/);
+    expect(ruleFor(css, ".session-toolbar-button")).toMatch(/font-size:\s*12px/);
+    expect(ruleFor(css, ".session-toolbar-button")).toMatch(/font-weight:\s*650/);
+    expect(ruleFor(css, ".session-toolbar-button")).toMatch(/box-shadow:\s*none/);
+  });
+
+  it("新建对话不展示 loading，创建期间仍阻止重复请求", async () => {
+    const source = await readFile(new URL("../src/components/AgentPage.tsx", import.meta.url), "utf8");
+
+    expect(source).not.toContain("loading={creatingSession}");
+    expect(source).not.toContain("setCreatingSession");
+    expect(source).toContain("creatingSessionRef.current = true");
+    expect(source).toContain("creatingSessionRef.current = false");
   });
 
   it("标题右侧保留编辑和删除，最右侧提供保留内容的收起入口", async () => {
@@ -71,7 +92,7 @@ describe("Agent 会话窗口布局", () => {
   });
 
   it("将整理操作收拢为带语义状态的紧凑控件", async () => {
-    const source = await readFile(new URL("../src/components/AgentPage.tsx", import.meta.url), "utf8");
+    const source = compactSource(await readFile(new URL("../src/components/AgentPage.tsx", import.meta.url), "utf8"));
     const css = await readFile(stylePath, "utf8");
 
     expect(source).toContain('className="agent-intro-actions"');
@@ -81,12 +102,21 @@ describe("Agent 会话窗口布局", () => {
     expect(source).toContain('<RefreshCw size={13} aria-hidden="true" /> Consolidate');
     expect(source).toContain('result?.status === "skipped" && result.reason === "no_semantic_memory"');
     expect(source).toContain('setConsolidationStatus("暂无 Semantic Memory，无需整理")');
+    expect(source).toContain('!bootstrap.settings.agentModel.keyConfigured || semanticCount === 0');
     expect(source.indexOf('className="agent-intro-actions"')).toBeGreaterThan(source.indexOf('title="Agent"'));
-    expect(ruleFor(css, ".agent-intro-actions")).toMatch(/align-items:\s*flex-end/);
+    expect(ruleFor(css, ".agent-intro-actions")).toMatch(/align-items:\s*center/);
     expect(ruleFor(css, ".consolidation-action")).toMatch(/display:\s*inline-flex/);
     expect(ruleFor(css, ".consolidation-action")).toMatch(/align-items:\s*center/);
     expect(ruleFor(css, '.consolidation-action[data-status="error"]')).toMatch(/border-color:\s*#efd7d4/);
     expect(ruleFor(css, ".consolidation-status i")).toMatch(/border-radius:\s*999px/);
+  });
+
+  it("切换到 Agent 时静默检查每日整理，不触发按钮动画", async () => {
+    const source = compactSource(await readFile(new URL("../src/components/AgentPage.tsx", import.meta.url), "utf8"));
+
+    expect(source).toContain('if (trigger === "manual") setConsolidating(true)');
+    expect(source).toContain('trigger === "manual" ? await withMinimumDuration(task) : await task()');
+    expect(source).toContain('await consolidate("daily")');
   });
 
   it("Agent 回复期间禁用发送时输入框仍保持白色", async () => {
@@ -111,4 +141,8 @@ function ruleFor(css: string, selector: string): string {
   const match = css.match(new RegExp(`${escapedSelector}\\s*\\{([^}]*)\\}`));
   expect(match, `缺少 ${selector} 样式规则`).not.toBeNull();
   return match?.[1] ?? "";
+}
+
+function compactSource(source: string): string {
+  return source.replace(/\s+/g, " ");
 }

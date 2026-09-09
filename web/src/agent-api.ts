@@ -36,6 +36,7 @@ export interface AgentBootstrap {
   settings: AgentSettings;
   systemPrompt: string;
   sessions: SessionSummary[];
+  semanticCount: number;
 }
 
 export interface SessionSummary {
