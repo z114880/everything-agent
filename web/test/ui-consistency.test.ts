@@ -9,6 +9,8 @@ import { withMinimumDuration } from "../src/lib/minimum-duration";
 const buttonSource = fileURLToPath(new URL("../src/components/ui/button.tsx", import.meta.url));
 const textareaSource = fileURLToPath(new URL("../src/components/ui/textarea.tsx", import.meta.url));
 const styleSheet = fileURLToPath(new URL("../src/index.css", import.meta.url));
+const indexDocument = fileURLToPath(new URL("../index.html", import.meta.url));
+const faviconSource = fileURLToPath(new URL("../public/favicon.svg", import.meta.url));
 const pageHeadingSource = fileURLToPath(new URL("../src/components/PageHeading.tsx", import.meta.url));
 const componentsDirectory = fileURLToPath(new URL("../src/components", import.meta.url));
 const pageSources = [
@@ -30,6 +32,18 @@ describe("管理页面视觉一致性", () => {
     const entries = await readdir(componentsDirectory);
 
     expect(entries.filter((name) => name.endsWith("Page.tsx"))).toEqual([]);
+  });
+
+  it("页面使用与主题主色一致的矢量 favicon", async () => {
+    const [document, favicon] = await Promise.all([
+      readFile(indexDocument, "utf8"),
+      readFile(faviconSource, "utf8"),
+    ]);
+
+    expect(document).toContain('<link rel="icon" type="image/svg+xml" href="/favicon.svg" />');
+    expect(document).toContain('<meta name="theme-color" content="#f5f8ff" />');
+    expect(favicon).toContain('fill="#2563eb"');
+    expect(favicon).toContain('fill="#fff"');
   });
 
   it("文本输入区域不绘制 textarea 默认或聚焦外部轮廓", async () => {
@@ -153,14 +167,17 @@ describe("管理页面视觉一致性", () => {
     }
   });
 
-  it("使用雾海青蓝主题，并为不可用按钮提供独立的可读色阶", async () => {
+  it("使用清爽活力蓝主题，并为不可用按钮提供独立的可读色阶", async () => {
     const styles = await readFile(styleSheet, "utf8");
 
-    expect(styles).toContain("--primary: #176b87;");
-    expect(styles).toContain("--accent-surface: #e4f2f3;");
-    expect(styles).toContain("--good: #2f7d68;");
-    expect(styles).toContain("--button-disabled: #e5eaec;");
-    expect(styles).toContain("--button-disabled-foreground: #8a989e;");
+    expect(styles).toContain("--primary: #2563eb;");
+    expect(styles).toContain("--accent-surface: #e8f0ff;");
+    expect(styles).toContain("--good: #1f9d72;");
+    expect(styles).toContain("--button-disabled: #e7ecf3;");
+    expect(styles).toContain("--button-disabled-foreground: #8b98aa;");
+    expect(styles).toContain(".brand-mark");
+    expect(styles).toMatch(/\.brand-mark\s*\{[^}]*background:\s*var\(--primary\)/);
+    expect(styles).toMatch(/\.sidebar\s*\{[^}]*background:\s*#f7faff/);
   });
 
   it("所有一级页面复用同一个头部组件和页面 padding", async () => {
