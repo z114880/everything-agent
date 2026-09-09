@@ -34,7 +34,7 @@ it("Web 配置不再暴露或保存 Session 整理间隔", async () => {
   }
 });
 
-it("Web 每日入口与手动入口复用后台任务，首屏只读加载不占每日配额", async () => {
+it("Web 空库的每日与手动入口都不创建后台任务或占用每日配额", async () => {
   const home = await mkdtemp(join(tmpdir(), "web-consolidate-"));
   const runtime = state.runtime = createAgentRuntime({ home, envPath: join(home, ".env"), defaultSystemPromptPath: join(home, "default.md") });
   try {
@@ -51,11 +51,12 @@ it("Web 每日入口与手动入口复用后台任务，首屏只读加载不占
       force: true,
     });
     const first = await handleMemoryAction({ action: "consolidate", trigger: "daily" });
-    expect(first).toMatchObject({ status: "queued" });
+    expect(first).toEqual({ status: "skipped", reason: "no_semantic_memory" });
     await runtime.memory.waitForBackgroundTasks();
-    expect(await handleMemoryAction({ action: "consolidate", trigger: "daily" })).toMatchObject({ status: "already_ran" });
-    expect(await handleMemoryAction({ action: "consolidate", trigger: "manual" })).toMatchObject({ status: "queued" });
+    expect(await handleMemoryAction({ action: "consolidate", trigger: "daily" })).toEqual({ status: "skipped", reason: "no_semantic_memory" });
+    expect(await handleMemoryAction({ action: "consolidate", trigger: "manual" })).toEqual({ status: "skipped", reason: "no_semantic_memory" });
     await runtime.memory.waitForBackgroundTasks();
-    expect(await handleMemoryAction({ action: "consolidation_status" })).toMatchObject({ status: "completed" });
+    expect(await handleMemoryAction({ action: "consolidation_status" })).toBeNull();
+    expect(runtime.memory.listBackgroundTasks()).toEqual([]);
   } finally { await runtime.close(); state.runtime = null; await rm(home, { recursive: true, force: true }); }
 });

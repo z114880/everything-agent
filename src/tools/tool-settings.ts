@@ -28,12 +28,12 @@ export interface PublicToolDescriptor {
   configurationLabel?: string;
 }
 
-/** 管理工具启用状态与外部工具凭证，凭证只写入本地 `.env`。 */
+/** 管理工具启用状态与外部工具凭证，只有凭证写入根目录 `.env`。 */
 export function createToolSettings(config: ReturnType<typeof createLocalConfig>) {
   return { load, save, publicCatalog };
 
   async function load(): Promise<ToolSettings> {
-    const values = await config.readEnvValues();
+    const values = await config.readValues();
     return {
       getCurrentTimeEnabled: parseBoolean(values.EVERYTHING_TOOL_GET_CURRENT_TIME_ENABLED, true),
       searchWebEnabled: parseBoolean(values.EVERYTHING_TOOL_SEARCH_WEB_ENABLED, false),
@@ -50,12 +50,11 @@ export function createToolSettings(config: ReturnType<typeof createLocalConfig>)
     const clearApiKey = input.clearTavilyApiKey === true;
     const candidateApiKey = clearApiKey ? "" : inputApiKey || before.tavilyApiKey;
     if (input.searchWebEnabled && !candidateApiKey) throw new TypeError("启用 search_web 前必须配置 Tavily API Key");
-    const updates: Record<string, string> = {
+    await config.updateConfigFile({
       EVERYTHING_TOOL_GET_CURRENT_TIME_ENABLED: String(input.getCurrentTimeEnabled),
       EVERYTHING_TOOL_SEARCH_WEB_ENABLED: String(input.searchWebEnabled && Boolean(candidateApiKey)),
-    };
-    if (inputApiKey) updates.TAVILY_API_KEY = inputApiKey;
-    await config.updateEnvFile(updates, clearApiKey ? ["TAVILY_API_KEY"] : []);
+    });
+    await config.updateSecretEnvFile(inputApiKey ? { TAVILY_API_KEY: inputApiKey } : {}, clearApiKey ? ["TAVILY_API_KEY"] : []);
     return load();
   }
 

@@ -1,4 +1,4 @@
-import { Activity, Bot, BookOpen, Brain, Database, GitBranch, PanelLeftClose, PanelLeftOpen, Settings, Sparkles, Wrench } from "lucide-react";
+import { Activity, Bot, BookOpen, Brain, ChevronLeft, ChevronRight, Database, GitBranch, Settings, Sparkles, Wrench } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CodeEditor } from "./components/CodeEditor";
 import { AgentPage } from "./components/AgentPage";
@@ -198,11 +198,11 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <aside className={`sidebar ${sidebarOpen ? "open" : "closed"}`}>
+      <aside id="app-sidebar" className={`sidebar ${sidebarOpen ? "open" : "closed"}`}>
         <div className="brand-row">
           <div className="brand-mark"><Sparkles size={15} /></div>
           <div><strong>Everything Agent</strong><span>可视化Agent控制台</span></div>
-          <Button variant="ghost" size="icon-sm" className="sidebar-toggle" onClick={() => setSidebarOpen(false)} aria-label="收起侧边栏"><PanelLeftClose size={16} /></Button>
+          <Button variant="ghost" size="icon-sm" className="panel-collapse-toggle sidebar-toggle" onClick={() => setSidebarOpen(false)} aria-label="收起侧边栏" aria-expanded={sidebarOpen} aria-controls="app-sidebar"><ChevronLeft size={16} /></Button>
         </div>
         <Button variant="ghost" className={`nav-item ${page === "workflow" ? "active" : ""}`} onClick={() => setPage("workflow")}><GitBranch size={15} /><span>Workflow</span></Button>
         <div className="nav-divider" aria-hidden="true" />
@@ -215,7 +215,7 @@ export default function App() {
         <Button variant="ghost" className={`nav-item ${page === "config" ? "active" : ""}`} onClick={() => setPage("config")}><Settings size={15} /><span>配置</span></Button>
         <div className="sidebar-note"><span className="signal bg-emerald-500" />本地 Engine 已连接</div>
       </aside>
-      {!sidebarOpen && <Button variant="outline" size="icon" className="sidebar-reopen" onClick={() => setSidebarOpen(true)} aria-label="展开侧边栏"><PanelLeftOpen size={17} /></Button>}
+      {!sidebarOpen && <Button variant="ghost" size="icon-sm" className="panel-collapse-toggle sidebar-reopen" onClick={() => setSidebarOpen(true)} aria-label="展开侧边栏" aria-expanded={sidebarOpen} aria-controls="app-sidebar"><ChevronRight size={16} /></Button>}
 
       <main className={`main-content ${page === "agent" ? "agent-main-content" : ""}`}>
         {page === "agent" ? <AgentPage onOpenConfig={() => setPage("config")} /> : page === "config" ? <ConfigPage /> : page === "skills" ? <SkillsPage /> : page === "tools" ? <ToolsPage /> : page === "memory" ? <MemoryPage /> : page === "database" ? <DatabasePage /> : page === "traces" ? <TracePage /> : <div className="content-wrap workflow-page">

@@ -6,7 +6,7 @@ import { PageHeading } from "./PageHeading";
 
 const EMPTY_DASHBOARD: TraceDashboard = { files: [] };
 
-/** 按 JSONL 文件原样列出运行记录，不在页面中推导 Session 或回合结构。 */
+/** 按 JSONL 文件原样列出 Trace，不在页面中推导 Session 或回合结构。 */
 export function TracePage() {
   const [dashboard, setDashboard] = useState<TraceDashboard>(EMPTY_DASHBOARD);
   const [error, setError] = useState("");
@@ -18,9 +18,9 @@ export function TracePage() {
   useEffect(() => { void reload(); }, []);
 
   return <div className="content-wrap trace-page">
-    <PageHeading eyebrow="JSONL 运行记录" title="运行记录" description="按文件查看已脱敏的 JSONL 事件。" descriptionActions={<Button size="sm" onClick={() => void reload()}><RefreshCw size={14} /> 刷新数据</Button>} />
+    <PageHeading eyebrow="JSONL traces" title="Traces" description="按文件查看已脱敏的 JSONL 事件。" descriptionActions={<Button size="sm" onClick={() => void reload()}><RefreshCw size={14} /> 刷新数据</Button>} />
     {error && <div className="error-message">{error}</div>}
-    {!error && dashboard.files.length === 0 && <div className="panel trace-empty">还没有运行记录。</div>}
+    {!error && dashboard.files.length === 0 && <div className="panel trace-empty">No traces yet.</div>}
     <div className="trace-file-list">
       {dashboard.files.slice().reverse().map((file) => <details className="panel trace-file" open key={file.path}>
         <summary className="trace-file-summary">

@@ -181,9 +181,9 @@ export function ConfigPage() {
       const result = await clearAllAgentData(shouldRebuildEmbeddings);
       if (result.embeddingRebuild) {
         setSettings(result.embeddingRebuild.settings);
-        setClearMessage(`清理完成，向量索引已自动重建并原子激活，共 ${result.embeddingRebuild.result.chunkCount} 个 chunks。EVERYTHING.md、Skills 和 .env 配置已保留。`);
+        setClearMessage(`清理完成，向量索引已自动重建并原子激活，共 ${result.embeddingRebuild.result.chunkCount} 个 chunks。EVERYTHING.md、Skills、config.json 和根目录 .env 密钥已保留。`);
       } else {
-        setClearMessage("清理完成。数据库、会话、记忆和运行记录已删除，EVERYTHING.md、Skills 和 .env 配置已保留。");
+        setClearMessage("清理完成。数据库、会话、记忆和运行记录已删除，EVERYTHING.md、Skills、config.json 和根目录 .env 密钥已保留。");
       }
     } catch (error) {
       setClearMessage(error instanceof Error ? error.message : String(error));
@@ -228,7 +228,7 @@ export function ConfigPage() {
           配置不会离开当前项目
           <Badge variant="success"><ShieldCheck size={12} />仅存储在本地</Badge>
         </AlertTitle>
-        <AlertDescription>模型与运行配置保存在本地 <code>.env</code> 文件中；保存后下一回合立即生效。</AlertDescription>
+        <AlertDescription>普通配置保存在 <code>.everything/config.json</code>，API Key 保存在根目录 <code>.env</code>；保存后下一回合立即生效。</AlertDescription>
       </Alert>
 
       <div className="config-grid">
@@ -334,7 +334,7 @@ export function ConfigPage() {
 
         <Card className="config-danger-card">
           <CardHeader className="config-card-header"><div className="config-card-icon danger"><AlertTriangle size={18} /></div><div><CardTitle>危险区域</CardTitle><CardDescription>永久删除本地运行数据，此操作无法撤销。</CardDescription></div><Badge variant="destructive">不可撤销</Badge></CardHeader>
-          <CardContent className="config-danger-body"><div><strong>清除全部本地数据</strong><p>删除数据库、Session、Chat Log、Semantic Memory、Session Recall 索引和全部运行记录，保留 <code>.everything/EVERYTHING.md</code>、<code>.everything/skills</code> 和 <code>.env</code> 配置。</p></div><AllDataClearDialog disabled={clearingData} onConfirm={() => void clearAllData()} />{clearMessage && <span className="config-danger-message">{clearMessage}</span>}</CardContent>
+          <CardContent className="config-danger-body"><div><strong>清除全部本地数据</strong><p>删除数据库、Session、Chat Log、Semantic Memory、Session Recall 索引和全部 Traces，保留 <code>.everything/EVERYTHING.md</code>、<code>.everything/skills</code>、<code>.everything/config.json</code> 和根目录 <code>.env</code> 密钥。</p></div><AllDataClearDialog disabled={clearingData} onConfirm={() => void clearAllData()} />{clearMessage && <span className="config-danger-message">{clearMessage}</span>}</CardContent>
         </Card>
       </div>
     </div>
@@ -375,5 +375,5 @@ function EmbeddingKeyClearDialog({ onConfirm }: { onConfirm(): void }) {
   return <AlertDialog><AlertDialogTrigger asChild><Button variant="destructive-outline" size="sm"><Trash2 size={14} />清除 API Key</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>清除 Embedding API Key？</AlertDialogTitle><AlertDialogDescription>检索模式将回到 FTS5 + BM25。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction onClick={onConfirm}>确认清除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>;
 }
 function AllDataClearDialog({ disabled, onConfirm }: { disabled: boolean; onConfirm(): void }) {
-  return <AlertDialog><AlertDialogTrigger asChild><Button variant="destructive-outline" disabled={disabled}><Trash2 size={14} />{disabled ? "正在清理…" : "清除全部数据"}</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>永久清除全部本地数据？</AlertDialogTitle><AlertDialogDescription>数据库、会话、记忆、索引和运行记录都会被删除。EVERYTHING.md、Skills 与 .env 配置将保留；如已完整配置 Embedding，清理后会自动重建向量索引。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction onClick={onConfirm}>确认永久删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>;
+  return <AlertDialog><AlertDialogTrigger asChild><Button variant="destructive-outline" disabled={disabled}><Trash2 size={14} />{disabled ? "正在清理…" : "清除全部数据"}</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>永久清除全部本地数据？</AlertDialogTitle><AlertDialogDescription>数据库、会话、记忆、索引和运行记录都会被删除。EVERYTHING.md、Skills、config.json 与根目录 .env 密钥将保留；如已完整配置 Embedding，清理后会自动重建向量索引。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction onClick={onConfirm}>确认永久删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>;
 }

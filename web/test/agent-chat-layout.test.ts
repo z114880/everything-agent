@@ -51,7 +51,7 @@ describe("Agent 会话窗口布局", () => {
     const heading = source.indexOf('className="agent-session-heading"');
     expect(source.indexOf('aria-label="重命名会话"')).toBeGreaterThan(heading);
     expect(source.indexOf('aria-label="删除会话"')).toBeGreaterThan(heading);
-    expect(source.indexOf('className="session-icon chat-collapse-toggle"')).toBeGreaterThan(heading);
+    expect(source.indexOf('className="panel-collapse-toggle chat-collapse-toggle"')).toBeGreaterThan(heading);
     expect(source).toContain('aria-expanded={!chatCollapsed}');
     expect(source).toContain('aria-controls="agent-chat-content"');
     expect(source).toContain('hidden={chatCollapsed}');
@@ -59,6 +59,7 @@ describe("Agent 会话窗口布局", () => {
     expect(ruleFor(css, '.agent-chat-content[hidden]')).toMatch(/display:\s*none/);
     expect(ruleFor(css, '.agent-page-layout[data-chat-collapsed="true"]')).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\) 0/);
     expect(ruleFor(css, '.agent-page-layout[data-chat-collapsed="true"] .agent-chat-dock')).toMatch(/border-left:\s*0/);
+    expect(ruleFor(css, '.agent-page-layout[data-chat-collapsed="true"] .agent-dock-header')).toMatch(/right:\s*8px/);
   });
 
   it("让 Dock 收缩到视口内并把超长会话交给日志区域滚动", async () => {
@@ -78,12 +79,30 @@ describe("Agent 会话窗口布局", () => {
     expect(source).toContain('className="consolidation-status" role="status"');
     expect(source).toContain('className="consolidation-button" variant="secondary"');
     expect(source).toContain('<RefreshCw size={13} aria-hidden="true" /> Consolidate');
+    expect(source).toContain('result?.status === "skipped" && result.reason === "no_semantic_memory"');
+    expect(source).toContain('setConsolidationStatus("暂无 Semantic Memory，无需整理")');
     expect(source.indexOf('className="agent-intro-actions"')).toBeGreaterThan(source.indexOf('title="Agent"'));
     expect(ruleFor(css, ".agent-intro-actions")).toMatch(/align-items:\s*flex-end/);
     expect(ruleFor(css, ".consolidation-action")).toMatch(/display:\s*inline-flex/);
     expect(ruleFor(css, ".consolidation-action")).toMatch(/align-items:\s*center/);
     expect(ruleFor(css, '.consolidation-action[data-status="error"]')).toMatch(/border-color:\s*#efd7d4/);
     expect(ruleFor(css, ".consolidation-status i")).toMatch(/border-radius:\s*999px/);
+  });
+
+  it("Agent 回复期间禁用发送时输入框仍保持白色", async () => {
+    const css = await readFile(stylePath, "utf8");
+    const disabledTextarea = ruleFor(css, ".agent-composer textarea:disabled");
+
+    expect(disabledTextarea).toMatch(/background:\s*white\s*;/);
+    expect(disabledTextarea).toMatch(/opacity:\s*1\s*;/);
+  });
+
+  it("首次进入 Agent 页面立即滚动到底部，后续消息保留平滑过渡", async () => {
+    const source = await readFile(new URL("../src/components/AgentPage.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain("useLayoutEffect");
+    expect(source).toContain('behavior: initialChatScrollRef.current ? "auto" : "smooth"');
+    expect(source).toContain("initialChatScrollRef.current = false");
   });
 });
 

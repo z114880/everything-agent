@@ -133,9 +133,9 @@ Gate 初始召回通过 gate_start、gate_end、retrieval_start、retrieval_comp
 
 ### 后台 consolidation
 
-Agent 页面每日首次进入时调用 `runtime.consolidate("daily")`，按服务端本地自然日持久化去重；刷新、重启不重复创建。页面 **Consolidate** 按钮调用 `runtime.consolidate("manual")`，允许额外执行。同一时刻只保留一个待执行或运行中的整理任务，自动和手动重复请求返回现有任务。未配置模型时自动入口不占配额，手动入口明确报错。底层 `memory.consolidate(trigger)` 可在依赖尚未注入时持久入队。
+Agent 页面每日首次进入时调用 `runtime.consolidate("daily")`，按服务端本地自然日持久化去重；刷新、重启不重复创建。页面 **Consolidate** 按钮调用 `runtime.consolidate("manual")`，允许额外执行。同一时刻只保留一个待执行或运行中的整理任务，自动和手动重复请求返回现有任务。Semantic Memory 为空时返回 `{ status: "skipped", reason: "no_semantic_memory" }`，不创建任务、run、trace 或每日占用记录。未配置模型时自动入口不占配额，手动入口明确报错。底层 `memory.consolidate(trigger)` 可在依赖尚未注入时持久入队。
 
-整理仅输入全量 semantic facts 与已有元数据，不读取聊天或 Session Recall，不做漏记补偿或 episodic evidence 提炼。模型返回 update、merge、delete 及未解决冲突；代码校验 ID、原因、重复目标和版本，直接修改现有事实，不保留旧版本。无建议即无变更；证据不足的冲突保留事实。聊天的 create/update/delete/merge/noop 管理与本流程独立。
+整理仅输入全量 semantic facts 与已有元数据，不读取聊天或 Session Recall，不做漏记补偿或 episodic evidence 提炼。模型返回 update、merge、delete 及未解决冲突；无实际操作时必须返回显式 `noop` outcome，无变化使用 `no_change`，只有未解决冲突使用 `unresolved_conflict`。代码校验 ID、原因、重复目标和版本，直接修改现有事实，不保留旧版本；证据不足的冲突保留事实并记录跳过。聊天的 create/update/delete/merge/noop 管理与本流程独立。
 
 模型固定使用 agentModel。请求按 Model Context Window 估算预算，预留最多 4096 输出 tokens（不超过窗口四分之一）及 512 安全余量。能一次处理则全量提交；否则按主题排序、按预算分组，逐对合并分组进行审查，覆盖跨组关联。最多 256 个子任务，超限或单条事实无法放入时明确失败，不截断正文。分组后发生内容增长导致超限也明确报告；该机制提供共同审查机会，不保证自然语言语义判断绝对正确。
 
@@ -145,7 +145,7 @@ Agent 页面每日首次进入时调用 `runtime.consolidate("daily")`，按服�
 
 整理 trace 层级统一为 `consolidation → batch → model / reviewed / change`，不再包装 `memory_task`。根生命周期为 `consolidation_started`（trigger、attempt、createdAt）与 `consolidation_completed`（completedBatches）；失败后发出 `consolidation_retry`（等待重试）或 `consolidation_failed`（最终失败），包含 errorType、nextAttemptAt。所有整理事件关联 runId 和 attempt，不携带 taskId、taskKind、taskCreatedAt；创建时间仅保存在根开始事件。
 
-批次按顺序发出 `consolidation_batch_started` → `consolidation_snapshot`（当前批次 factCount）→ `consolidation_model_started/completed/failed` → `consolidation_reviewed`（decisionCount、unresolvedConflicts）→ `consolidation_change`（action、reasonCode、targetId、deletedIds）→ `consolidation_batch_completed/failed`。批次事件携带零基 batchIndex、totalBatches；模型事件用 modelCallId 配对并记录模型名称、耗时或错误类型。空库没有批次或模型事件；断点恢复仍产生批次开始事件，已有建议直接进入 reviewed，不伪造快照或模型调用。所有批次及重试写入同一 `consolidation-<runId>.jsonl`，JSONL 保持扁平事件流。
+批次按顺序发出 `consolidation_batch_started` → `consolidation_snapshot`（当前批次 factCount）→ `consolidation_model_started/completed/failed` → `consolidation_reviewed`（decisionCount、unresolvedConflicts）→ `consolidation_change`（action、reasonCode、targetId、deletedIds）→ `consolidation_batch_completed/failed`。无实际修改时仍发出 action 为 `noop` 的 `consolidation_change`，使 `no_change` 与 `unresolved_conflict` 可观察并计入跳过统计。批次事件携带零基 batchIndex、totalBatches；模型事件用 modelCallId 配对并记录模型名称、耗时或错误类型。空库没有批次或模型事件；断点恢复仍产生批次开始事件，已有建议直接进入 reviewed，不伪造快照或模型调用。所有批次及重试写入同一 `consolidation-<runId>.jsonl`，JSONL 保持扁平事件流。
 
 ### 事件与隐私
 

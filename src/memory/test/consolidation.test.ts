@@ -80,11 +80,15 @@ it("每日仅一次，手动可额外执行且与已有任务互斥；跨日与�
   vi.setSystemTime(new Date(2026, 8, 6, 9));
   const home = await mkdtemp(join(tmpdir(), "daily-consolidation-"));
   let memory = new MemoryRuntime(home);
+  expect(memory.consolidate("daily")).toEqual({ status: "skipped", reason: "no_semantic_memory" });
+  expect(memory.listBackgroundTasks()).toEqual([]);
+  expect(memory.listConsolidations()).toEqual([]);
+  await memory.createSemantic("饮品", "喜欢红茶");
   const first = memory.consolidate("daily");
   expect(memory.consolidate("daily")).toEqual({ status: "active", taskId: first.taskId });
   expect(memory.consolidate("manual").taskId).toBe(first.taskId);
   memory.close(); memory = new MemoryRuntime(home); memories.push(memory);
-  memory.startBackgroundTasks(async () => options(() => { throw new Error("空库不应调用模型"); }));
+  memory.startBackgroundTasks(async () => options(() => ({ decisions: [], unresolvedConflicts: [], outcome: { action: "noop", reasonCode: "no_change" } })));
   await memory.waitForBackgroundTasks();
   expect(memory.consolidate("daily")).toEqual({ status: "already_ran", taskId: first.taskId });
   expect(memory.consolidate("manual").status).toBe("queued");
@@ -123,21 +127,40 @@ it("全量 facts 独立审查，不读取聊天；合并、替换与低质量清
   expect(events).toEqual(["consolidation_started", "consolidation_batch_started", "consolidation_snapshot", "consolidation_model_started", "consolidation_model_completed", "consolidation_reviewed", ...Array(3).fill("consolidation_change"), "consolidation_batch_completed", "consolidation_completed"]);
 });
 
+it("没有实际操作时要求显式 noop，并记录 no_change 跳过结果", async () => {
+  const memory = await setup();
+  await memory.createSemantic("饮品", "喜欢红茶");
+  const events: Array<{ kind: string; event: Record<string, unknown> }> = [];
+  memory.startBackgroundTasks(async () => ({
+    ...options(() => ({ decisions: [], unresolvedConflicts: [], outcome: { action: "noop", reasonCode: "no_change" } })),
+    observer: (kind, event) => { events.push({ kind, event }); },
+  }));
+  memory.consolidate(); await memory.waitForBackgroundTasks();
+  expect(memory.listSemantic()).toHaveLength(1);
+  expect(memory.listConsolidations()[0]).toMatchObject({ factsSkipped: 1, unresolvedConflicts: 0 });
+  expect(events.find(({ kind }) => kind === "consolidation_reviewed")?.event).toMatchObject({ decisionCount: 0, unresolvedConflicts: 0 });
+  expect(events.find(({ kind }) => kind === "consolidation_change")?.event).toMatchObject({ action: "noop", reasonCode: "no_change", deletedIds: [] });
+});
+
 it("有界分批覆盖全部事实及跨批次组合，未解决冲突保留事实", async () => {
   const memory = await setup();
   const ids: number[] = [];
   for (let i = 0; i < 4; i++) ids.push((await memory.createSemantic(`属性${i}`, `事实${i}`)).id);
   const seen: number[][] = [];
+  const changes: Array<Record<string, unknown>> = [];
   memory.startBackgroundTasks(async () => ({ ...options((payload) => {
     const facts = payload.facts as Array<{ id: number }>;
     seen.push(facts.map((fact) => fact.id));
-    return { decisions: [], unresolvedConflicts: [facts.map((fact) => fact.id)] };
-  }), modelContextWindow: 4096, tokenEstimator: { estimateText: () => 0, estimateRequest: (request) => JSON.parse(String(request.messages[0]!.content)).facts.length * 1000 } }));
+    return { decisions: [], unresolvedConflicts: [facts.map((fact) => fact.id)], outcome: { action: "noop", reasonCode: "unresolved_conflict" } };
+  }), modelContextWindow: 4096, tokenEstimator: { estimateText: () => 0, estimateRequest: (request) => JSON.parse(String(request.messages[0]!.content)).facts.length * 1000 },
+  observer: (kind, event) => { if (kind === "consolidation_change") changes.push(event); } }));
   memory.consolidate(); await memory.waitForBackgroundTasks();
   expect(seen).toHaveLength(6);
   for (const left of ids) for (const right of ids) expect(seen.some((batch) => batch.includes(left) && batch.includes(right))).toBe(true);
   expect(memory.listSemantic()).toHaveLength(4);
-  expect(memory.listConsolidations()[0]).toMatchObject({ totalBatches: 6, completedBatches: 6, unresolvedConflicts: 6 });
+  expect(memory.listConsolidations()[0]).toMatchObject({ totalBatches: 6, completedBatches: 6, unresolvedConflicts: 6, factsSkipped: 6 });
+  expect(changes).toHaveLength(6);
+  expect(changes.every((event) => event.action === "noop" && event.reasonCode === "unresolved_conflict")).toBe(true);
 });
 
 it("提交后 observer 失败重试不重放修改和模型，检查点不保存旧事实正文", async () => {
@@ -162,7 +185,7 @@ it("模型期间用户更新事实使旧建议失效，重试重新审查", asyn
   memory.startBackgroundTasks(async () => options(async () => {
     calls++;
     if (calls === 1) { await memory.updateSemantic(fact.id, "地点", "上海"); return { decisions: [{ action: "delete", targetId: fact.id, reasonCode: "superseded" }], unresolvedConflicts: [] }; }
-    return { decisions: [], unresolvedConflicts: [] };
+    return { decisions: [], unresolvedConflicts: [], outcome: { action: "noop", reasonCode: "no_change" } };
   }));
   memory.consolidate();
   await vi.waitFor(() => expect(memory.listBackgroundTasks()[0]).toMatchObject({ status: "pending", attempts: 1 }));
@@ -177,6 +200,8 @@ it.each([
   { decisions: [{ action: "merge", targetId: 1, sourceIds: [1], reasonCode: "redundant" }], unresolvedConflicts: [] },
   { decisions: [{ action: "update", targetId: 1, reasonCode: "correction", content: "" }], unresolvedConflicts: [] },
   { decisions: [], unresolvedConflicts: [[999, 1]] },
+  { decisions: [], unresolvedConflicts: [], outcome: { action: "noop", reasonCode: "unresolved_conflict" } },
+  { decisions: [{ action: "delete", targetId: 1, reasonCode: "not_durable" }], unresolvedConflicts: [], outcome: { action: "noop", reasonCode: "no_change" } },
   { decisions: [] },
 ])("无效模型建议不能修改事实，最多重试三次：%j", async (plan) => {
   vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
@@ -194,7 +219,7 @@ it.each(["单条超限", "子任务超限", "输出截断", "调用超时"])("%s
   const memory = await setup();
   for (let i = 0; i < (scenario === "子任务超限" ? 24 : 2); i++) await memory.createSemantic(`属性${i}`, "完整正文");
   let calls = 0;
-  const config = options(() => ({ decisions: [], unresolvedConflicts: [] }));
+  const config = options(() => ({ decisions: [], unresolvedConflicts: [], outcome: { action: "noop", reasonCode: "no_change" } }));
   memory.startBackgroundTasks(async () => ({ ...config, modelContextWindow: 4096,
     tokenEstimator: { estimateText: () => 0, estimateRequest: (request) => scenario === "单条超限" ? 9000 : JSON.parse(String(request.messages[0]!.content)).facts.length * 1000 },
     client: { messages: { async create(request) {
@@ -243,24 +268,20 @@ it("进程在 consolidation 提交后退出，恢复检查点不重放模型与�
   await memory.waitForBackgroundTasks();
   expect(calls).toBe(0); expect(memory.listSemantic()).toEqual([]);
   expect(memory.listConsolidations()[0]).toMatchObject({ status: "completed", factsDeleted: 1 });
-  expect(memory.consolidate("daily").status).toBe("already_ran");
+  expect(memory.consolidate("daily")).toEqual({ status: "skipped", reason: "no_semantic_memory" });
 });
 
 
-it("整理事件只关联运行与尝试，空库没有虚构批次", async () => {
+it("空库跳过整理，不创建任务、运行或事件", async () => {
   const memory = await setup();
   const events: Array<{ kind: string; event: Record<string, unknown> }> = [];
   memory.startBackgroundTasks(async () => ({ ...options(() => { throw new Error("空库不调用模型"); }), observer: (kind, event) => { events.push({ kind, event }); } }));
-  const queued = memory.consolidate("manual");
+  const result = memory.consolidate("manual");
   await memory.waitForBackgroundTasks();
-  expect(events.map(({ kind }) => kind)).toEqual(["consolidation_started", "consolidation_completed"]);
-  expect(events[0]?.event).toMatchObject({ runId: queued.taskId, attempt: 1, trigger: "manual", createdAt: expect.any(String) });
-  expect(events[1]?.event).toEqual({ runId: queued.taskId, attempt: 1, completedBatches: 0 });
-  for (const { event } of events) {
-    expect(event).not.toHaveProperty("taskId");
-    expect(event).not.toHaveProperty("taskKind");
-    expect(event).not.toHaveProperty("taskCreatedAt");
-  }
+  expect(result).toEqual({ status: "skipped", reason: "no_semantic_memory" });
+  expect(events).toEqual([]);
+  expect(memory.listBackgroundTasks()).toEqual([]);
+  expect(memory.listConsolidations()).toEqual([]);
 });
 
 it("模型失败先关闭批次再重试，尝试和调用关联明确且最终失败有终态", async () => {

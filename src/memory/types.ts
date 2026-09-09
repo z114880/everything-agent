@@ -95,7 +95,7 @@ export interface MemorySource {
   createdAt: string;
 }
 export type MemoryAction = "create" | "update" | "delete" | "merge" | "noop";
-export type MemoryReasonCode = "new_fact" | "correction" | "explicit_forget" | "redundant" | "duplicate" | "not_durable" | "uncertain" | "no_change" | "superseded";
+export type MemoryReasonCode = "new_fact" | "correction" | "explicit_forget" | "redundant" | "duplicate" | "not_durable" | "uncertain" | "no_change" | "unresolved_conflict" | "superseded";
 export interface MemoryDecision {
   action: MemoryAction;
   reason: string;

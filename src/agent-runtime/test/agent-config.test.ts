@@ -3,19 +3,18 @@ import { parseEnv, updateEnvText } from "../index.ts";
 
 describe("本地 Agent 模型配置", () => {
   it("解析引号、export 与行尾注释", () => {
-    expect(parseEnv('export EVERYTHING_MODEL="model-a"\nOPENAI_API_KEY=secret # local\n')).toEqual({
-      EVERYTHING_MODEL: "model-a",
-      OPENAI_API_KEY: "secret",
+    expect(parseEnv('export EVERYTHING_AGENT_API_KEY="agent-secret"\nTAVILY_API_KEY=tool-secret # local\n')).toEqual({
+      EVERYTHING_AGENT_API_KEY: "agent-secret",
+      TAVILY_API_KEY: "tool-secret",
     });
   });
 
   it("更新目标字段时保留注释和无关配置，并可显式清除密钥", () => {
-    const source = '# 用户配置\nOTHER="keep"\nOPENAI_API_KEY="old"\n';
+    const source = '# 本地密钥\nOTHER="keep"\nEVERYTHING_AGENT_API_KEY="old"\n';
     expect(updateEnvText(source, {
-      EVERYTHING_PROVIDER: "openai-compatible",
-      EVERYTHING_MODEL: "model-b",
-    }, ["OPENAI_API_KEY"])).toBe(
-      '# 用户配置\nOTHER="keep"\nEVERYTHING_PROVIDER="openai-compatible"\nEVERYTHING_MODEL="model-b"\n',
+      TAVILY_API_KEY: "new",
+    }, ["EVERYTHING_AGENT_API_KEY"])).toBe(
+      '# 本地密钥\nOTHER="keep"\nTAVILY_API_KEY="new"\n',
     );
   });
 });

@@ -36,4 +36,26 @@ describe("侧栏菜单", () => {
     expect(styles).toContain(".nav-item > svg { width: 17px; height: 17px;");
     expect(styles).not.toContain(".nav-item.active::before");
   });
+
+  it("左右侧栏使用同款折叠按钮并以相反方向提示开合", async () => {
+    const source = await readFile(app, "utf8");
+    const agentSource = await readFile(new URL("../src/components/AgentPage.tsx", import.meta.url), "utf8");
+    const styles = await readFile(styleSheet, "utf8");
+
+    expect(source).toContain('className="panel-collapse-toggle sidebar-toggle"');
+    expect(source).toContain('<ChevronLeft size={16} />');
+    expect(source).toContain('className="panel-collapse-toggle sidebar-reopen"');
+    expect(source).toContain('<ChevronRight size={16} />');
+    expect(source).not.toContain("PanelLeftClose");
+    expect(source).not.toContain("PanelLeftOpen");
+    expect(agentSource).toContain('className="panel-collapse-toggle chat-collapse-toggle"');
+    expect(styles).toContain(".panel-collapse-toggle { display: grid;");
+    expect(styles).toContain("border: 1px solid transparent; border-radius: 7px; background: transparent;");
+    expect(styles).toContain(".panel-collapse-toggle:hover { border-color: var(--line); background: #ffffffb8;");
+    expect(styles).toContain(".panel-collapse-toggle.sidebar-reopen { position: fixed;");
+    expect(styles).toContain("top: 18px; left: 8px;");
+    expect(source).toContain('id="app-sidebar"');
+    expect(source).toContain('aria-controls="app-sidebar"');
+    expect(source).toContain("aria-expanded={sidebarOpen}");
+  });
 });

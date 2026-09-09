@@ -1,6 +1,6 @@
 import { advanceHarnessMemory } from "../harness-playback";
 import { Bot, CircleStop, Clock3, MessageSquarePlus, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Pencil, RefreshCw, Send, Settings2, Trash2, Wrench } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { loadAgent, memoryAction, runAgent, subscribeBackgroundEvents, type AgentBootstrap, type AgentEvent, type AgentRunResult, type ChatLogEntry, type SessionSummary } from "../agent-api";
 import { shouldSubmitAgentComposer } from "../agent-composer";
 import { createEdgePlayback } from "../edge-playback";
@@ -45,6 +45,7 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
   const sessionMenuRef = useRef<HTMLDivElement | null>(null);
   const historyToggleRef = useRef<HTMLButtonElement | null>(null);
   const chatLogRef = useRef<HTMLDivElement | null>(null);
+  const initialChatScrollRef = useRef(true);
   const edgePlaybackRef = useRef<ReturnType<typeof createEdgePlayback> | null>(null);
   edgePlaybackRef.current ??= createEdgePlayback(setActiveEdges);
   const edgePlayback = edgePlaybackRef.current;
@@ -59,7 +60,12 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
     document.addEventListener("pointerdown", dismiss);
     return () => document.removeEventListener("pointerdown", dismiss);
   }, [sessionRailCollapsed]);
-  useEffect(() => { chatLogRef.current?.scrollTo({ top: chatLogRef.current.scrollHeight, behavior: "smooth" }); }, [messages]);
+  useLayoutEffect(() => {
+    const chatLog = chatLogRef.current;
+    if (!chatLog || !activeSessionId) return;
+    chatLog.scrollTo({ top: chatLog.scrollHeight, behavior: initialChatScrollRef.current ? "auto" : "smooth" });
+    initialChatScrollRef.current = false;
+  }, [activeSessionId, messages]);
   useEffect(() => { if (!running) return; const timer = window.setInterval(() => setTick((value) => value + 1), 1_000); return () => window.clearInterval(timer); }, [running]);
   useEffect(() => () => edgePlayback.cancel(), [edgePlayback]);
 
@@ -114,14 +120,19 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
   async function consolidate(trigger: "daily" | "manual") {
     setConsolidating(true);
     try {
-      await memoryAction({ action: "consolidate", trigger });
+      const result = await memoryAction<{ status?: string; reason?: string } | null>({ action: "consolidate", trigger });
+      if (result?.status === "skipped" && result.reason === "no_semantic_memory") {
+        setConsolidating(false);
+        setConsolidationStatus("暂无 Semantic Memory，无需整理");
+        return;
+      }
       await refreshConsolidation();
     } catch (error) { setConsolidating(false); setConsolidationStatus(error instanceof Error ? error.message : String(error)); }
   }
 
   const consolidationTone = consolidating
     ? "running"
-    : consolidationStatus === "整理完成"
+    : consolidationStatus === "整理完成" || consolidationStatus === "暂无 Semantic Memory，无需整理"
       ? "success"
       : consolidationStatus
         ? "error"
@@ -200,7 +211,7 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
   return <div className="agent-page-layout" data-chat-collapsed={chatCollapsed}>
     <div className="agent-main-column"><PageHeading eyebrow="个人助理 / 实时执行" title="Agent" description="发送消息，观察记忆召回、上下文组装、模型推理与工具执行。" actions={<div className="agent-intro-actions"><div className="consolidation-action" data-status={consolidationTone}>{consolidationStatus && <span className="consolidation-status" role="status"><i aria-hidden="true" />{consolidationStatus}</span>}<Button className="consolidation-button" variant="secondary" size="sm" disabled={consolidating || !bootstrap.settings.agentModel.keyConfigured} onClick={() => void consolidate("manual")}><RefreshCw size={13} aria-hidden="true" /> Consolidate</Button></div>{(!bootstrap.settings.agentModel.keyConfigured || !bootstrap.settings.smallModel.keyConfigured) && <Button className="config-warning" onClick={onOpenConfig}><Settings2 size={14} /> 配置模型后开始</Button>}</div>} /><AgentHarnessCanvas workflow={bootstrap.workflow} nodeStates={{ ...nodeStates, ...backgroundStates }} activeEdges={new Set([...activeEdges, ...backgroundEdges])} /></div>
     <aside className="agent-chat-dock">
-      <div className="chat-pane"><div className="agent-dock-header"><div className="agent-avatar"><Bot size={16} /></div><div className="agent-session-heading"><span className="chat-heading-label">与个人助理对话</span><strong>{sessions.find((item) => item.id === activeSessionId)?.title ?? "当前会话"}</strong></div><Button variant="ghost" size="icon-sm" className="session-icon" onClick={() => void renameActiveSession()} aria-label="重命名会话" title="重命名会话"><Pencil size={13} /></Button><Button variant="ghost" size="icon-sm" className="session-icon danger" onClick={() => void deleteActiveSession()} aria-label="删除会话" title="删除会话"><Trash2 size={13} /></Button><Button type="button" variant="ghost" size="icon-sm" className="session-icon chat-collapse-toggle" aria-label={chatCollapsed ? "展开聊天区" : "收起聊天区"} title={chatCollapsed ? "展开聊天区" : "收起聊天区"} aria-expanded={!chatCollapsed} aria-controls="agent-chat-content" onClick={() => { setChatCollapsed((collapsed) => !collapsed); setSessionRailCollapsed(true); }}>{chatCollapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}</Button></div>
+      <div className="chat-pane"><div className="agent-dock-header"><div className="agent-avatar"><Bot size={16} /></div><div className="agent-session-heading"><span className="chat-heading-label">与个人助理对话</span><strong>{sessions.find((item) => item.id === activeSessionId)?.title ?? "当前会话"}</strong></div><Button variant="ghost" size="icon-sm" className="session-icon" onClick={() => void renameActiveSession()} aria-label="重命名会话" title="重命名会话"><Pencil size={13} /></Button><Button variant="ghost" size="icon-sm" className="session-icon danger" onClick={() => void deleteActiveSession()} aria-label="删除会话" title="删除会话"><Trash2 size={13} /></Button><Button type="button" variant="ghost" size="icon-sm" className="panel-collapse-toggle chat-collapse-toggle" aria-label={chatCollapsed ? "展开聊天区" : "收起聊天区"} title={chatCollapsed ? "展开聊天区" : "收起聊天区"} aria-expanded={!chatCollapsed} aria-controls="agent-chat-content" onClick={() => { setChatCollapsed((collapsed) => !collapsed); setSessionRailCollapsed(true); }}>{chatCollapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}</Button></div>
         <div id="agent-chat-content" className="agent-chat-content" hidden={chatCollapsed}>
         <div className="session-menu-anchor" ref={sessionMenuRef} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setSessionRailCollapsed(true); }} onKeyDown={(event) => { if (event.key === "Escape" && !sessionRailCollapsed) { setSessionRailCollapsed(true); historyToggleRef.current?.focus(); } }}><div className="chat-toolbar"><Button variant="outline" size="sm" className="new-session" disabled={running || creatingSession || !activeSessionId || messages.length === 0} onClick={() => void createSession()}><MessageSquarePlus size={14} /> 新建对话</Button><Button type="button" variant="outline" size="sm" className="history-toggle" ref={historyToggleRef} aria-label={sessionRailCollapsed ? "展开对话列表" : "收起对话列表"} title={sessionRailCollapsed ? "展开对话列表" : "收起对话列表"} aria-expanded={!sessionRailCollapsed} aria-controls="agent-session-rail" onClick={() => setSessionRailCollapsed((collapsed) => !collapsed)}>历史对话 {sessionRailCollapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}</Button><Button variant="secondary" size="sm" className="model-chip" onClick={onOpenConfig} title="打开模型配置"><span className={bootstrap.settings.agentModel.keyConfigured && bootstrap.settings.smallModel.keyConfigured ? "model-dot ready" : "model-dot"} /><span className="model-name">{bootstrap.settings.agentModel.model || bootstrap.settings.agentModel.provider}</span><ChevronDown size={12} aria-hidden="true" /></Button></div>
         <div id="agent-session-rail" className="session-rail" hidden={sessionRailCollapsed}><div className="session-list-heading"><strong>历史对话</strong><span>选择一个会话继续聊天</span></div><div className="session-list">{sessions.map((session) => <Button variant="ghost" key={session.id} className={session.id === activeSessionId ? "active" : ""} onClick={() => void selectSession(session.id)}><strong>{session.title}</strong><span>{session.messageCount} 条记录</span></Button>)}</div></div></div>

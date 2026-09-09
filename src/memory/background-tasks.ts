@@ -60,7 +60,7 @@ export class MemoryBackgroundTasks {
     return { status: "queued", taskId: id };
   }
 
-  /** 持久化每日去重与任务互斥；手动执行不受每日自动配额限制。 */
+  /** 仅在存在 Semantic Memory 时持久化整理；每日去重与手动任务共用互斥。 */
   enqueueConsolidation(trigger: "daily" | "manual") {
     if (trigger !== "daily" && trigger !== "manual") throw new TypeError("Consolidate 触发来源无效");
     const now = new Date();
@@ -72,6 +72,8 @@ export class MemoryBackgroundTasks {
         if (trigger === "daily") this.storage.connection.prepare("INSERT OR IGNORE INTO consolidation_days VALUES (?, ?)").run(day, String(existing.id));
         return { status: "active" as const, taskId: String(existing.id) };
       }
+      const hasSemanticMemory = Boolean(this.storage.connection.prepare("SELECT 1 FROM semantic_memory LIMIT 1").get());
+      if (!hasSemanticMemory) return { status: "skipped" as const, reason: "no_semantic_memory" as const };
       if (trigger === "daily" && daily) return { status: "already_ran" as const, taskId: String(daily.task_id) };
       const taskId = this.insert("consolidation", { consolidation: { trigger, completed: 0 } });
       if (trigger === "daily") this.storage.connection.prepare("INSERT INTO consolidation_days VALUES (?, ?)").run(day, taskId);

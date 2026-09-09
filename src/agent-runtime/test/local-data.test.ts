@@ -5,11 +5,11 @@ import { describe, expect, it } from "vitest";
 import { clearEverythingData } from "../index.ts";
 
 describe("本地 Agent 数据清理", () => {
-  it("删除数据库、会话附件和全部 trace，保留 EVERYTHING.md、Skills 和 .env 配置", async () => {
+  it("删除数据库、会话附件和全部 trace，保留 EVERYTHING.md、Skills 和 config.json", async () => {
     const home = await mkdtemp(join(tmpdir(), "everything-clear-"));
     await writeFile(join(home, "EVERYTHING.md"), "保留的规则", "utf8");
-    const envContent = "# 保留配置及格式\nEVERYTHING_MODEL=test-model\nOPENAI_API_KEY=test-key\n";
-    await writeFile(join(home, ".env"), envContent, "utf8");
+    const configContent = '{"models":{"agent":{"model":"test-model"}}}\n';
+    await writeFile(join(home, "config.json"), configContent, "utf8");
     await mkdir(join(home, "skills", "daily-plan"), { recursive: true });
     await writeFile(join(home, "skills", "daily-plan", "SKILL.md"), "技能", "utf8");
     await mkdir(join(home, "database"));
@@ -20,8 +20,8 @@ describe("本地 Agent 数据清理", () => {
 
     await clearEverythingData(home);
 
-    expect((await readdir(home)).sort()).toEqual([".env", "EVERYTHING.md", "skills"]);
-    expect(await readFile(join(home, ".env"), "utf8")).toBe(envContent);
+    expect((await readdir(home)).sort()).toEqual(["EVERYTHING.md", "config.json", "skills"]);
+    expect(await readFile(join(home, "config.json"), "utf8")).toBe(configContent);
     expect(await readFile(join(home, "EVERYTHING.md"), "utf8")).toBe("保留的规则");
     expect(await readFile(join(home, "skills", "daily-plan", "SKILL.md"), "utf8")).toBe("技能");
   });

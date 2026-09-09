@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -20,16 +20,21 @@ afterEach(async () => {
   createModelClient.mockClear();
 });
 async function setup() {
-  const home = await mkdtemp(join(tmpdir(), "agent-runtime-"));
-  homes.push(home);
-  const paths = { home, envPath: join(home, ".env"), defaultSystemPromptPath: join(home, "default.md") };
+  const root = await mkdtemp(join(tmpdir(), "agent-runtime-"));
+  const home = join(root, ".everything");
+  await mkdir(home);
+  homes.push(root);
+  const paths = { home, envPath: join(root, ".env"), defaultSystemPromptPath: join(root, "default.md") };
   await writeFile(paths.defaultSystemPromptPath, "你是个人助理");
   await writeFile(paths.envPath, [
-    'EVERYTHING_AGENT_PROVIDER="openai-compatible"', 'EVERYTHING_AGENT_MODEL="test"',
-    'EVERYTHING_AGENT_BASE_URL="https://agent.example/v1"', 'EVERYTHING_AGENT_API_KEY="agent-key"',
-    'EVERYTHING_SMALL_PROVIDER="anthropic"', 'EVERYTHING_SMALL_MODEL="small-test"',
-    'EVERYTHING_SMALL_BASE_URL="https://small.example"', 'EVERYTHING_SMALL_API_KEY="small-key"', "",
+    'EVERYTHING_AGENT_API_KEY="agent-key"', 'EVERYTHING_SMALL_API_KEY="small-key"', "",
   ].join("\n"));
+  await writeFile(join(home, "config.json"), `${JSON.stringify({
+    models: {
+      agent: { provider: "openai-compatible", model: "test", baseUrl: "https://agent.example/v1" },
+      small: { provider: "anthropic", model: "small-test", baseUrl: "https://small.example" },
+    },
+  })}\n`);
   const runtime = createAgentRuntime(paths);
   runtimes.push(runtime);
   return runtime;
@@ -67,6 +72,24 @@ describe("个人助理 Runtime", () => {
       "consolidation_model_started", "consolidation_model_completed", "consolidation_reviewed",
       "consolidation_change", "consolidation_batch_completed", "consolidation_completed",
     ]);
+  });
+
+  it("consolidation 无需修改时在独立日志中明确记录 noop", async () => {
+    const runtime = await setup();
+    await runtime.memory.createSemantic("饮品", "喜欢红茶");
+    create.mockResolvedValue(response(JSON.stringify({
+      decisions: [],
+      unresolvedConflicts: [],
+      outcome: { action: "noop", reasonCode: "no_change" },
+    })));
+
+    await runtime.consolidate("manual");
+    await runtime.memory.waitForBackgroundTasks();
+
+    const files = await runtime.readTraces();
+    const change = files[0]?.records.find((record) => record.type === "consolidation_change");
+    expect(change?.payload).toMatchObject({ action: "noop", reasonCode: "no_change", deletedIds: [] });
+    expect(runtime.memory.listConsolidations()[0]).toMatchObject({ factsSkipped: 1 });
   });
 
   it("独立实例隔离会话、规则与密钥，保存不修改进程环境", async () => {
@@ -227,6 +250,9 @@ describe("Runtime 配置与维护", () => {
     expect(env).toContain('EVERYTHING_AGENT_API_KEY="agent-secret"');
     expect(env).toContain('EVERYTHING_SMALL_API_KEY="small-secret"');
     expect(env).not.toContain("OPENAI_API_KEY");
+    const config = await readFile(join(homes.at(-1)!, ".everything", "config.json"), "utf8");
+    expect(config).toContain('"model": "main"');
+    expect(config).not.toContain("agent-secret");
     expect((await runtime.resetRuntimeSettings()).settings.sessionSearchWindow).toBe(5);
     expect((await runtime.clearEmbeddingApiKey()).settings).toMatchObject({ retrievalMode: "lexical_only", embeddingKeyConfigured: false });
     expect(runtime.cancelEmbeddingIndexRebuild()).toEqual({ cancelled: false });
@@ -249,9 +275,9 @@ describe("Runtime 配置与维护", () => {
     expect(catalog.tavily).toEqual({ keyConfigured: true, keyLast4: "cret" });
     expect(JSON.stringify(catalog)).not.toContain("tvly-runtime-secret");
     const env = await readFile(join(homes.at(-1)!, ".env"), "utf8");
-    expect(env).toContain('EVERYTHING_TOOL_GET_CURRENT_TIME_ENABLED="false"');
-    expect(env).toContain('EVERYTHING_TOOL_SEARCH_WEB_ENABLED="true"');
     expect(env).toContain('TAVILY_API_KEY="tvly-runtime-secret"');
+    const config = JSON.parse(await readFile(join(homes.at(-1)!, ".everything", "config.json"), "utf8"));
+    expect(config.tools).toEqual({ getCurrentTimeEnabled: false, searchWebEnabled: true });
 
     const cleared = await runtime.saveToolSettings({ getCurrentTimeEnabled: true, searchWebEnabled: false, clearTavilyApiKey: true });
     expect(cleared.tavily.keyConfigured).toBe(false);

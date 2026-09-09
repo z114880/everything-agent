@@ -289,7 +289,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
     return skills.delete(name);
   }
 
-  /** 清除数据库、Session、Memory 与 trace，保留 EVERYTHING.md、Skills 和 .env 配置。 */
+  /** 清除数据库、Session、Memory 与 trace，保留 EVERYTHING.md、Skills 和 config.json。 */
   async function clearLocalAgentData(): Promise<{ cleared: true }> {
     assertOpen();
     if (dataClearing) throw new Error("本地数据正在清理");
@@ -411,6 +411,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
     async getSettings() { return publicSettings(await loadRuntimeSettings(), getMemoryRuntime()); },
     async start() {
       assertOpen();
+      await config.initialize();
       scheduleStartupRecovery(getMemoryRuntime(), await loadRuntimeSettings());
     },
     get memory() { return getMemoryRuntime(); },

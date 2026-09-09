@@ -1,4 +1,4 @@
-import { Braces, Database, Play, RefreshCw, Table2 } from "lucide-react";
+import { ArrowLeft, Database, Play, RefreshCw, Table2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   databaseSqlNeedsConfirmation,
@@ -15,13 +15,14 @@ import {
 } from "./ui/alert-dialog";
 import { PageHeading } from "./PageHeading";
 
-type DatabaseTab = "overview" | "query" | string;
+type DatabaseTab = "overview" | "query";
 const DEFAULT_SQL = "SELECT * FROM sessions ORDER BY updated_at DESC LIMIT 20";
 
 /** 展示本地 SQLite 普通表，并提供受限的 SQL 查询与写入控制台。 */
 export function DatabasePage() {
   const [dashboard, setDashboard] = useState<DatabaseDashboard | null>(null);
   const [tab, setTab] = useState<DatabaseTab>("overview");
+  const [selectedTableName, setSelectedTableName] = useState<string | null>(null);
   const [sql, setSql] = useState(DEFAULT_SQL);
   const [pendingWrite, setPendingWrite] = useState<string | null>(null);
   const [queryResult, setQueryResult] = useState<DatabaseQueryResult | null>(null);
@@ -36,8 +37,7 @@ export function DatabasePage() {
     try {
       const data = await loadDatabase();
       setDashboard(data);
-      setTab((current) => current === "overview" || current === "query" || data.tables.some((table) => table.name === current)
-        ? current : "overview");
+      setSelectedTableName((current) => current && data.tables.some((table) => table.name === current) ? current : null);
     } catch (value) {
       setError(errorText(value));
     } finally {
@@ -75,7 +75,7 @@ export function DatabasePage() {
     }
   }
 
-  const selectedTable = dashboard?.tables.find((table) => table.name === tab);
+  const selectedTable = dashboard?.tables.find((table) => table.name === selectedTableName);
   return <div className="content-wrap database-page">
     <PageHeading
       eyebrow="SQLite / state.db"
@@ -84,14 +84,13 @@ export function DatabasePage() {
       descriptionActions={<Button size="sm" onClick={() => void reload()} disabled={loading}><RefreshCw size={14} />刷新数据</Button>}
     />
     {dashboard && <div className="database-tabs" role="tablist" aria-label="数据库视图">
-      <button className={tab === "overview" ? "active" : ""} onClick={() => setTab("overview")}>Overview</button>
-      {dashboard.tables.map((table) => <button className={tab === table.name ? "active" : ""} key={table.name} onClick={() => setTab(table.name)}><code>{table.name}</code><span>{table.count}</span></button>)}
-      <button className={tab === "query" ? "active" : ""} onClick={() => setTab("query")}><Braces size={13} />SQL Console</button>
+      <button className={tab === "overview" ? "active" : ""} onClick={() => { setTab("overview"); setSelectedTableName(null); }}>Overview</button>
+      <button className={tab === "query" ? "active" : ""} onClick={() => { setTab("query"); setSelectedTableName(null); }}>SQL Console</button>
     </div>}
     {error && <div className="error-message">{error}</div>}
     {loading && !dashboard && <div className="panel loading-panel">正在读取 Database…</div>}
-    {dashboard && tab === "overview" && <DatabaseOverview dashboard={dashboard} onSelect={setTab} />}
-    {selectedTable && <DatabaseTableView table={selectedTable} />}
+    {dashboard && tab === "overview" && !selectedTable && <DatabaseOverview dashboard={dashboard} onSelect={setSelectedTableName} />}
+    {tab === "overview" && selectedTable && <DatabaseTableView table={selectedTable} onBack={() => setSelectedTableName(null)} />}
     {dashboard && tab === "query" && <SqlConsole sql={sql} result={queryResult} running={running} message={message} onSql={setSql} onRun={() => void requestRun()} />}
     <AlertDialog open={pendingWrite !== null} onOpenChange={(open) => { if (!open) setPendingWrite(null); }}>
       <AlertDialogContent>
@@ -124,8 +123,9 @@ function DatabaseOverview({ dashboard, onSelect }: { dashboard: DatabaseDashboar
   </>;
 }
 
-function DatabaseTableView({ table }: { table: DatabaseTable }) {
+function DatabaseTableView({ table, onBack }: { table: DatabaseTable; onBack(): void }) {
   return <>
+    <button type="button" className="database-detail-back" onClick={onBack}><ArrowLeft size={13} />返回 Overview</button>
     <div className="database-table-summary"><strong><code>{table.name}</code></strong><span>{table.count.toLocaleString()} 行 · 当前显示 {table.rows.length} 行，最新在前</span></div>
     <DataTable columns={table.columns.map((column) => column.name)} columnTypes={table.columns.map((column) => column.type)} rows={table.rows} empty="该表暂无数据" />
   </>;
@@ -135,7 +135,7 @@ function SqlConsole(props: { sql: string; result: DatabaseQueryResult | null; ru
   const { sql, result, running, message, onSql, onRun } = props;
   return <div className="database-query-layout">
     <section className="panel database-query-editor">
-      <div className="panel-header"><span><Braces size={15} />SQL Console</span><span>SELECT 直接执行 · INSERT / UPDATE / DELETE 需要确认</span></div>
+      <div className="panel-header"><span>SQL Console</span><span>SELECT 直接执行 · INSERT / UPDATE / DELETE 需要确认</span></div>
       <textarea aria-label="SQL 查询" value={sql} spellCheck={false} onChange={(event) => onSql(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter") onRun(); }} />
       <div className="database-query-actions"><span>仅允许单条语句，最多返回 200 行；不允许 DDL。</span><Button onClick={onRun} disabled={running || !sql.trim()}><Play size={14} />{running ? "执行中…" : "运行 SQL"}</Button></div>
     </section>

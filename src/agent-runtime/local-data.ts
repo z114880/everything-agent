@@ -1,9 +1,9 @@
 import { readdir, rm } from "node:fs/promises";
 import { join, parse, resolve } from "node:path";
 
-const PRESERVED_FILES = new Set(["EVERYTHING.md", ".env", "skills"]);
+const PRESERVED_FILES = new Set(["EVERYTHING.md", "config.json", "skills"]);
 
-/** 删除本地 Agent 数据目录中的运行数据，保留 procedural memory、Skills 和 .env 配置。 */
+/** 删除本地 Agent 数据目录中的运行数据，保留 procedural memory、Skills 和 JSON 配置。 */
 export async function clearEverythingData(home: string): Promise<void> {
   const target = resolve(home);
   if (target === parse(target).root) throw new TypeError("拒绝清理文件系统根目录");

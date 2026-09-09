@@ -11,13 +11,9 @@ import type {
   PublicAgentSettings, PublicModelConnection, RuntimeSettings,
 } from "./schema.ts";
 
-const OBSOLETE_CONFIG_KEYS = [
-  "EVERYTHING_CHAT_TOKENIZER_ID", "EVERYTHING_EMBEDDING_TOKENIZER_ID",
-] as const;
-
 /** 管理配置校验、连接探测和持久化；资源使用许可由 Runtime 在调用前检查。 */
 export function createRuntimeSettings(config: ReturnType<typeof createLocalConfig>) {
-  const { readEnvValues, updateEnvFile } = config;
+  const { readValues, updateConfigFile, updateSecretEnvFile } = config;
   return { load: loadRuntimeSettings, save, clearModelApiKey, clearEmbeddingApiKey, reset: resetRuntimeSettings };
 
   async function save(body: AgentSettingsInput): Promise<{ settings: RuntimeSettings; models: Record<ModelConnectionTarget, string[]> }> {
@@ -26,7 +22,7 @@ export function createRuntimeSettings(config: ReturnType<typeof createLocalConfi
     const embeddingApiKey = optionalText(body.embeddingApiKey, "Embedding API Key", 10_000);
     const clearEmbeddingApiKey = body.clearEmbeddingApiKey === true;
     const force = body.force === true;
-    const before = await readEnvValues();
+    const before = await readValues();
     const agentModel = parseModelConnection(body.agentModel, "Agent Model", before, "AGENT");
     const smallModel = parseModelConnection(body.smallModel, "Small Model", before, "SMALL");
     const candidateEmbeddingKey = clearEmbeddingApiKey ? "" : embeddingApiKey || before.EVERYTHING_EMBEDDING_API_KEY || "";
@@ -53,45 +49,47 @@ export function createRuntimeSettings(config: ReturnType<typeof createLocalConfi
       EVERYTHING_EMBEDDING_DOCUMENT_TEMPLATE: runtime.embeddingDocumentTemplate,
       EVERYTHING_EMBEDDING_MINIMUM_SIMILARITY: String(runtime.embeddingMinimumSimilarity),
     };
-    if (agentModel.inputApiKey) updates.EVERYTHING_AGENT_API_KEY = agentModel.inputApiKey;
-    if (smallModel.inputApiKey) updates.EVERYTHING_SMALL_API_KEY = smallModel.inputApiKey;
-    if (embeddingApiKey) updates.EVERYTHING_EMBEDDING_API_KEY = embeddingApiKey;
     if (runtime.retrievalMode !== "lexical_only" && !(candidateEmbeddingKey && runtime.embeddingBaseUrl && runtime.embeddingModel)) {
       throw new AgentConfigError("Dense/Hybrid 模式必须完整配置独立的 Embedding Base URL、API Key 与 Model");
     }
-    await updateEnvFile(updates, [
+    await updateConfigFile(updates);
+    await updateSecretEnvFile({
+      ...(agentModel.inputApiKey ? { EVERYTHING_AGENT_API_KEY: agentModel.inputApiKey } : {}),
+      ...(smallModel.inputApiKey ? { EVERYTHING_SMALL_API_KEY: smallModel.inputApiKey } : {}),
+      ...(embeddingApiKey ? { EVERYTHING_EMBEDDING_API_KEY: embeddingApiKey } : {}),
+    }, [
       ...(agentModel.clearApiKey ? ["EVERYTHING_AGENT_API_KEY"] : []),
       ...(smallModel.clearApiKey ? ["EVERYTHING_SMALL_API_KEY"] : []),
       ...(clearEmbeddingApiKey ? ["EVERYTHING_EMBEDDING_API_KEY"] : []),
-      ...OBSOLETE_CONFIG_KEYS,
     ]);
     return { settings: await loadRuntimeSettings(), models };
   }
 
   async function clearModelApiKey(target: ModelConnectionTarget): Promise<RuntimeSettings> {
     if (target !== "agentModel" && target !== "smallModel") throw new TypeError("模型连接目标无效");
-    await updateEnvFile({}, [target === "agentModel" ? "EVERYTHING_AGENT_API_KEY" : "EVERYTHING_SMALL_API_KEY"]);
+    await updateSecretEnvFile({}, [target === "agentModel" ? "EVERYTHING_AGENT_API_KEY" : "EVERYTHING_SMALL_API_KEY"]);
     return loadRuntimeSettings();
   }
 
   async function clearEmbeddingApiKey(): Promise<RuntimeSettings> {
-    await updateEnvFile({ EVERYTHING_RETRIEVAL_MODE: "lexical_only" }, ["EVERYTHING_EMBEDDING_API_KEY"]);
+    await updateConfigFile({ EVERYTHING_RETRIEVAL_MODE: "lexical_only" });
+    await updateSecretEnvFile({}, ["EVERYTHING_EMBEDDING_API_KEY"]);
     return loadRuntimeSettings();
   }
 
   async function resetRuntimeSettings(): Promise<RuntimeSettings> {
-    await updateEnvFile({
+    await updateConfigFile({
       EVERYTHING_SESSION_SEARCH_WINDOW: String(RUNTIME_DEFAULTS.sessionSearchWindow),
       EVERYTHING_SESSION_SCROLL_STEP: String(RUNTIME_DEFAULTS.sessionScrollStep),
       EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT: String(RUNTIME_DEFAULTS.sessionRecallMessageLimit),
       EVERYTHING_SESSION_RECALL_TOKEN_LIMIT: String(RUNTIME_DEFAULTS.sessionRecallTokenLimit),
       EVERYTHING_MODEL_CONTEXT_WINDOW: String(RUNTIME_DEFAULTS.modelContextWindow),
-    }, ["EVERYTHING_HISTORY_TURNS", ...OBSOLETE_CONFIG_KEYS]);
+    });
     return loadRuntimeSettings();
   }
 
   async function loadRuntimeSettings(): Promise<RuntimeSettings> {
-    const values = await readEnvValues();
+    const values = await readValues();
     return {
       agentModel: loadModelConnection(values, "AGENT"),
       smallModel: loadModelConnection(values, "SMALL"),

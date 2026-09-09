@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { databaseSqlNeedsConfirmation, loadDatabase, runDatabaseSql } from "../src/agent-api";
 
 const pagePath = fileURLToPath(new URL("../src/components/DatabasePage.tsx", import.meta.url));
+const stylePath = fileURLToPath(new URL("../src/index.css", import.meta.url));
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -31,15 +32,40 @@ describe("Database 页面", () => {
     expect(databaseSqlNeedsConfirmation(" /* 清理 */ DELETE FROM sessions")).toBe(true);
   });
 
-  it("页面展示表结构、SQL Console 和写操作确认框", async () => {
+  it("页面只展示 Overview 与 SQL Console 两个顶层标签，并从 Overview 下钻表详情", async () => {
     const source = await readFile(pagePath, "utf8");
 
     expect(source).toContain('title="Database"');
     expect(source).toContain("dashboard.tables.map");
+    expect(source).toContain("setSelectedTableName");
+    expect(source).toContain("返回 Overview");
     expect(source).toContain("column.type");
     expect(source).toContain("SQL Console");
+    expect(source).not.toContain("tab === table.name");
     expect(source).toContain("<AlertDialog");
     expect(source).toContain("确认执行数据库写操作？");
     expect(source).toContain("仅允许单条语句，最多返回 200 行；不允许 DDL");
+  });
+
+  it("切换顶层标签时保持文字宽度稳定", async () => {
+    const styles = await readFile(stylePath, "utf8");
+    const defaultRule = styles.match(/\.database-tabs button \{([^}]*)\}/)?.[1] ?? "";
+    const activeRule = styles.match(/\.database-tabs button\.active \{([^}]*)\}/)?.[1] ?? "";
+
+    expect(defaultRule).toContain("font-weight: 650");
+    expect(activeRule).not.toContain("font-weight");
+  });
+
+  it("SQL 编辑区域使用 DataGrip 风格的深色配色", async () => {
+    const styles = await readFile(stylePath, "utf8");
+    const editorRule = styles.match(/\.database-query-editor textarea \{([^}]*)\}/)?.[1] ?? "";
+    const focusRule = styles.match(/\.database-query-editor textarea:focus \{([^}]*)\}/)?.[1] ?? "";
+    const selectionRule = styles.match(/\.database-query-editor textarea::selection \{([^}]*)\}/)?.[1] ?? "";
+
+    expect(editorRule).toContain("background: #2b2b2b");
+    expect(editorRule).toContain("color: #c9ced4");
+    expect(editorRule).toContain("caret-color: #ffffff");
+    expect(focusRule).toContain("#4b6eaf");
+    expect(selectionRule).toContain("background: #214283");
   });
 });
