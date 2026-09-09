@@ -10,10 +10,11 @@ const pageSources = ["App.tsx", "components/AgentPage.tsx", "components/ConfigPa
   .map((path) => fileURLToPath(new URL(`../src/${path}`, import.meta.url)));
 
 describe("管理页面视觉一致性", () => {
-  it("文本输入区域不绘制 textarea 外部聚焦轮廓", async () => {
+  it("文本输入区域不绘制 textarea 默认或聚焦外部轮廓", async () => {
     const textarea = await readFile(textareaSource, "utf8");
 
     expect(textarea).toContain("outline-none");
+    expect(textarea).not.toContain("shadow-xs");
     expect(textarea).not.toMatch(/focus-visible:ring(?:-|\b)/);
   });
 
