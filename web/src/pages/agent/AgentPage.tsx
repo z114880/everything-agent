@@ -1,4 +1,4 @@
-import { advanceHarnessMemory } from "../harness-playback";
+import { advanceHarnessMemory } from "../../harness-playback";
 import {
   Bot,
   CircleStop,
@@ -26,17 +26,17 @@ import {
   type AgentRunResult,
   type ChatLogEntry,
   type SessionSummary,
-} from "../agent-api";
-import { shouldSubmitAgentComposer } from "../agent-composer";
-import { createEdgePlayback } from "../edge-playback";
-import { withMinimumDuration } from "../lib/minimum-duration";
-import type { VisualNodeState } from "./GraphCanvas";
+} from "../../agent-api";
+import { shouldSubmitAgentComposer } from "../../agent-composer";
+import { createEdgePlayback } from "../../edge-playback";
+import { withMinimumDuration } from "../../lib/minimum-duration";
+import type { VisualNodeState } from "../../visual-node-state";
 import { AgentHarnessCanvas } from "./AgentHarnessCanvas";
-import { ChatMarkdown } from "./ChatMarkdown";
-import { PageHeading } from "./PageHeading";
-import { Badge } from "./ui/badge";
-import { Button } from "./ui/button";
-import { Textarea } from "./ui/textarea";
+import { ChatMarkdown } from "../../components/ChatMarkdown";
+import { PageHeading } from "../../components/PageHeading";
+import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
+import { Textarea } from "../../components/ui/textarea";
 
 interface AgentPageProps {
   onOpenConfig(): void;

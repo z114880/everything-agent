@@ -23,10 +23,10 @@ import {
   type AgentProvider,
   type AgentSettings,
   type RetrievalMode,
-} from "../agent-api";
-import { withMinimumDuration } from "../lib/minimum-duration";
-import { SaveMessage } from "./SaveMessage";
-import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
+} from "../../agent-api";
+import { withMinimumDuration } from "../../lib/minimum-duration";
+import { SaveMessage } from "../../components/SaveMessage";
+import { Alert, AlertDescription, AlertTitle } from "../../components/ui/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,31 +37,31 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "./ui/alert-dialog";
-import { Badge } from "./ui/badge";
-import { Button } from "./ui/button";
+} from "../../components/ui/alert-dialog";
+import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "./ui/card";
-import { Input } from "./ui/input";
-import { PageHeading } from "./PageHeading";
+} from "../../components/ui/card";
+import { Input } from "../../components/ui/input";
+import { PageHeading } from "../../components/PageHeading";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "./ui/select";
+} from "../../components/ui/select";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "./ui/tooltip";
+} from "../../components/ui/tooltip";
 
 type ConfigSection = "model" | "retrieval" | "runtime";
 type NumericInputValue = number | "";
@@ -374,7 +374,7 @@ export function ConfigPage() {
       <Alert variant="info" className="config-local-alert">
         <ShieldCheck />
         <AlertTitle className="flex items-center gap-2">
-          配置不会离开当前项目
+          配置仅存储在当前项目中，不会上传或共享
           <Badge variant="success">
             <ShieldCheck size={12} />
             仅存储在本地

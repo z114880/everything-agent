@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -10,11 +10,28 @@ const buttonSource = fileURLToPath(new URL("../src/components/ui/button.tsx", im
 const textareaSource = fileURLToPath(new URL("../src/components/ui/textarea.tsx", import.meta.url));
 const styleSheet = fileURLToPath(new URL("../src/index.css", import.meta.url));
 const pageHeadingSource = fileURLToPath(new URL("../src/components/PageHeading.tsx", import.meta.url));
-const pageSources = ["App.tsx", "components/AgentPage.tsx", "components/ConfigPage.tsx", "components/DatabasePage.tsx", "components/MemoryPage.tsx", "components/SkillsPage.tsx", "components/TracePage.tsx"]
+const componentsDirectory = fileURLToPath(new URL("../src/components", import.meta.url));
+const pageSources = [
+  "pages/agent/AgentPage.tsx",
+  "pages/config/ConfigPage.tsx",
+  "pages/database/DatabasePage.tsx",
+  "pages/memory/MemoryPage.tsx",
+  "pages/skills/SkillsPage.tsx",
+  "pages/tools/ToolsPage.tsx",
+  "pages/trace/TracePage.tsx",
+  "pages/workflow/WorkflowPage.tsx",
+]
   .map((path) => fileURLToPath(new URL(`../src/${path}`, import.meta.url)));
 
 describe("管理页面视觉一致性", () => {
   afterEach(() => vi.useRealTimers());
+
+  it("页面实现不放入公共 components 目录", async () => {
+    const entries = await readdir(componentsDirectory);
+
+    expect(entries.filter((name) => name.endsWith("Page.tsx"))).toEqual([]);
+  });
+
   it("文本输入区域不绘制 textarea 默认或聚焦外部轮廓", async () => {
     const textarea = await readFile(textareaSource, "utf8");
 
@@ -120,8 +137,13 @@ describe("管理页面视觉一致性", () => {
 
   it("页面切换后的首次读取不强制展示 300ms loading", async () => {
     const [tools, database, memory, traces, skills] = await Promise.all(
-      ["ToolsPage.tsx", "DatabasePage.tsx", "MemoryPage.tsx", "TracePage.tsx", "SkillsPage.tsx"]
-        .map((name) => readFile(fileURLToPath(new URL(`../src/components/${name}`, import.meta.url)), "utf8")),
+      [
+        "pages/tools/ToolsPage.tsx",
+        "pages/database/DatabasePage.tsx",
+        "pages/memory/MemoryPage.tsx",
+        "pages/trace/TracePage.tsx",
+        "pages/skills/SkillsPage.tsx",
+      ].map((path) => readFile(fileURLToPath(new URL(`../src/${path}`, import.meta.url)), "utf8")),
     );
 
     expect(tools).toContain("applyCatalog(await loadTools())");

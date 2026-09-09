@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { databaseSqlNeedsConfirmation, loadDatabase, runDatabaseSql } from "../src/agent-api";
 
-const pagePath = fileURLToPath(new URL("../src/components/DatabasePage.tsx", import.meta.url));
+const pagePath = fileURLToPath(new URL("../src/pages/database/DatabasePage.tsx", import.meta.url));
 const stylePath = fileURLToPath(new URL("../src/index.css", import.meta.url));
 
 afterEach(() => vi.unstubAllGlobals());

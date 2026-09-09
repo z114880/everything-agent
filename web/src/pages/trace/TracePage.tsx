@@ -1,10 +1,10 @@
 import { ChevronRight, FileJson, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { loadTraces, type TraceDashboard } from "../agent-api";
-import { MINIMUM_FEEDBACK_DURATION_MS, withMinimumDuration } from "../lib/minimum-duration";
-import { Button } from "./ui/button";
-import { PageHeading } from "./PageHeading";
-import { SaveMessage } from "./SaveMessage";
+import { loadTraces, type TraceDashboard } from "../../agent-api";
+import { MINIMUM_FEEDBACK_DURATION_MS, withMinimumDuration } from "../../lib/minimum-duration";
+import { Button } from "../../components/ui/button";
+import { PageHeading } from "../../components/PageHeading";
+import { SaveMessage } from "../../components/SaveMessage";
 
 const EMPTY_DASHBOARD: TraceDashboard = { files: [] };
 

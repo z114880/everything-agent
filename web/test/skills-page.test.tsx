@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFile } from "node:fs/promises";
 import { describe, expect, it, vi } from "vitest";
-import { SkillsPage } from "../src/components/SkillsPage";
+import { SkillsPage } from "../src/pages/skills/SkillsPage";
 
 const stylePath = new URL("../src/index.css", import.meta.url);
 
@@ -14,7 +14,7 @@ vi.mock("../src/agent-api", () => ({
 describe("Skills 页面", () => {
   it("展示磁盘事实来源和结构化编辑器", async () => {
     const html = renderToStaticMarkup(<SkillsPage />);
-    const source = await readFile(new URL("../src/components/SkillsPage.tsx", import.meta.url), "utf8");
+    const source = await readFile(new URL("../src/pages/skills/SkillsPage.tsx", import.meta.url), "utf8");
 
     expect(html).toContain("Skills");
     expect(html).toContain(".everything/skills/&lt;skill-name&gt;/SKILL.md");
@@ -42,7 +42,7 @@ describe("Skills 页面", () => {
   });
 
   it("新建动作进入独立草稿态并自动聚焦名称", async () => {
-    const source = await readFile(new URL("../src/components/SkillsPage.tsx", import.meta.url), "utf8");
+    const source = await readFile(new URL("../src/pages/skills/SkillsPage.tsx", import.meta.url), "utf8");
 
     expect(source).toContain('data-mode={isInitialLoading ? "loading" : isCreating ? "create" : "edit"}');
     expect(source).toContain("未保存的新 Skill");
@@ -52,7 +52,7 @@ describe("Skills 页面", () => {
   });
 
   it("页面切换不补足 loading 延迟，手动刷新至少展示 300ms 加载反馈", async () => {
-    const source = await readFile(new URL("../src/components/SkillsPage.tsx", import.meta.url), "utf8");
+    const source = await readFile(new URL("../src/pages/skills/SkillsPage.tsx", import.meta.url), "utf8");
 
     expect(source).toContain("MINIMUM_FEEDBACK_DURATION_MS");
     expect(source).toContain("minimumDurationMs = 0");
@@ -62,7 +62,7 @@ describe("Skills 页面", () => {
   });
 
   it("保存成功消息悬浮展示且自动消失，不占用页面布局", async () => {
-    const source = await readFile(new URL("../src/components/SkillsPage.tsx", import.meta.url), "utf8");
+    const source = await readFile(new URL("../src/pages/skills/SkillsPage.tsx", import.meta.url), "utf8");
     const css = await readFile(stylePath, "utf8");
 
     expect(source).toContain('className="skills-message" role="status" aria-live="polite"');

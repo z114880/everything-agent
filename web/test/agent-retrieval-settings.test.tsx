@@ -2,9 +2,9 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
-import { ConfigPage } from "../src/components/ConfigPage";
+import { ConfigPage } from "../src/pages/config/ConfigPage";
 
-const source = readFileSync(fileURLToPath(new URL("../src/components/ConfigPage.tsx", import.meta.url)), "utf8");
+const source = readFileSync(fileURLToPath(new URL("../src/pages/config/ConfigPage.tsx", import.meta.url)), "utf8");
 
 it("配置首次加载时不提前渲染会改变状态的按钮", () => {
   const html = renderToStaticMarkup(<ConfigPage />);

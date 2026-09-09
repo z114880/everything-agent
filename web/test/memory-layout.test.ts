@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const memoryPage = fileURLToPath(new URL("../src/components/MemoryPage.tsx", import.meta.url));
+const memoryPage = fileURLToPath(new URL("../src/pages/memory/MemoryPage.tsx", import.meta.url));
 const styleSheet = fileURLToPath(new URL("../src/index.css", import.meta.url));
 
 describe("Memory 页面布局", () => {

@@ -2,8 +2,8 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const configPage = fileURLToPath(new URL("../src/components/ConfigPage.tsx", import.meta.url));
-const tracePage = fileURLToPath(new URL("../src/components/TracePage.tsx", import.meta.url));
+const configPage = fileURLToPath(new URL("../src/pages/config/ConfigPage.tsx", import.meta.url));
+const tracePage = fileURLToPath(new URL("../src/pages/trace/TracePage.tsx", import.meta.url));
 
 describe("全局数据清理入口", () => {
   it("只在配置页面展示全部数据清理按钮", async () => {

@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { MemoryContent } from "../src/components/MemoryContent";
+import { MemoryContent } from "../src/pages/memory/MemoryContent";
 
 describe("召回内容展示", () => {
   it("结构化内容保留缩进并显示实际换行", () => {

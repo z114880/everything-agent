@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const configPage = fileURLToPath(new URL("../src/components/ConfigPage.tsx", import.meta.url));
+const configPage = fileURLToPath(new URL("../src/pages/config/ConfigPage.tsx", import.meta.url));
 const styleSheet = fileURLToPath(new URL("../src/index.css", import.meta.url));
 
 describe("配置页布局", () => {
@@ -39,7 +39,7 @@ describe("配置页布局", () => {
     const styles = await readFile(styleSheet, "utf8");
 
     expect(page).toMatch(
-      /<AlertTitle className="flex items-center gap-2">\s*配置不会离开当前项目\s*<Badge\s+variant="success">\s*<ShieldCheck size=\{12\} \/>\s*仅存储在本地\s*<\/Badge>\s*<\/AlertTitle>/,
+      /<AlertTitle className="flex items-center gap-2">\s*配置仅存储在当前项目中，不会上传或共享\s*<Badge\s+variant="success">\s*<ShieldCheck size=\{12\} \/>\s*仅存储在本地\s*<\/Badge>\s*<\/AlertTitle>/,
     );
     expect(styles).toContain('.config-local-alert [data-slot="alert-description"] { margin-top: 5px; }');
   });

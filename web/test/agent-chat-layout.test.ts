@@ -23,7 +23,7 @@ describe("Agent 会话窗口布局", () => {
   });
 
   it("提供始终可用且标明展开状态的对话列表切换按钮", async () => {
-    const source = compactSource(await readFile(new URL("../src/components/AgentPage.tsx", import.meta.url), "utf8"));
+    const source = compactSource(await readFile(new URL("../src/pages/agent/AgentPage.tsx", import.meta.url), "utf8"));
     expect(source).toContain('[sessionRailCollapsed, setSessionRailCollapsed] = useState(true)');
     expect(source).toContain('hidden={sessionRailCollapsed}');
     expect(source).not.toContain("当前 Session 全部完整回合进入上下文");
@@ -46,7 +46,7 @@ describe("Agent 会话窗口布局", () => {
   });
 
   it("新建对话与历史对话复用同一套按钮尺寸和排版", async () => {
-    const source = await readFile(new URL("../src/components/AgentPage.tsx", import.meta.url), "utf8");
+    const source = await readFile(new URL("../src/pages/agent/AgentPage.tsx", import.meta.url), "utf8");
     const css = await readFile(stylePath, "utf8");
 
     expect(source.match(/session-toolbar-button/g)).toHaveLength(2);
@@ -58,7 +58,7 @@ describe("Agent 会话窗口布局", () => {
   });
 
   it("新建对话不展示 loading，创建期间仍阻止重复请求", async () => {
-    const source = await readFile(new URL("../src/components/AgentPage.tsx", import.meta.url), "utf8");
+    const source = await readFile(new URL("../src/pages/agent/AgentPage.tsx", import.meta.url), "utf8");
 
     expect(source).not.toContain("loading={creatingSession}");
     expect(source).not.toContain("setCreatingSession");
@@ -67,7 +67,7 @@ describe("Agent 会话窗口布局", () => {
   });
 
   it("标题右侧保留编辑和删除，最右侧提供保留内容的收起入口", async () => {
-    const source = await readFile(new URL("../src/components/AgentPage.tsx", import.meta.url), "utf8");
+    const source = await readFile(new URL("../src/pages/agent/AgentPage.tsx", import.meta.url), "utf8");
     const css = await readFile(stylePath, "utf8");
     const heading = source.indexOf('className="agent-session-heading"');
     expect(source.indexOf('aria-label="重命名会话"')).toBeGreaterThan(heading);
@@ -92,7 +92,7 @@ describe("Agent 会话窗口布局", () => {
   });
 
   it("将整理操作收拢为带语义状态的紧凑控件", async () => {
-    const source = compactSource(await readFile(new URL("../src/components/AgentPage.tsx", import.meta.url), "utf8"));
+    const source = compactSource(await readFile(new URL("../src/pages/agent/AgentPage.tsx", import.meta.url), "utf8"));
     const css = await readFile(stylePath, "utf8");
 
     expect(source).toContain('className="agent-intro-actions"');
@@ -112,7 +112,7 @@ describe("Agent 会话窗口布局", () => {
   });
 
   it("切换到 Agent 时静默检查每日整理，不触发按钮动画", async () => {
-    const source = compactSource(await readFile(new URL("../src/components/AgentPage.tsx", import.meta.url), "utf8"));
+    const source = compactSource(await readFile(new URL("../src/pages/agent/AgentPage.tsx", import.meta.url), "utf8"));
 
     expect(source).toContain('if (trigger === "manual") setConsolidating(true)');
     expect(source).toContain('trigger === "manual" ? await withMinimumDuration(task) : await task()');
@@ -128,7 +128,7 @@ describe("Agent 会话窗口布局", () => {
   });
 
   it("首次进入 Agent 页面立即滚动到底部，后续消息保留平滑过渡", async () => {
-    const source = await readFile(new URL("../src/components/AgentPage.tsx", import.meta.url), "utf8");
+    const source = await readFile(new URL("../src/pages/agent/AgentPage.tsx", import.meta.url), "utf8");
 
     expect(source).toContain("useLayoutEffect");
     expect(source).toContain('behavior: initialChatScrollRef.current ? "auto" : "smooth"');

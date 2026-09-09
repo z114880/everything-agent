@@ -3,21 +3,21 @@ import { useEffect, useState } from "react";
 import {
   loadAgent, loadMemory, memoryAction, saveSystemPrompt,
   type MemoryDashboard, type SemanticMemory, type SessionReadResult, type SessionRecallResult, type SessionSearchResult,
-} from "../agent-api";
-import { MINIMUM_FEEDBACK_DURATION_MS, withMinimumDuration } from "../lib/minimum-duration";
-import { Badge } from "./ui/badge";
-import { Button } from "./ui/button";
-import { Card } from "./ui/card";
-import { Input } from "./ui/input";
+} from "../../agent-api";
+import { MINIMUM_FEEDBACK_DURATION_MS, withMinimumDuration } from "../../lib/minimum-duration";
+import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
+import { Card } from "../../components/ui/card";
+import { Input } from "../../components/ui/input";
 import { MemoryContent } from "./MemoryContent";
-import { PageHeading } from "./PageHeading";
-import { SaveMessage } from "./SaveMessage";
-import { Textarea } from "./ui/textarea";
+import { PageHeading } from "../../components/PageHeading";
+import { SaveMessage } from "../../components/SaveMessage";
+import { Textarea } from "../../components/ui/textarea";
 
 type MemoryTab = "overview" | "semantic" | "episodic" | "procedural" | "chat" | "consolidation";
 const tabs: Array<{ id: MemoryTab; label: string }> = [
   { id: "overview", label: "Overview" }, { id: "semantic", label: "Semantic" },
-  { id: "episodic", label: "Episodic(Session Recall)" }, { id: "procedural", label: "Procedural" },
+  { id: "episodic", label: "Session Recall" }, { id: "procedural", label: "Procedural" },
   { id: "chat", label: "Chat Log" }, { id: "consolidation", label: "Consolidation" },
 ];
 

@@ -1,18 +1,18 @@
 import { BookOpen, CheckCircle2, FileCode2, LoaderCircle, Plus, RefreshCw, Save, Sparkles, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { deleteSkill, loadSkills, saveSkill, type AgentSkill } from "../agent-api";
+import { deleteSkill, loadSkills, saveSkill, type AgentSkill } from "../../agent-api";
 import {
   MINIMUM_FEEDBACK_DURATION_MS,
   withMinimumDuration,
-} from "../lib/minimum-duration";
-import { PageHeading } from "./PageHeading";
+} from "../../lib/minimum-duration";
+import { PageHeading } from "../../components/PageHeading";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
-} from "./ui/alert-dialog";
-import { Button } from "./ui/button";
-import { Input } from "./ui/input";
-import { Textarea } from "./ui/textarea";
+} from "../../components/ui/alert-dialog";
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { Textarea } from "../../components/ui/textarea";
 
 interface SkillDraft {
   originalName?: string;

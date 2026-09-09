@@ -1,5 +1,5 @@
 import type { AgentEvent } from "./agent-api";
-import type { VisualNodeState } from "./components/GraphCanvas";
+import type { VisualNodeState } from "./visual-node-state";
 
 /** 只用真实 observer 事件推进记忆节点；没有后台事件时保持后台区域空闲。 */
 export function advanceHarnessMemory(kind: string, event: AgentEvent, states: Record<string, VisualNodeState>): { states: Record<string, VisualNodeState>; edges: string[] } {

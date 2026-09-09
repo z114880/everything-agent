@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const tracePage = fileURLToPath(new URL("../src/components/TracePage.tsx", import.meta.url));
+const tracePage = fileURLToPath(new URL("../src/pages/trace/TracePage.tsx", import.meta.url));
 
 describe("Trace 页面", () => {
   it("JSONL 文件默认展开且可折叠，文件内每条 JSON 默认折叠", async () => {

@@ -1,6 +1,6 @@
 import { Check, Code2, RefreshCw } from "lucide-react";
 import { useMemo, useRef } from "react";
-import { Button } from "./ui/button";
+import { Button } from "../../components/ui/button";
 
 interface CodeEditorProps {
   code: string;

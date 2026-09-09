@@ -154,6 +154,9 @@ everything-agent/
 │   └── workflows/     # 可由本地控制台编辑、执行的真实工作流
 │       └── test/      # 工作流行为测试，不参与控制台文件枚举
 └── web/               # 本地 Graph 控制台及 Vite Engine 桥接接口
+    ├── src/
+    │   ├── pages/     # 一级页面及其页面专属组件
+    │   └── components/# 跨页面复用组件与基础 UI
     └── test/          # Web 行为测试
 ```
 

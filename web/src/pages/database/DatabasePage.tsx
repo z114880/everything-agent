@@ -7,15 +7,15 @@ import {
   type DatabaseDashboard,
   type DatabaseQueryResult,
   type DatabaseTable,
-} from "../agent-api";
-import { MINIMUM_FEEDBACK_DURATION_MS, withMinimumDuration } from "../lib/minimum-duration";
-import { Button } from "./ui/button";
+} from "../../agent-api";
+import { MINIMUM_FEEDBACK_DURATION_MS, withMinimumDuration } from "../../lib/minimum-duration";
+import { Button } from "../../components/ui/button";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "./ui/alert-dialog";
-import { PageHeading } from "./PageHeading";
-import { SaveMessage } from "./SaveMessage";
+} from "../../components/ui/alert-dialog";
+import { PageHeading } from "../../components/PageHeading";
+import { SaveMessage } from "../../components/SaveMessage";
 
 type DatabaseTab = "overview" | "query";
 const DEFAULT_SQL = "SELECT * FROM sessions ORDER BY updated_at DESC LIMIT 20";

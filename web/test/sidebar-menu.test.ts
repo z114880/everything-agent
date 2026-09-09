@@ -39,7 +39,7 @@ describe("侧栏菜单", () => {
 
   it("左右侧栏使用同款折叠按钮并以相反方向提示开合", async () => {
     const source = await readFile(app, "utf8");
-    const agentSource = await readFile(new URL("../src/components/AgentPage.tsx", import.meta.url), "utf8");
+    const agentSource = await readFile(new URL("../src/pages/agent/AgentPage.tsx", import.meta.url), "utf8");
     const styles = await readFile(styleSheet, "utf8");
 
     expect(source).toContain('className="panel-collapse-toggle sidebar-toggle"');

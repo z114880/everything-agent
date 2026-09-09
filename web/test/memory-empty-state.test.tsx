@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
-import { MemoryPage } from "../src/components/MemoryPage";
+import { MemoryPage } from "../src/pages/memory/MemoryPage";
 
 const { useState } = vi.hoisted(() => ({ useState: vi.fn() }));
 vi.mock("react", async (importOriginal) => ({

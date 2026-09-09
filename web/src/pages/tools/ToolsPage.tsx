@@ -1,16 +1,16 @@
 import { CheckCircle2, Clock3, KeyRound, LockKeyhole, Search, Wrench } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { loadTools, saveTools, type AgentTool, type ToolsCatalog } from "../agent-api";
-import { withMinimumDuration } from "../lib/minimum-duration";
-import { PageHeading } from "./PageHeading";
-import { Badge } from "./ui/badge";
-import { Button } from "./ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
-import { Input } from "./ui/input";
+import { loadTools, saveTools, type AgentTool, type ToolsCatalog } from "../../agent-api";
+import { withMinimumDuration } from "../../lib/minimum-duration";
+import { PageHeading } from "../../components/PageHeading";
+import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { Input } from "../../components/ui/input";
 import {
   AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "./ui/alert-dialog";
+} from "../../components/ui/alert-dialog";
 
 /** 展示 Agent 的真实工具目录，并管理允许用户修改的工具开关与凭证。 */
 export function ToolsPage() {

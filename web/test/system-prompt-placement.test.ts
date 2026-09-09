@@ -2,8 +2,8 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const configPage = fileURLToPath(new URL("../src/components/ConfigPage.tsx", import.meta.url));
-const memoryPage = fileURLToPath(new URL("../src/components/MemoryPage.tsx", import.meta.url));
+const configPage = fileURLToPath(new URL("../src/pages/config/ConfigPage.tsx", import.meta.url));
+const memoryPage = fileURLToPath(new URL("../src/pages/memory/MemoryPage.tsx", import.meta.url));
 
 describe("System Prompt 编辑入口", () => {
   it("不在配置页展示，并保留在 Procedural Memory 页面", async () => {

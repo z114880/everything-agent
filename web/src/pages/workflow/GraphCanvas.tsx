@@ -1,9 +1,8 @@
 import { Braces, Cpu, GitBranch, Wrench } from "lucide-react";
 import { useId, useMemo } from "react";
-import { layoutWorkflow } from "../workflow-layout";
-import type { NodeKind, Workflow } from "../workflow-api";
-
-export type VisualNodeState = "idle" | "running" | "done" | "error";
+import { layoutWorkflow } from "../../workflow-layout";
+import type { NodeKind, Workflow } from "../../workflow-api";
+import type { VisualNodeState } from "../../visual-node-state";
 
 interface GraphCanvasProps {
   workflow: Workflow;
