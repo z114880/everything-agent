@@ -107,6 +107,8 @@ describe("Agent 会话窗口布局", () => {
     expect(ruleFor(css, ".agent-intro-actions")).toMatch(/align-items:\s*center/);
     expect(ruleFor(css, ".consolidation-action")).toMatch(/display:\s*inline-flex/);
     expect(ruleFor(css, ".consolidation-action")).toMatch(/align-items:\s*center/);
+    expect(ruleFor(css, '.consolidation-action[data-status="success"] .consolidation-status')).toMatch(/color:\s*#047857/);
+    expect(ruleFor(css, '.consolidation-action[data-status="success"] .consolidation-status i')).toMatch(/background:\s*#10b981/);
     expect(ruleFor(css, '.consolidation-action[data-status="error"]')).toMatch(/border-color:\s*#efd7d4/);
     expect(ruleFor(css, ".consolidation-status i")).toMatch(/border-radius:\s*999px/);
   });

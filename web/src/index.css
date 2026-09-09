@@ -198,8 +198,8 @@ button:disabled { cursor: not-allowed; }
 .consolidation-status i { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 999px; background: var(--muted-light); box-shadow: 0 0 0 3px #9da2ad18; }
 .consolidation-action[data-status="running"] .consolidation-status { color: var(--accent-foreground); }
 .consolidation-action[data-status="running"] .consolidation-status i { background: var(--accent); box-shadow: 0 0 0 3px #2563eb24; }
-.consolidation-action[data-status="success"] .consolidation-status { color: #287653; }
-.consolidation-action[data-status="success"] .consolidation-status i { background: #45a878; box-shadow: 0 0 0 3px #45a87820; }
+.consolidation-action[data-status="success"] .consolidation-status { color: #047857; }
+.consolidation-action[data-status="success"] .consolidation-status i { background: #10b981; box-shadow: 0 0 0 3px #10b98120; }
 .consolidation-action[data-status="error"] { border-color: #efd7d4; background: #fffafa; }
 .consolidation-action[data-status="error"] .consolidation-status { color: #a9463e; }
 .consolidation-action[data-status="error"] .consolidation-status i { background: #d4574c; box-shadow: 0 0 0 3px #d4574c1c; }
