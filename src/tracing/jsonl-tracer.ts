@@ -35,6 +35,8 @@ export class JsonlTracer {
   private checkedPaths = new Set<string>();
   private recoveryPaths = new Map<string, string>();
   private sequences = new Map<string, number>();
+  // 同一记录器的系统事件共用 UUID，避免把每个无 Session 事件拆成文件。
+  private readonly systemId = crypto.randomUUID();
 
   constructor(home: string, options: JsonlTracerOptions = {}) {
     this.traceDirectory = join(home, "traces");
@@ -80,7 +82,7 @@ export class JsonlTracer {
     }
     const dateDirectory = join(this.traceDirectory, (this.consolidationDates.get(record.runId) ?? (typeof record.taskCreatedAt === "string" ? record.taskCreatedAt : record.timestamp)).slice(0, 10));
     await mkdir(dateDirectory, { recursive: true });
-    const sessionFile = traceFileName(consolidation ? `consolidation-${record.runId}` : typeof record.taskId === "string" ? `${record.taskKind}-${record.taskId}` : record.sessionId);
+    const sessionFile = traceFileName(consolidation ? `consolidation-${record.runId}` : typeof record.taskId === "string" ? `${record.taskKind}-${record.taskId}` : record.sessionId || `system-${this.systemId}`);
     const primaryPath = await numberedTracePath(dateDirectory, sessionFile);
     let path = this.recoveryPaths.get(primaryPath) ?? primaryPath;
     if (!this.checkedPaths.has(path)) {
@@ -178,8 +180,7 @@ function compareTraceRecords(left: TraceRecord, right: TraceRecord): number {
   return left.timestamp.localeCompare(right.timestamp) || (left.sequence ?? 0) - (right.sequence ?? 0);
 }
 
-function traceFileName(sessionId: string | undefined): string {
-  if (!sessionId) return "system.jsonl";
+function traceFileName(sessionId: string): string {
   if (/^[A-Za-z0-9_-]{1,200}$/.test(sessionId)) return `${sessionId}.jsonl`;
   const safe = encodeURIComponent(sessionId).replace(/%/g, "_").slice(0, 200);
   return `session-${safe || "unknown"}.jsonl`;

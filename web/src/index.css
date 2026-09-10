@@ -494,7 +494,7 @@ button:disabled { cursor: not-allowed; }
 .skill-editor-fields input { font-family: var(--font-mono); font-size: 11px; }
 .skill-instructions-field textarea { min-height: 260px; flex: 1; resize: vertical; font-family: var(--font-mono); font-size: 11px; line-height: 1.7; }
 .skill-editor-actions { display: flex; min-height: 58px; align-items: center; gap: 10px; border-top: 1px solid var(--line); padding: 10px 14px; }
-.skill-editor-actions > span { display: flex; flex: 1; align-items: center; justify-content: flex-end; gap: 6px; color: var(--muted); font-size: 10px; text-align: right; }
+.skill-editor-actions > span { display: flex; align-items: center; gap: 6px; margin-right: auto; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .skill-editor-actions > span.is-dirty { color: #9a681d; }
 .skill-editor-actions > span > i { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 999px; background: #d59633; box-shadow: 0 0 0 3px #fff4df; }
 

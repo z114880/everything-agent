@@ -1,5 +1,5 @@
 import { CheckCircle2, Clock3, KeyRound, LockKeyhole, Search, Wrench } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { loadTools, saveTools, type AgentTool, type ToolsCatalog } from "../../agent-api";
 import { withMinimumDuration } from "../../lib/minimum-duration";
 import { PageHeading } from "../../components/PageHeading";
@@ -20,7 +20,10 @@ export function ToolsPage() {
   const [tavilyApiKey, setTavilyApiKey] = useState("");
   const [tavilyDialogOpen, setTavilyDialogOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [savingTools, setSavingTools] = useState<Set<string>>(new Set());
+  const saving = savingTools.has("search_web");
+  const savedCatalog = useRef<ToolsCatalog | null>(null);
+  const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -52,6 +55,7 @@ export function ToolsPage() {
   }
 
   function applyCatalog(next: ToolsCatalog) {
+    savedCatalog.current = next;
     setCatalog(next);
     setGetCurrentTimeEnabled(next.tools.find((tool) => tool.name === "get_current_time")?.enabled ?? true);
     setSearchWebEnabled(next.tools.find((tool) => tool.name === "search_web")?.enabled ?? false);
@@ -59,8 +63,8 @@ export function ToolsPage() {
   }
 
   async function persist({
-    nextGetCurrentTimeEnabled = getCurrentTimeEnabled,
-    nextSearchWebEnabled = searchWebEnabled,
+    nextGetCurrentTimeEnabled,
+    nextSearchWebEnabled,
     clearTavilyApiKey = false,
     closeDialog = false,
   }: {
@@ -69,19 +73,34 @@ export function ToolsPage() {
     clearTavilyApiKey?: boolean;
     closeDialog?: boolean;
   } = {}): Promise<boolean> {
-    setSaving(true);
+    const toolName = nextGetCurrentTimeEnabled !== undefined ? "get_current_time" : "search_web";
+    setSavingTools((current) => new Set(current).add(toolName));
+    const previousSave = saveQueue.current;
+    let release!: () => void;
+    saveQueue.current = new Promise<void>((resolve) => { release = resolve; });
     setMessage("");
     setError("");
     try {
+      // 接口保存完整配置：排队后读取最近成功结果，避免不同开关覆盖彼此。
+      await previousSave;
+      const current = savedCatalog.current;
       const next = await withMinimumDuration(() =>
         saveTools({
-          getCurrentTimeEnabled: nextGetCurrentTimeEnabled,
-          searchWebEnabled: clearTavilyApiKey ? false : nextSearchWebEnabled,
-          tavilyApiKey,
+          getCurrentTimeEnabled: nextGetCurrentTimeEnabled ?? current?.tools.find((tool) => tool.name === "get_current_time")?.enabled ?? true,
+          searchWebEnabled: clearTavilyApiKey ? false : nextSearchWebEnabled ?? (closeDialog ? searchWebEnabled : current?.tools.find((tool) => tool.name === "search_web")?.enabled ?? false),
+          tavilyApiKey: toolName === "search_web" ? tavilyApiKey : "",
           clearTavilyApiKey,
         }),
       );
-      applyCatalog(next);
+      savedCatalog.current = next;
+      setCatalog(next);
+      // 仅同步本次操作的工具，保留另一个开关尚未完成的用户操作。
+      if (toolName === "get_current_time") {
+        setGetCurrentTimeEnabled(next.tools.find((tool) => tool.name === toolName)?.enabled ?? true);
+      } else {
+        setSearchWebEnabled(next.tools.find((tool) => tool.name === toolName)?.enabled ?? false);
+        setTavilyApiKey("");
+      }
       setMessage(clearTavilyApiKey ? "Tavily API Key 已清除，search_web 已停用。" : "工具配置已保存，下一回合立即生效。");
       if (closeDialog) setTavilyDialogOpen(false);
       return true;
@@ -89,7 +108,12 @@ export function ToolsPage() {
       setError(errorMessage(reason));
       return false;
     } finally {
-      setSaving(false);
+      setSavingTools((current) => {
+        const next = new Set(current);
+        next.delete(toolName);
+        return next;
+      });
+      release();
     }
   }
 
@@ -139,7 +163,7 @@ export function ToolsPage() {
             return <ToolCard
               key={tool.name}
               tool={tool}
-              disabled={saving}
+              disabled={savingTools.has(tool.name)}
               onToggle={tool.name === "get_current_time" ? handleGetCurrentTimeToggle : tool.name === "search_web" ? handleSearchWebToggle : undefined}
               onConfigure={tool.name === "search_web" ? () => setTavilyDialogOpen(true) : undefined}
             />;

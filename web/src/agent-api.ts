@@ -19,6 +19,8 @@ export interface AgentSettings {
   sessionRecallMessageLimit: number;
   sessionRecallTokenLimit: number;
   modelContextWindow: number;
+  maxTokens: number;
+  maxIterations: number;
   retrievalMode: RetrievalMode;
   embeddingBaseUrl: string;
   embeddingModel: string;
@@ -240,6 +242,8 @@ export function saveAgentConfig(value: {
   sessionRecallMessageLimit: number;
   sessionRecallTokenLimit: number;
   modelContextWindow: number;
+  maxTokens: number;
+  maxIterations: number;
   retrievalMode: RetrievalMode;
   embeddingBaseUrl: string;
   embeddingModel: string;

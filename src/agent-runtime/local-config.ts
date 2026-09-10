@@ -2,6 +2,8 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { RUNTIME_DEFAULTS } from "./configuration/schema.ts";
 
+const DEFAULT_SYSTEM_PROMPT = "你是用户的个人助理。使用中文清晰地回答，结合会话上下文和可用工具完成任务。不要编造事实或工具执行结果；缺少必要信息时向用户说明。\n";
+
 const CONFIG_PATHS = {
   EVERYTHING_AGENT_PROVIDER: ["models", "agent", "provider"],
   EVERYTHING_AGENT_MODEL: ["models", "agent", "model"],
@@ -13,6 +15,8 @@ const CONFIG_PATHS = {
   EVERYTHING_SESSION_SCROLL_STEP: ["sessionRecall", "scrollStep"],
   EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT: ["sessionRecall", "messageLimit"],
   EVERYTHING_SESSION_RECALL_TOKEN_LIMIT: ["sessionRecall", "tokenLimit"],
+  EVERYTHING_AGENT_MAX_TOKENS: ["maxTokens"],
+  EVERYTHING_AGENT_MAX_ITERATIONS: ["maxIterations"],
   EVERYTHING_MODEL_CONTEXT_WINDOW: ["modelContextWindow"],
   EVERYTHING_RETRIEVAL_MODE: ["retrieval", "mode"],
   EVERYTHING_EMBEDDING_BASE_URL: ["retrieval", "embedding", "baseUrl"],
@@ -36,6 +40,8 @@ const NUMBER_CONFIG_KEYS = new Set([
   "EVERYTHING_SESSION_SCROLL_STEP",
   "EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT",
   "EVERYTHING_SESSION_RECALL_TOKEN_LIMIT",
+  "EVERYTHING_AGENT_MAX_TOKENS",
+  "EVERYTHING_AGENT_MAX_ITERATIONS",
   "EVERYTHING_MODEL_CONTEXT_WINDOW",
   "EVERYTHING_EMBEDDING_MINIMUM_SIMILARITY",
 ]);
@@ -56,6 +62,8 @@ const DEFAULT_CONFIG: JsonObject = {
     messageLimit: RUNTIME_DEFAULTS.sessionRecallMessageLimit,
     tokenLimit: RUNTIME_DEFAULTS.sessionRecallTokenLimit,
   },
+  maxTokens: RUNTIME_DEFAULTS.maxTokens,
+  maxIterations: RUNTIME_DEFAULTS.maxIterations,
   modelContextWindow: RUNTIME_DEFAULTS.modelContextWindow,
   retrieval: { mode: "lexical_only", embedding: {} },
   tools: { getCurrentTimeEnabled: true, searchWebEnabled: false },
@@ -86,12 +94,10 @@ export function createLocalConfig(paths: LocalConfigPaths) {
     await mkdir(paths.home, { recursive: true });
     await mkdir(join(paths.home, "skills"), { recursive: true });
     await writeIfMissing(configPath, serializeConfig(DEFAULT_CONFIG), 0o600);
-    try {
-      await readFile(systemPromptPath, "utf8");
-    } catch (error) {
-      if (!isMissingFile(error)) throw error;
-      await atomicWrite(systemPromptPath, await readFile(paths.defaultSystemPromptPath, "utf8"), 0o644);
-    }
+    await mkdir(dirname(paths.envPath), { recursive: true });
+    // 注释占位不覆盖进程环境中已配置的密钥。
+    await writeIfMissing(paths.envPath, `# API Key 可在 Web 配置页面保存；请勿提交此文件。\n${SECRET_KEYS.map((key) => `# ${key}=`).join("\n")}\n`, 0o600);
+    await readSystemPrompt();
   }
 
   /** 合并允许的进程变量、本地 JSON 设置和根目录密钥文件。 */
@@ -130,9 +136,17 @@ export function createLocalConfig(paths: LocalConfigPaths) {
       return await readFile(systemPromptPath, "utf8");
     } catch (error) {
       if (!isMissingFile(error)) throw error;
-      const initial = await readFile(paths.defaultSystemPromptPath, "utf8");
-      await atomicWrite(systemPromptPath, initial, 0o644);
-      return initial;
+      let initial: string;
+      try {
+        initial = await readFile(paths.defaultSystemPromptPath, "utf8");
+      } catch (templateError) {
+        if (!isMissingFile(templateError)) throw templateError;
+        initial = DEFAULT_SYSTEM_PROMPT;
+      }
+      await mkdir(paths.home, { recursive: true });
+      // 并发初始化只创建缺失文件，不覆盖其他调用方刚保存的提示词。
+      await writeIfMissing(systemPromptPath, initial, 0o644);
+      return readFile(systemPromptPath, "utf8");
     }
   }
 }

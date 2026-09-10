@@ -85,9 +85,11 @@ export function ConfigPage() {
   const [sessionRecallMessageLimit, setSessionRecallMessageLimit] =
     useState<NumericInputValue>(100);
   const [sessionRecallTokenLimit, setSessionRecallTokenLimit] =
-    useState<NumericInputValue>(8_192);
-  const [modelContextWindow, setModelContextWindow] =
     useState<NumericInputValue>(32_768);
+  const [maxTokens, setMaxTokens] = useState<NumericInputValue>(16_384);
+  const [maxIterations, setMaxIterations] = useState<NumericInputValue>(50);
+  const [modelContextWindow, setModelContextWindow] =
+    useState<NumericInputValue>(131_072);
   const [retrievalMode, setRetrievalMode] =
     useState<RetrievalMode>("lexical_only");
   const [embeddingBaseUrl, setEmbeddingBaseUrl] = useState("");
@@ -183,6 +185,8 @@ export function ConfigPage() {
                   "Recall Token Limit",
                 )
               : settings.sessionRecallTokenLimit,
+          maxTokens: section === "runtime" ? requiredNumericValue(maxTokens, "单次模型输出") : settings.maxTokens,
+          maxIterations: section === "runtime" ? requiredNumericValue(maxIterations, "Agent 最大迭代") : settings.maxIterations,
           modelContextWindow:
             section === "runtime"
               ? requiredNumericValue(modelContextWindow, "Model Context Window")
@@ -251,6 +255,8 @@ export function ConfigPage() {
     setSessionRecallMessageLimit(value.sessionRecallMessageLimit);
     setSessionRecallTokenLimit(value.sessionRecallTokenLimit);
     setModelContextWindow(value.modelContextWindow);
+    setMaxTokens(value.maxTokens);
+    setMaxIterations(value.maxIterations);
   }
 
   function applyRetrievalInputs(value: AgentSettings) {
@@ -794,7 +800,7 @@ export function ConfigPage() {
               </ConfigField>
               <ConfigField
                 label="Recall Token Limit"
-                help="估算 token 预算，默认 8,192。"
+                help="估算 token 预算，默认 32,768。"
               >
                 <Input
                   type="number"
@@ -808,9 +814,17 @@ export function ConfigPage() {
                   }
                 />
               </ConfigField>
+              <ConfigField label="单次模型输出（tokens）" help="默认 16,384 tokens，每次新运行生效。">
+                <Input type="number" min={settings?.limits.maxTokens?.min ?? 1} max={settings?.limits.maxTokens?.max ?? 131072}
+                  value={maxTokens} onChange={(event) => setMaxTokens(parseNumericInput(event.target.value))} />
+              </ConfigField>
+              <ConfigField label="Agent 最大迭代（轮）" help="默认 50 轮，每次新运行生效。">
+                <Input type="number" min={settings?.limits.maxIterations?.min ?? 1} max={settings?.limits.maxIterations?.max ?? 1000}
+                  value={maxIterations} onChange={(event) => setMaxIterations(parseNumericInput(event.target.value))} />
+              </ConfigField>
               <ConfigField
                 label="Model Context Window（tokens）"
-                help="默认 32,768，并预留 2,048 output tokens 与 512-token 安全余量。"
+                help="默认 131,072，需容纳输入、单次输出预算及 512 tokens 安全余量。"
               >
                 <Input
                   type="number"
@@ -837,6 +851,8 @@ export function ConfigPage() {
                     sessionRecallMessageLimit,
                     sessionRecallTokenLimit,
                     modelContextWindow,
+                    maxTokens,
+                    maxIterations,
                   ].includes("")
                 }
               >

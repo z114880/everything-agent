@@ -28,12 +28,13 @@ export function advanceHarnessMemory(kind: string, event: AgentEvent, states: Re
     }
   }
   if (kind === "context_assembled") {
-    for (const id of ["user_prompt", "session_chat_history", "everything_md", "skills_catalog", "procedural_memory"]) next[id] = "done";
+    for (const id of ["user_prompt", "session_chat_history", "everything_md", "skills_catalog", "procedural_memory", "system_prompt"]) next[id] = "done";
     next.working_memory = "running";
     edges.push(
       "everything_md->procedural_memory",
       "skills_catalog->procedural_memory",
-      "procedural_memory->working_memory",
+      "procedural_memory->system_prompt",
+      "system_prompt->working_memory",
       "user_prompt->working_memory",
       "session_chat_history->working_memory",
     );

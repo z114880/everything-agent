@@ -47,7 +47,8 @@ export function localEnginePlugin(): Plugin {
     handleHotUpdate(context) {
       if (context.file.startsWith(workflowDirectory) && context.file.endsWith(".ts")) return [];
     },
-    configureServer(server) {
+    async configureServer(server) {
+      await startLocalAgent();
       server.middlewares.use((request, response, next) => {
         void handleLocalApiRequest(server, request, response, next);
       });

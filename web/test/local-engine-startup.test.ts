@@ -1,0 +1,16 @@
+import { expect, it, vi } from "vitest";
+import { createServer } from "vite";
+import { localEnginePlugin } from "../server/local-engine-plugin.ts";
+
+const { startLocalAgent } = vi.hoisted(() => ({ startLocalAgent: vi.fn(async () => {}) }));
+vi.mock("../server/agent-service.ts", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../server/agent-service.ts")>(),
+  startLocalAgent,
+}));
+
+it("开发服务器接受请求前初始化本地 Agent，无需先打开页面", async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true }, plugins: [localEnginePlugin()] });
+  try {
+    expect(startLocalAgent).toHaveBeenCalledOnce();
+  } finally { await server.close(); }
+});

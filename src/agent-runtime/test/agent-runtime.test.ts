@@ -50,6 +50,42 @@ const modelSettings = (): Pick<AgentSettingsInput, "agentModel" | "smallModel"> 
 });
 
 describe("个人助理 Runtime", () => {
+  it("自定义程序性记忆后仍注入运行时记忆策略，且不写回用户规则", async () => {
+    model();
+    const runtime = await setup();
+    await runtime.saveSystemPrompt("回答使用简洁中文");
+    const session = await runtime.createSession();
+    await runtime.run({ sessionId: session.id, prompt: "你好" }, options());
+    const request = create.mock.calls.map(([request]) => request).find((request) => Array.isArray(request.tools) && request.tools.length > 0);
+    expect(request?.system).toContain("回答使用简洁中文");
+    expect(request?.system).toContain("## Semantic Memory 策略");
+    expect(request?.system).toContain("必须调用 manage_memory submit");
+    expect(request?.system).toContain("content 必须由当前用户原文直接支持");
+    expect(request?.system).toContain("不能声称最终写入成功");
+    expect(request?.system).toContain("不要重复搜索");
+    expect(await runtime.readSystemPrompt()).toBe("回答使用简洁中文\n");
+  });
+
+  it("Loop 超过一分钟仍可完成，并记录五分钟超时预算", async () => {
+    const runtime = await setup();
+    const session = await runtime.createSession();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    create.mockImplementation(async (request) => {
+      if (!Array.isArray(request.tools) || request.tools.length === 0) return response('{"intent":"none"}');
+      await vi.advanceTimersByTimeAsync(299_999);
+      return response("完成");
+    });
+    try {
+      await expect(runtime.run({ sessionId: session.id, prompt: "执行较长任务" }, options()))
+        .resolves.toMatchObject({ reply: "完成" });
+      const records = (await runtime.readTraces()).flatMap((file) => file.records);
+      expect(records.find((record) => record.type === "run_started")?.payload)
+        .toMatchObject({ settings: { timeoutMs: 300_000 } });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("consolidation 只产生独立整理日志，不产生 system.jsonl", async () => {
     const runtime = await setup();
     await runtime.clearModelApiKey("smallModel");
@@ -226,6 +262,30 @@ describe("个人助理 Runtime", () => {
 });
 
 describe("Runtime 配置与维护", () => {
+  it("输出与迭代预算持久化并控制实际请求和运行日志", async () => {
+    const runtime = await setup();
+    expect(await runtime.getSettings()).toMatchObject({ maxTokens: 16_384, maxIterations: 50, modelContextWindow: 131_072, sessionRecallTokenLimit: 32_768 });
+    await runtime.saveAgentSettings({ ...modelSettings(), maxTokens: 8_192, maxIterations: 12, modelContextWindow: 65_536, sessionRecallTokenLimit: 16_384 });
+    expect(await runtime.getSettings()).toMatchObject({ maxTokens: 8_192, maxIterations: 12 });
+    const config = JSON.parse(await readFile(join(homes.at(-1)!, ".everything", "config.json"), "utf8"));
+    expect(config).toMatchObject({ maxTokens: 8_192, maxIterations: 12 });
+    let calls = 0;
+    create.mockImplementation(async (request) => {
+      if (!Array.isArray(request.tools) || !request.tools.length) return response('{"intent":"none"}');
+      expect(request.max_tokens).toBe(8_192);
+      calls++;
+      return { content: [{ type: "tool_use", id: `call-${calls}`, name: "get_current_time", input: {} }], stop_reason: "tool_calls" };
+    });
+    const session = await runtime.createSession();
+    await expect(runtime.run({ sessionId: session.id, prompt: "查看时间" }, options()))
+      .resolves.toMatchObject({ iterations: 12, stopReason: "max_iterations" });
+    expect(calls).toBe(12);
+    const records = (await runtime.readTraces()).flatMap((file) => file.records);
+    expect(records.find((record) => record.type === "run_started")?.payload)
+      .toMatchObject({ settings: { maxTokens: 8_192, maxIterations: 12 } });
+    expect((await runtime.resetRuntimeSettings()).settings).toMatchObject({ maxTokens: 16_384, maxIterations: 50, modelContextWindow: 131_072, sessionRecallTokenLimit: 32_768 });
+  });
+
   it("保存完整配置、恢复预算并安全公开密钥状态", async () => {
     const runtime = await setup();
     const { settings } = await runtime.saveAgentSettings({
@@ -320,6 +380,12 @@ describe("Runtime 配置与维护", () => {
     [{ sessionRecallMessageLimit: 0 }, "Session Recall Message Limit"],
     [{ sessionRecallTokenLimit: 1 }, "Session Recall Token Limit"],
     [{ modelContextWindow: 1 }, "Model Context Window"],
+    [{ maxTokens: 0 }, "单次模型输出"],
+    [{ maxTokens: 131_073 }, "单次模型输出"],
+    [{ maxTokens: 1.5 }, "单次模型输出"],
+    [{ maxIterations: 0 }, "Agent 最大迭代"],
+    [{ maxIterations: 1_001 }, "Agent 最大迭代"],
+    [{ maxIterations: 1.5 }, "Agent 最大迭代"],
     [{ embeddingMinimumSimilarity: 2 }, "Minimum Similarity"],
     [{ embeddingQueryTemplate: "缺少占位符" }, "Query Template"],
     [{ embeddingDocumentTemplate: "{text}{text}" }, "Document Template"],

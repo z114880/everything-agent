@@ -27,12 +27,12 @@ pnpm run example
 - **Workflow**：枚举 `src/workflows/` 下的 TypeScript 文件，可编辑和执行任一工作流。拓扑来自真实 `Graph.describe()`，执行由本地 Node.js 进程调用 `runGraph()`。
 - **Memory**：通过 Overview、Semantic、Session Recall、Procedural、Chat Log 和 Consolidation 查看本地记忆与真实历史检索窗口。Session Recall 结果按消息分段展示，结构化内容保留缩进、正文换行；查询留空可查看最近活跃会话。
 - **Skills**：新建、编辑、重命名和删除 `.everything/skills/<skill-name>/SKILL.md`。每轮 Agent 只注入 Skill 名称与描述，需要使用时通过受控 `read_skill` 工具加载正文；目录发现、加载和工具调用均进入 observer 与 JSONL trace。
-- **Tools**：按来源展示 Agent 的真实工具目录。`manage_memory`、`session_search`、`session_read` 与 `read_skill` 固定启用；`get_current_time` 和 Tavily `search_web` 可独立启停，点击开关后立即保存。工具开关写入 `.everything/config.json`，Tavily 密钥写入根目录 `.env`；浏览器只读取密钥状态和末四位。
+- **Tools**：按来源展示 Agent 的真实工具目录。`manage_memory`、`session_search`、`session_read` 与 `read_skill` 固定启用；`get_current_time` 和 Tavily `search_web` 可独立启停，点击开关后立即保存；保存期间仅当前开关暂时禁用，其他开关可独立操作。工具开关写入 `.everything/config.json`，Tavily 密钥写入根目录 `.env`；浏览器只读取密钥状态和末四位。
 - **Database**：列出 `.everything/database/state.db` 的全部普通表、字段类型、行数和最多 200 条最新数据，不展示 SQLite 内部表、FTS5 虚拟表及其索引中间表。SQL Console 支持单条 `SELECT`、只读 `WITH`、`INSERT`、`UPDATE` 和 `DELETE`；数据写操作执行前必须在页面二次确认，DDL 始终禁止。
 - **运行记录**：只读列出 `.everything/traces/<日期>/<序号>-<sessionId>.jsonl` 中的 classic loop 与 memory 执行事实，页面按 JSONL 文件直接展示已脱敏事件，不额外推导 Session 或 Agent 回合结构。trace 不记录 Session 创建、选择，以及 Memory 页面手动搜索记忆或历史会话这类 UI 活动；Agent 内部检索仍记录执行事件。“配置”页面提供带二次确认的“清除全部数据”，可删除数据库、Session、Memory 与 trace，保留 `.everything/EVERYTHING.md`、`.everything/skills`、`.everything/config.json` 和根目录 `.env` 密钥。
-- **配置**：Agent Model 与 Small Model 各自拥有独立的 Provider、Model、Base URL 和 API Key；非敏感连接参数、Session Recall 预算和 Context Limit 等运行参数写入 `.everything/config.json`，四类 API Key 单独保存在根目录 `.env`，System Prompt 保存到 `.everything/EVERYTHING.md`。浏览器只能读取各密钥是否存在及末四位。
+- **配置**：Agent Model 与 Small Model 各自拥有独立的 Provider、Model、Base URL 和 API Key；非敏感连接参数、Session Recall 预算和 Context Limit 等运行参数写入 `.everything/config.json`，四类 API Key 单独保存在根目录 `.env`，用户可编辑的 Procedural Memory 保存到 `.everything/EVERYTHING.md`，与运行时内置的基础角色、Semantic Memory 策略和 Skills Catalog 一起组装 System Prompt。浏览器只能读取各密钥是否存在及末四位。
 
-首次运行时会自动创建 `.everything/config.json`、`.everything/EVERYTHING.md`、`.everything/skills/` 和数据库。打开“配置”菜单即可维护 JSON 中的普通设置；根目录 `.env` 只保存以下密钥：
+运行 `pnpm run dev:web` 时，在接受页面请求前自动创建缺失的 `.everything/`、`config.json`、`EVERYTHING.md`、`skills/`、数据库和根目录 `.env`，已有文件保留不变。根目录没有 `EVERYTHING.md` 模板时使用内置中文提示词。未配置模型密钥也能打开控制台、查看空数据并编辑配置；调用模型前需要在“配置”页面填写连接信息。打开“配置”菜单即可维护 JSON 中的普通设置；根目录 `.env` 只保存以下密钥：
 
 ```dotenv
 EVERYTHING_AGENT_API_KEY=""
@@ -253,7 +253,7 @@ pnpm run build
 - 当前 Session 和 Memory 是单用户、本地实现，不包含多租户或云同步。
 - 当前 Session 的全部完整回合进入 Working Memory，并完全排除在 Session Recall 之外。完整模型输入使用统一启发式规则估算，并统一预留输出与 512-token 安全余量；估算值只用于请求前预算，不作为真实消耗统计。
 - Semantic Memory 与 Session Recall 已支持 Dense、FTS5 + BM25 和 Hybrid 三种模式。Dense 仅调用 OpenAI-compatible Embedding API，固定 1024 维；Hybrid 以 RRF 融合并以 MMR 多样化。失败 run 不进入任何检索索引；工具结果不参与索引，但成功 run 的命中窗口会恢复完整工具过程。
-- JSONL trace 只覆盖 classic loop 与 memory；Workflow 继续使用实时 observer，不写入该目录。记录按 `.everything/traces/YYYY-MM-DD/<序号>-<sessionId>.jsonl` 存放，序号按当日文件创建顺序递增；无 Session 的事件写入带序号的 `system.jsonl`，不读取旧版根目录 JSONL。V2 记录为每个事件生成 `eventId` 和 run 内递增的 `sequence`；`model_request` 保存每次调用实际使用的 System Prompt、messages、工具 schema 和生成参数，`model_response` 与 `embedding_completed` 以 `tokenUsage` 记录供应商返回的真实输入、输出和总 token 数，缺失真实 usage 时为 `null`，不记录估算消耗。工具事件保存结构化参数与结果；记忆管理工具仅保存操作和 ID 摘要，新增 `memory_*` 事件记录决策、版本冲突与变更结果，不记录事实正文或自由文本理由。常见凭证字段与 Bearer token 仍会在写入前移除。`context_assembled` 只记录上下文的组装数量与记忆来源，模型请求才是 eval 的权威输入快照。
+- JSONL trace 只覆盖 classic loop 与 memory；Workflow 继续使用实时 observer，不写入该目录。记录按 `.everything/traces/YYYY-MM-DD/<序号>-<sessionId>.jsonl` 存放，序号按当日文件创建顺序递增；无 Session、独立任务归属的系统事件写入 `<序号>-system-<UUID>.jsonl`，UUID 在记录器创建时随机生成，同一记录器在同一日期持续追加，重启后使用新的 UUID，不读取旧版根目录 JSONL。V2 记录为每个事件生成 `eventId` 和 run 内递增的 `sequence`；`model_request` 保存每次调用实际使用的 System Prompt、messages、工具 schema 和生成参数，`model_response` 与 `embedding_completed` 以 `tokenUsage` 记录供应商返回的真实输入、输出和总 token 数，缺失真实 usage 时为 `null`，不记录估算消耗。工具事件保存结构化参数与结果；记忆管理工具仅保存操作和 ID 摘要，新增 `memory_*` 事件记录决策、版本冲突与变更结果，不记录事实正文或自由文本理由。常见凭证字段与 Bearer token 仍会在写入前移除。`context_assembled` 只记录上下文的组装数量与记忆来源，模型请求才是 eval 的权威输入快照。
 - `State.snapshot()` 是顶层复制；节点应把收到的状态视为只读对象。
 - 当前没有内置鉴权、密钥管理或个人数据加密能力。
 
@@ -270,3 +270,13 @@ Agent 页面每天首次进入时检查 consolidation（服务端本地自然日
 记忆写入与 consolidation 持久化到 `memory_tasks`，共用串行后台队列；失败最多执行三次，重试与恢复使用事务内操作凭据避免重复提交。一次写入独立一个 trace JSONL，一次 consolidation 的所有子任务共用一个 JSONL，文件名分别为 `<序号>-memory_write-<taskId>.jsonl` 和 `<序号>-consolidation-<runId>.jsonl`。整理 trace 直接以 consolidation 为根，批次下记录模型审查与变更，不包含 memory_task 包装层。
 
 Agent 页的聊天区在桌面端固定为 420px，小屏幕下独占一行。顶部独立标题栏展示机器人图标、当前会话标题，标题右侧为重命名、删除操作，最右侧可收起或展开聊天区（保留会话、输入草稿及运行中的请求）；分隔线下方依次排列新建对话、历史对话按钮和右侧模型配置入口。历史列表使用白色浮层与淡紫色选中态；条目保留标题和记录数所需高度，超出浮层高度时由列表滚动，避免压缩裁切。历史列表默认收起，以浮层展开，不挤压消息区；点击外部、移出焦点、按 Escape 或切换会话后关闭。消息区独立滚动，底部保留输入框、快捷键提示和发送／停止按钮；展开历史列表时保留当前会话和输入内容。用户与助理的消息正文统一渲染 Markdown，支持标题、加粗、列表、引用、链接、代码块及 GFM 表格和任务列表；实时流式回复和历史消息使用相同格式，宽表格与代码块可横向滚动。消息中的原始 HTML 不会执行。
+
+Agent 运行期间可通过侧栏切换到其他页面，运行与实时事件接收会继续；返回 Agent 后保留当前会话、消息、输入草稿和停止控制，并刷新模型配置。该行为适用于控制台内页面导航，不包含浏览器刷新或关闭后恢复运行。
+
+### Agent 输出与迭代预算
+
+配置页的运行参数支持修改“单次模型输出”和“Agent 最大迭代”，分别默认 **16,384 tokens**（原 2,048）和 **50 轮**（原 10）。允许范围分别为 1–131,072 tokens 和 1–1,000 轮，保存后对新运行生效，恢复默认会重置这两个值。
+
+也可在 `.everything/config.json` 顶层设置 `maxTokens` 与 `maxIterations`。运行记录 `run_started.settings` 保存实际预算，模型请求使用配置的 `max_tokens`。输入估算、输出预算及 512 tokens 安全余量仍须合计不超过 `modelContextWindow`；输出预算需符合模型服务自身的限制。Agent Loop 超时仍为 300 秒。提高预算不会自动续写被截断的回答。
+
+配套默认预算为 `modelContextWindow: 131072` 与 `sessionRecall.tokenLimit: 32768`（Recall Token Limit）。初始化、缺省配置、配置页和恢复默认保持一致。预留 16,384 输出 tokens 与 512 安全余量后，输入预算为 114,176 tokens；召回预算占上下文窗口的四分之一，为系统提示、当前会话和工具结果留出空间。50 轮是执行上限，不表示预留 50 份输出；每轮仍检查实际累计上下文。

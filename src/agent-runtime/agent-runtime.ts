@@ -19,7 +19,9 @@ import { createToolSettings } from "../tools/tool-settings.ts";
 import type { ToolSettingsInput } from "../tools/tool-settings.ts";
 import type { AgentRunInput, AgentRunOptions, AgentRunResult } from "./types.ts";
 
-const DEFAULT_TIMEOUT_MS = 60_000;
+import { RUNTIME_SYSTEM_PROMPT } from "./system-prompt.ts";
+
+const DEFAULT_TIMEOUT_MS = 300_000;
 
 /** 创建本地个人助理 Runtime；资源与会话锁由实例独立持有。 */
 export function createAgentRuntime(paths: LocalConfigPaths) {
@@ -146,8 +148,8 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
         settings: {
           modelContextWindow: settings.modelContextWindow,
           sessionRecall: recallSettings(settings, tokenEstimator),
-          maxIterations: 10,
-          maxTokens: 2_048,
+          maxIterations: settings.maxIterations,
+          maxTokens: settings.maxTokens,
           timeoutMs: DEFAULT_TIMEOUT_MS,
           stream: true,
         },
@@ -204,7 +206,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
         const result = await runAgentLoop({
           client: agentClient,
           model: settings.agentModel.model,
-          system: [baseSystem, skillCatalog, retrieval.context].filter(Boolean).join("\n\n"),
+          system: [RUNTIME_SYSTEM_PROMPT, baseSystem, skillCatalog, retrieval.context].filter(Boolean).join("\n\n"),
           messages,
           tools: new LocalToolRegistry(memory, new ManageMemoryTool(memory, {
             client: agentClient, model: settings.agentModel.model, currentSessionId: sessionId,
@@ -217,7 +219,8 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
             searchWebEnabled: toolSettings.searchWebEnabled,
             tavilyApiKey: toolSettings.tavilyApiKey,
           }),
-          maxIterations: 10,
+          maxIterations: settings.maxIterations,
+          maxTokens: settings.maxTokens,
           timeoutMs: DEFAULT_TIMEOUT_MS,
           stream: true,
           modelContextWindow: settings.modelContextWindow,

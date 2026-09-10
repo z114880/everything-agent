@@ -83,12 +83,29 @@ describe("JSONL 运行记录", () => {
     await tracer.record("trace_read_error", { runId: "r3" });
 
     const dateDirectory = join(home, "traces", "2026-09-03");
-    expect((await readdir(dateDirectory)).sort()).toEqual(["001-s1.jsonl", "002-s2.jsonl", "003-system.jsonl"]);
+    expect((await readdir(dateDirectory)).sort()).toEqual(["001-s1.jsonl", "002-s2.jsonl", expect.stringMatching(/^003-system-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.jsonl$/)]);
     expect((await readTraceFiles(home)).map((file) => file.path)).toEqual([
       "2026-09-03/001-s1.jsonl",
       "2026-09-03/002-s2.jsonl",
-      "2026-09-03/003-system.jsonl",
+      expect.stringMatching(/^2026-09-03\/003-system-[0-9a-f-]{36}\.jsonl$/),
     ]);
+  });
+
+  it("系统文件保留 system 前缀并使用 UUID，同一记录器持续追加", async () => {
+    const home = await mkdtemp(join(tmpdir(), "everything-trace-"));
+    const options = { now: () => new Date("2026-09-03T08:00:00Z") };
+    const tracer = new JsonlTracer(home, options);
+    await tracer.record("run_started", { runId: "r1" });
+    await tracer.record("run_completed", { runId: "r1" });
+    await tracer.record("run_started", { runId: "r2" });
+    await new JsonlTracer(home, options).record("run_started", { runId: "r3" });
+
+    const files = await readTraceFiles(home);
+    expect(files).toHaveLength(2);
+    expect(files[0]?.path).toMatch(/^2026-09-03\/001-system-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.jsonl$/);
+    expect(files[0]?.records.map((record) => record.runId).sort()).toEqual(["r1", "r1", "r2"]);
+    expect(files[1]?.path).toMatch(/^2026-09-03\/002-system-[0-9a-f-]{36}\.jsonl$/);
+    expect(files[1]?.records[0]?.runId).toBe("r3");
   });
 
   it("重启后继续写入原 Session 编号，并按限额保留最新事件", async () => {

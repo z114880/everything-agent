@@ -17,7 +17,7 @@ export default function App() {
   const [page, setPage] = useState<Page>("agent");
 
   const pageContent = page === "agent"
-    ? <AgentPage onOpenConfig={() => setPage("config")} />
+    ? null
     : page === "config"
       ? <ConfigPage />
       : page === "skills"
@@ -53,9 +53,11 @@ export default function App() {
       </aside>
       {!sidebarOpen && <Button variant="ghost" size="icon-sm" className="panel-collapse-toggle sidebar-reopen" onClick={() => setSidebarOpen(true)} aria-label="展开侧边栏" aria-expanded={sidebarOpen} aria-controls="app-sidebar"><ChevronRight size={16} /></Button>}
 
-      <main className={`main-content ${page === "agent" ? "agent-main-content" : ""}`}>
-        {pageContent}
+      {/* 页面导航只隐藏 Agent，保留运行请求、事件订阅和会话状态。 */}
+      <main className="main-content agent-main-content" hidden={page !== "agent"}>
+        <AgentPage active={page === "agent"} onOpenConfig={() => setPage("config")} />
       </main>
+      {page !== "agent" && <main className="main-content">{pageContent}</main>}
     </div>
   );
 }

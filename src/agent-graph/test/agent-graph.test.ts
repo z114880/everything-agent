@@ -16,10 +16,11 @@ describe("Agent Harness", () => {
     const edges = graph.edges.map((edge) => `${edge.source}->${edge.target}`);
     expect(edges).toContain("START->user_prompt");
     expect(edges).not.toContain("START->working_memory");
-    expect(graph.nodes.map((node) => node.name)).not.toContain("system_prompt");
+    expect(graph.nodes.map((node) => node.name)).toContain("system_prompt");
+    expect(graph.nodes.map((node) => node.name)).not.toContain("runtime_policy");
     expect(edges).toEqual(expect.arrayContaining([
       "everything_md->procedural_memory", "skills_catalog->procedural_memory",
-      "procedural_memory->working_memory", "tool_schemas->working_memory",
+      "procedural_memory->system_prompt", "system_prompt->working_memory", "tool_schemas->working_memory",
       "retrieval_gate->working_memory", "retrieval_gate->semantic_recall", "retrieval_gate->session_recall",
       "llm->tools", "tools->llm", "llm->reply", "tools->memory_queue",
       "consolidate_trigger->consolidate_snapshot", "consolidation->consolidate_commit", "memory_queue->memory_review",

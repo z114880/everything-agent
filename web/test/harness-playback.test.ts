@@ -32,14 +32,18 @@ describe("记忆流程事件映射", () => {
       everything_md: "done",
       skills_catalog: "done",
       procedural_memory: "done",
+      system_prompt: "done",
       working_memory: "running",
     });
     expect(assembled.edges).toEqual(expect.arrayContaining([
       "everything_md->procedural_memory",
       "skills_catalog->procedural_memory",
-      "procedural_memory->working_memory",
+      "procedural_memory->system_prompt",
+      "system_prompt->working_memory",
     ]));
-    expect(assembled.edges).not.toContain("procedural_memory->system_prompt");
+    expect(assembled.edges).not.toContain("procedural_memory->working_memory");
+    expect(assembled.states).not.toHaveProperty("runtime_policy");
+    expect(assembled.edges).not.toContain("runtime_policy->system_prompt");
   });
   it("首次模型请求把 Tool Schemas 汇入 Working Memory", () => {
     const first = advanceHarnessMemory("model_request", { iteration: 1 }, { working_memory: "running" });

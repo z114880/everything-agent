@@ -7,8 +7,10 @@ export const RUNTIME_DEFAULTS = {
   sessionSearchWindow: 5,
   sessionScrollStep: 10,
   sessionRecallMessageLimit: 100,
-  sessionRecallTokenLimit: 8_192,
-  modelContextWindow: 32_768,
+  sessionRecallTokenLimit: 32_768,
+  modelContextWindow: 131_072,
+  maxTokens: 16_384,
+  maxIterations: 50,
 } as const;
 
 /** 内部配置包含完整凭证，只能经 publicSettings 投影后交给宿主。 */
@@ -38,6 +40,8 @@ export interface RuntimeSettings {
   sessionRecallMessageLimit: number;
   sessionRecallTokenLimit: number;
   modelContextWindow: number;
+  maxTokens: number;
+  maxIterations: number;
   retrievalMode: RetrievalMode;
   embeddingBaseUrl: string;
   embeddingModel: string;
@@ -72,6 +76,8 @@ export interface PublicAgentSettings {
   sessionRecallMessageLimit: number;
   sessionRecallTokenLimit: number;
   modelContextWindow: number;
+  maxTokens: number;
+  maxIterations: number;
   retrievalMode: RetrievalMode;
   embeddingBaseUrl: string;
   embeddingModel: string;
@@ -85,6 +91,8 @@ export interface PublicAgentSettings {
 }
 
 export const SETTING_LIMITS = {
+  maxTokens: { min: 1, max: 131_072 },
+  maxIterations: { min: 1, max: 1_000 },
   sessionSearchWindow: { min: 1, max: 20 },
   sessionScrollStep: { min: 1, max: 50 },
   sessionRecallMessageLimit: { min: 1, max: 200 },
@@ -110,6 +118,8 @@ export function parseRuntimeSettingBody(body: AgentSettingsInput) {
     sessionScrollStep: parseSetting(body.sessionScrollStep, "Session Scroll Step", RUNTIME_DEFAULTS.sessionScrollStep, SETTING_LIMITS.sessionScrollStep),
     sessionRecallMessageLimit: parseSetting(body.sessionRecallMessageLimit, "Session Recall Message Limit", RUNTIME_DEFAULTS.sessionRecallMessageLimit, SETTING_LIMITS.sessionRecallMessageLimit),
     sessionRecallTokenLimit: parseSetting(body.sessionRecallTokenLimit, "Session Recall Token Limit", RUNTIME_DEFAULTS.sessionRecallTokenLimit, SETTING_LIMITS.sessionRecallTokenLimit),
+    maxTokens: parseSetting(body.maxTokens, "单次模型输出", RUNTIME_DEFAULTS.maxTokens, SETTING_LIMITS.maxTokens),
+    maxIterations: parseSetting(body.maxIterations, "Agent 最大迭代", RUNTIME_DEFAULTS.maxIterations, SETTING_LIMITS.maxIterations),
     modelContextWindow: parseSetting(body.modelContextWindow, "Model Context Window", RUNTIME_DEFAULTS.modelContextWindow, SETTING_LIMITS.modelContextWindow),
     retrievalMode: parseRetrievalMode(body.retrievalMode ?? "lexical_only"),
     embeddingBaseUrl: optionalText(body.embeddingBaseUrl, "Embedding Base URL", 2_000),

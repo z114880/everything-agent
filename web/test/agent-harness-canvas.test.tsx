@@ -29,8 +29,8 @@ describe("Agent 业务画布", () => {
     expect(html).toContain("Skills Catalog");
     expect(html).toContain("Procedural Memory");
     expect(html).toContain("Tool Schemas");
-    expect(html).not.toContain("System Prompt");
-    for (const subtitle of ["用户输入", "System instructions", "Instructions + available skills", "Names &amp; descriptions", "assembled per turn"]) {
+    expect(html).toContain("System Prompt");
+    for (const subtitle of ["用户输入", "用户常驻规则", "Instructions + available skills", "Names &amp; descriptions", "assembled per turn"]) {
       expect(html).toContain(subtitle);
     }
     expect(html).not.toContain("Context budget");

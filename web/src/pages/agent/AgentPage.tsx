@@ -39,6 +39,7 @@ import { Button } from "../../components/ui/button";
 import { Textarea } from "../../components/ui/textarea";
 
 interface AgentPageProps {
+  active?: boolean;
   onOpenConfig(): void;
 }
 interface ToolView {
@@ -81,13 +82,14 @@ const idleStates: Record<string, VisualNodeState> = {
   reply: "idle",
 };
 
-export function AgentPage({ onOpenConfig }: AgentPageProps) {
+export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
   const [bootstrap, setBootstrap] = useState<AgentBootstrap | null>(null);
   const [chatCollapsed, setChatCollapsed] = useState(false);
   const [sessionRailCollapsed, setSessionRailCollapsed] = useState(true);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState("");
   const [loadError, setLoadError] = useState("");
+  const [refreshError, setRefreshError] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const creatingSessionRef = useRef(false);
@@ -101,6 +103,7 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
   const [backgroundEdges, setBackgroundEdges] = useState<Set<string>>(
     new Set(),
   );
+  const resetMemoryPlaybackRef = useRef<(() => void) | null>(null);
   const [consolidationStatus, setConsolidationStatus] = useState("");
   const [consolidating, setConsolidating] = useState(false);
   const [semanticCount, setSemanticCount] = useState(0);
@@ -119,6 +122,24 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
   useEffect(() => {
     void initialize();
   }, []);
+  const previousActiveRef = useRef(active);
+  useEffect(() => {
+    const returning = active && !previousActiveRef.current;
+    previousActiveRef.current = active;
+    if (!returning) return;
+    let disposed = false;
+    // 返回时读取最新配置，不重新初始化会话或覆盖运行中的消息。
+    void loadAgent().then((loaded) => {
+      if (!disposed) {
+        setBootstrap(loaded);
+        setSemanticCount(loaded.semanticCount);
+        setRefreshError("");
+      }
+    }).catch((error) => {
+      if (!disposed) setRefreshError(error instanceof Error ? error.message : String(error));
+    });
+    return () => { disposed = true; };
+  }, [active]);
   // 浮层不参与消息区布局；点击外部、移出焦点或按 Escape 均可关闭。
   useEffect(() => {
     if (sessionRailCollapsed) return;
@@ -134,13 +155,13 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
   }, [sessionRailCollapsed]);
   useLayoutEffect(() => {
     const chatLog = chatLogRef.current;
-    if (!chatLog || !activeSessionId) return;
+    if (!active || !chatLog || !activeSessionId) return;
     chatLog.scrollTo({
       top: chatLog.scrollHeight,
       behavior: initialChatScrollRef.current ? "auto" : "smooth",
     });
     initialChatScrollRef.current = false;
-  }, [activeSessionId, messages]);
+  }, [active, activeSessionId, messages]);
   useEffect(() => {
     if (!running) return;
     const timer = window.setInterval(
@@ -154,6 +175,14 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
   useEffect(() => {
     let states: Record<string, VisualNodeState> = {};
     const playback = createEdgePlayback(setBackgroundEdges);
+    resetMemoryPlaybackRef.current = () => {
+      // 同时清除订阅闭包中的旧值，避免后续无关事件恢复上一轮结果。
+      states = { ...states };
+      for (const id of ["memory_queue", "memory_review", "memory_commit", "semantic_store"])
+        delete states[id];
+      setBackgroundStates(states);
+      playback.reset();
+    };
     const unsubscribe = subscribeBackgroundEvents((kind, event) => {
       if (kind.startsWith("consolidation_")) {
         if (kind === "consolidation_started") {
@@ -202,6 +231,7 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
     });
     return () => {
       unsubscribe();
+      resetMemoryPlaybackRef.current = null;
       playback.cancel();
     };
   }, []);
@@ -413,6 +443,7 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
     setRunning(true);
     setTick((value) => value + 1);
     edgePlayback.reset();
+    resetMemoryPlaybackRef.current?.();
     setNodeStates({
       ...Object.fromEntries(
         bootstrap.workflow.nodes.map((node) => [node.id, "idle" as const]),
@@ -524,6 +555,7 @@ export function AgentPage({ onOpenConfig }: AgentPageProps) {
   return (
     <div className="agent-page-layout" data-chat-collapsed={chatCollapsed}>
       <div className="agent-main-column">
+        {refreshError && <div role="alert">配置刷新失败：{refreshError}</div>}
         <PageHeading
           eyebrow="个人助理 / 实时执行"
           title="Agent"

@@ -21,10 +21,13 @@ it("Web 配置不再暴露或保存 Session 整理间隔", async () => {
       agentModel: { provider: "openai-compatible", model: "agent", baseUrl: "https://agent.example/v1" },
       smallModel: { provider: "anthropic", model: "small", baseUrl: "https://small.example" },
       force: true,
+      maxTokens: 24_576, maxIterations: 100,
     });
+    expect(result.settings).toMatchObject({ maxTokens: 24_576, maxIterations: 100 });
     expect(result.settings).not.toHaveProperty("consolidationSessionInterval");
     expect(await readFile(paths.envPath, "utf8")).not.toContain("CONSOLIDATION_SESSION_INTERVAL");
     reopened = createAgentRuntime(paths);
+    expect(await reopened.getSettings()).toMatchObject({ maxTokens: 24_576, maxIterations: 100 });
     expect(await reopened.getSettings()).not.toHaveProperty("consolidationSessionInterval");
   } finally {
     await reopened?.close();

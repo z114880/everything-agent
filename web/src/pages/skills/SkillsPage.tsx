@@ -171,9 +171,9 @@ export function SkillsPage() {
             <label className="skill-instructions-field"><span>Instructions</span><Textarea value={draft.instructions} onChange={(event) => setDraft({ ...draft, instructions: event.target.value })} placeholder="写下 Agent 使用此 Skill 时必须遵循的步骤、边界和输出要求…" spellCheck={false} /></label>
           </div>
           <footer className="skill-editor-actions">
-            {draft.originalName && <DeleteSkillDialog name={draft.originalName} disabled={saving} onConfirm={() => void remove()} />}
+            <Button size="sm" disabled={!dirty || !draft.name.trim() || !draft.description.trim() || !draft.instructions.trim()} loading={saving} onClick={() => void persist()}><Save size={14} /> 保存 Skill</Button>
             <span className={dirty ? "is-dirty" : ""}>{dirty && <i aria-hidden="true" />}{dirty ? "有未保存的修改" : draft.originalName ? "已与本地文件同步" : "填写完整后即可保存"}</span>
-            <Button disabled={!dirty || !draft.name.trim() || !draft.description.trim() || !draft.instructions.trim()} loading={saving} onClick={() => void persist()}><Save size={14} /> 保存 Skill</Button>
+            {draft.originalName && <DeleteSkillDialog name={draft.originalName} disabled={saving} onConfirm={() => void remove()} />}
           </footer>
         </>}
       </section>
