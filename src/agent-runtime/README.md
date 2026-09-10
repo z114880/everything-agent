@@ -104,3 +104,5 @@ Web 配置页的 Memory Retrieval 区域提供 Retrieval Mode 与 Minimum Simila
 每轮将运行时基础角色、Semantic Memory 策略、用户可编辑的 `.everything/EVERYTHING.md` 和 Skills Catalog 组装为系统指令。记忆策略由 `system-prompt.ts` 维护，不写入用户规则文件；编辑用户规则不会移除该策略。召回证据仍通过 system 字段传输，但有明确的不可信历史记录标识，只作为数据使用，不属于行为指令。Working Memory 包含这些内容及会话消息，工具接口随模型请求提供。
 
 图中的 System Prompt 是组装结果，并非一次额外模型调用；现有 `context_assembled` 事件标记其完成，不新增虚构执行事件。提示词指导提交与回复，参数、证据、事务和审计约束仍由工具与记忆模块执行。
+
+Memory 页在 Consolidation 后提供只读 System Prompt 标签页，直接展示 `system-prompt.ts` 导出的运行时提示词正文，不拼接用户规则、Skills 或召回内容，不提供修改和保存入口。

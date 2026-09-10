@@ -1,3 +1,4 @@
+import { RUNTIME_SYSTEM_PROMPT } from "../../../../src/agent-runtime/system-prompt.ts";
 import { Database, FileText, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
@@ -14,11 +15,12 @@ import { PageHeading } from "../../components/PageHeading";
 import { SaveMessage } from "../../components/SaveMessage";
 import { Textarea } from "../../components/ui/textarea";
 
-type MemoryTab = "overview" | "semantic" | "episodic" | "procedural" | "chat" | "consolidation";
+type MemoryTab = "overview" | "semantic" | "episodic" | "procedural" | "chat" | "consolidation" | "system_prompt";
 const tabs: Array<{ id: MemoryTab; label: string }> = [
   { id: "overview", label: "Overview" }, { id: "semantic", label: "Semantic" },
   { id: "episodic", label: "Session Recall" }, { id: "procedural", label: "Procedural" },
   { id: "chat", label: "Chat Log" }, { id: "consolidation", label: "Consolidation" },
+  { id: "system_prompt", label: "System Prompt" },
 ];
 
 export function MemoryPage() {
@@ -139,6 +141,7 @@ export function MemoryPage() {
       {recall?.sessions.map((result) => <RecallCard key={result.session.id} result={result} read={read} />)}
     </div>}
     {tab === "procedural" && <Card className="procedural-editor"><div className="panel-header"><span><FileText size={15} /> System Prompt</span><code>.everything/EVERYTHING.md</code></div><Textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} /><Button onClick={() => void persistSystemPrompt()}>保存 Procedural Memory</Button></Card>}
+    {tab === "system_prompt" && <Card className="procedural-editor"><div className="panel-header"><span><FileText size={15} /> System Prompt · 只读</span><code>src/agent-runtime/system-prompt.ts</code></div><Textarea aria-label="系统提示词（只读）" value={RUNTIME_SYSTEM_PROMPT} readOnly /></Card>}
     {tab === "chat" && (<div className="panel table-scroll"><table><thead><tr><th>ID</th><th>Session ID</th><th>Run ID</th><th>Role</th><th>Kind</th><th>内容</th><th>时间</th></tr></thead><tbody>{data.chatLog.map((item) => (<tr key={item.id}><td>{item.id}</td><td><code>{short(item.sessionId)}</code></td><td><code>{short(item.runId)}</code></td><td>{item.role}</td><td>{item.kind}</td><td><pre>{contentText(item.content)}</pre></td><td>{local(item.createdAt)}</td></tr>))}</tbody></table></div>)}
     {tab === "consolidation" && <div className="panel table-scroll"><table><thead><tr><th>Status</th><th>Run ID</th><th>Trigger</th><th>批次 / 未解决冲突</th><th>Facts</th><th>时间</th></tr></thead><tbody>{data.consolidations.map((item) => <tr key={item.id}><td><Badge variant={item.status === "completed" ? "success" : item.status === "failed" ? "destructive" : "outline"}>{item.status}</Badge>{item.errorType && <small>{item.errorType}</small>}</td><td><code>{short(item.runId)}</code></td><td>{item.trigger}</td><td>{item.completedBatches} / {item.totalBatches} · 冲突 {item.unresolvedConflicts}</td><td>新增 {item.factsCreated} / 更新 {item.factsUpdated} / 删除 {item.factsDeleted} / 合并 {item.factsMerged} / 跳过 {item.factsSkipped}</td><td>{local(item.startedAt)}</td></tr>)}</tbody></table></div>}
   </div>;
