@@ -8,6 +8,7 @@
 agent-runtime/
 ├── index.ts                  # 模块公开入口
 ├── agent-runtime.ts          # 回合执行、事件转发、后台任务启动、会话锁与资源生命周期
+├── daily-consolidation.ts    # 每日整理的本地时间兜底检查
 ├── system-prompt.ts          # 运行时基础角色与 Semantic Memory 策略
 ├── types.ts                  # 回合输入、选项与结果类型
 ├── configuration/
@@ -83,7 +84,7 @@ Web 的请求校验、Memory action 字符串分发、bootstrap/dashboard 数据
 
 Session 归档只在本地提交 Chat Log 和 FTS，不执行 embedding。Session 搜索始终使用 FTS；全局检索模式只控制 Semantic Memory。
 
-Consolidation 按服务端本地自然日自动至多一次，Agent 页面首次进入时检查；只有 Semantic Memory 非空才创建任务，空库不占每日配额。手动 **Consolidate** 可额外执行，自动与手动共用任务互斥。输入仅为全量 semantic facts，不读取 Session，不依赖新建对话。详见 [整理机制](../memory/CONSOLIDATION.md)。
+Consolidation 按服务端本地自然日自动至多一次，Agent 页面首次进入时检查；`start()` 另外启动每日兜底检查，进程长期运行、页面不刷新时在本地时间 15:00 之后补发一次 daily 整理，`close()` 停止该检查。两条自动路径共用同一份每日去重，只有 Semantic Memory 非空才创建任务，空库不占每日配额。手动 **Consolidate** 可额外执行，自动与手动共用任务互斥。输入仅为全量 semantic facts，不读取 Session，不依赖新建对话。详见 [整理机制](../memory/CONSOLIDATION.md)。
 
 写入和 consolidation 共用持久化串行队列，失败最多执行三次，间隔 1 秒、2 秒。稳定候选 ID 与事务内提交凭据防止中断恢复重复写入。后台每个任务独立 trace JSONL，一次 consolidation 的所有子任务 共用一个文件，不发送到聊天 observer。`runtime.memory.listBackgroundTasks()` 只返回任务元数据，`waitForBackgroundTasks()` 供测试或显式等待使用，聊天不调用。
 

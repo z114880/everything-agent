@@ -14,6 +14,8 @@ import { createRuntimeSettings, publicSettings } from "./configuration/settings.
 import { createRuntimeClient } from "./integrations/model.ts";
 import { configureMemoryRuntime, recallSettings } from "./integrations/memory.ts";
 import { publicToolEvent } from "./events/tool-events.ts";
+import { startDailyConsolidationCheck } from "./daily-consolidation.ts";
+import type { DailyConsolidationCheck } from "./daily-consolidation.ts";
 import { formatSkillCatalog, SkillStore } from "../skills/index.ts";
 import { createToolSettings } from "../tools/tool-settings.ts";
 import type { ToolSettingsInput } from "../tools/tool-settings.ts";
@@ -35,6 +37,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
   let memoryRuntime: MemoryRuntime | null = null;
   let tracer: JsonlTracer | null = null;
   let recoveryScheduled = false;
+  let dailyConsolidation: DailyConsolidationCheck | null = null;
   let dataClearing = false;
   const backgroundObservers = new Set<AgentObserver>();
   const sessionLocks = new Map<string, Promise<void>>();
@@ -328,6 +331,28 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
     return tracer;
   }
 
+  /** 用户进入 Agent 页面、点击 Consolidate 或每日兜底检查；未配置模型时不占每日配额。 */
+  async function consolidate(trigger: "daily" | "manual") {
+    const settings = await loadRuntimeSettings();
+    const memory = getMemoryRuntime();
+    if (!isModelConnectionConfigured(settings.agentModel)) {
+      if (trigger === "manual") throw new Error("请先配置模型后再 Consolidate");
+      return null;
+    }
+    scheduleStartupRecovery(memory, settings);
+    return memory.consolidate(trigger);
+  }
+
+  /** 页面只在挂载时触发 daily 整理，进程长期运行时由本地时间轮询兜底。 */
+  function scheduleDailyConsolidation(): void {
+    dailyConsolidation ??= startDailyConsolidationCheck({
+      consolidate: () => consolidate("daily"),
+      onError: (error) => void recordMemoryEvent("daily_consolidation_check_failed", {
+        errorType: error instanceof Error ? error.name : "UnknownError",
+      }),
+    });
+  }
+
   // 每个实例只启动一次消费器；每个后台任务执行前重新读取配置，不绑定聊天取消信号。
   function scheduleStartupRecovery(memory: MemoryRuntime, settings: RuntimeSettings): void {
     if (recoveryScheduled || !isModelConnectionConfigured(settings.agentModel)) return;
@@ -384,6 +409,8 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
     }
     dataClearing = true;
     try {
+      dailyConsolidation?.stop();
+      dailyConsolidation = null;
       if (memoryRuntime) {
         memoryRuntime.stopBackgroundTasks();
         await memoryRuntime.waitForBackgroundTasks();
@@ -416,6 +443,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
       assertOpen();
       await config.initialize();
       scheduleStartupRecovery(getMemoryRuntime(), await loadRuntimeSettings());
+      scheduleDailyConsolidation();
     },
     get memory() { return getMemoryRuntime(); },
     async prepareMemory() {
@@ -425,17 +453,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
       scheduleStartupRecovery(memory, settings);
       return recallSettings(settings, tokenEstimator);
     },
-    /** 用户进入 Agent 页面或点击 Consolidate；未配置模型时不占每日配额。 */
-    async consolidate(trigger: "daily" | "manual") {
-      const settings = await loadRuntimeSettings();
-      const memory = getMemoryRuntime();
-      if (!isModelConnectionConfigured(settings.agentModel)) {
-        if (trigger === "manual") throw new Error("请先配置模型后再 Consolidate");
-        return null;
-      }
-      scheduleStartupRecovery(memory, settings);
-      return memory.consolidate(trigger);
-    },
+    consolidate,
     async createSession(previousSessionId?: string) {
       const settings = await loadRuntimeSettings();
       const memory = getMemoryRuntime();

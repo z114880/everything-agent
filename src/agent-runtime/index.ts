@@ -1,4 +1,6 @@
 export { createAgentRuntime } from "./agent-runtime.ts";
+export { DAILY_CONSOLIDATION_HOUR, startDailyConsolidationCheck } from "./daily-consolidation.ts";
+export type { DailyConsolidationCheck, DailyConsolidationCheckOptions } from "./daily-consolidation.ts";
 export { AgentConfigError, RUNTIME_DEFAULTS } from "./configuration/schema.ts";
 export type { AgentRuntime } from "./agent-runtime.ts";
 export type {
