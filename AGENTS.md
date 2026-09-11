@@ -72,6 +72,8 @@
 - `src/tools/`：本地工具注册表；行为测试放在 `src/tools/test/`。
 - `src/model/model-client.ts`：独立于 Agent Runtime 的真实模型协议适配与配置接口；行为测试放在 `src/model/test/`。
 - `src/memory/`：本地 Session、SQLite、FTS5 检索与 consolidation；行为测试放在 `src/memory/test/`。
+- `src/agent-runtime/`：组合 Agent Loop、模型客户端、工具注册表、Memory 与 Tracer 的本地个人助理运行时；内部辅助模块（`configuration/`、`integrations/`、`events/`）不从 `index.ts` 导出，行为测试放在 `src/agent-runtime/test/`。
+- `src/skills/`：基于 `.everything/skills/<skill-name>/SKILL.md` 的按需过程知识存取；行为测试放在 `src/skills/test/`。
 - `src/tracing/`：classic Agent Loop 与 Memory 的 JSONL 运行记录；行为测试放在 `src/tracing/test/`。
 - `src/workflows/`：与 Engine、Agent 同级的本地工作流；行为测试放在 `src/workflows/test/`。
 - `web/test/`：Web 模块的行为测试。

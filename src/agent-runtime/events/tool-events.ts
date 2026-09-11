@@ -2,7 +2,9 @@ import type { ToolCallRecord } from "../../agent-loop/agent-loop.ts";
 
 /** 工具事件的公开投影：记忆正文只保留元数据，普通工具递归移除凭证字段。 */
 export function publicToolEvent(call: ToolCallRecord): Record<string, unknown> {
-  const result = call.tool === "read_skill"
+  const result = call.isError
+    ? removeCredentials(call.result)
+    : call.tool === "read_skill"
     ? skillToolMetadata(call.result)
     : call.tool === "session_search" || call.tool === "session_read"
     ? sessionRecallToolMetadata(call.result)
