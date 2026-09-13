@@ -747,7 +747,7 @@ export function ConfigPage() {
             <div className="config-runtime-grid">
               <ConfigField
                 label="Session Search Window"
-                help="命中点初始单侧窗口，默认 5。"
+                help="命中点初始单侧窗口，默认 10。"
               >
                 <Input
                   type="number"
