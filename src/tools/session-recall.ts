@@ -12,7 +12,6 @@ export const sessionSearchSchema = {
       query: { type: "string" },
       recent: { type: "boolean", enum: [true] },
       limit: { type: "integer", minimum: 1, maximum: 20 },
-      window: { type: "integer", minimum: 1, maximum: 20 },
     },
     additionalProperties: false,
   },
@@ -48,12 +47,10 @@ export class SessionRecallTools {
     if (name === SESSION_SEARCH_TOOL) {
       const query = optionalText(args.query);
       const limit = optionalNumber(args.limit);
-      const window = optionalNumber(args.window);
       return this.memory.searchSessions({
         ...(query === undefined ? {} : { query }),
         ...(args.recent === true ? { recent: true } : {}),
         ...(limit === undefined ? {} : { limit }),
-        ...(window === undefined ? {} : { window }),
         currentSessionId: this.currentSessionId,
       }, this.settings);
     }

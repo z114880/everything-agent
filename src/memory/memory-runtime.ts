@@ -170,7 +170,7 @@ export class MemoryRuntime {
    * Agent 调用通过 currentSessionId 排除当前会话。
    */
   searchSessions(
-    input: { query?: string; recent?: boolean; limit?: number; window?: number; currentSessionId?: string },
+    input: { query?: string; recent?: boolean; limit?: number; currentSessionId?: string },
     settings: SessionRecallSettings,
     providedQueryVector?: Float32Array,
     runId?: string,

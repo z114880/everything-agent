@@ -60,7 +60,7 @@ Gate 采用召回率优先策略：宁可多执行一次 Session Recall，也不
 session_search 是只读的发现工具，有两种互斥模式：按 query 执行 FTS5 + BM25 搜索（不受全局 Semantic 检索模式影响），或以 recent: true 返回最近活跃 Session。
 
 - limit 限制 Session 数，默认 4。
-- search 每个 Session 选择FTS 的最佳消息锚点，返回首 3 条、命中点前后各 window 条、尾 3 条。
+- search 每个 Session 选择FTS 的最佳消息锚点，返回首 3 条、命中点前后各 Session Search Window 条（默认 5，由运行配置决定，Agent 不能通过参数调整）、尾 3 条；窗口不够时用 session_read 的 cursor 扩窗。
 - recent 按 updated_at 降序返回非空 Session，返回首 6 条和尾 6 条，结果使用 retrievalMode: recent 与 match: null。
 - 窗口按可检索对话消息计数，随后展开这些消息所属的完整 run。
 - 首、事件、尾区段重叠时按 chat_log.id 去重。

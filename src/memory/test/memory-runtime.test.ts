@@ -222,7 +222,6 @@ describe("Memory Runtime", () => {
     await expect(memory.searchSessions({}, recall)).rejects.toThrow("必须且只能");
     await expect(memory.searchSessions({ query: "x", recent: true }, recall)).rejects.toThrow("必须且只能");
     await expect(memory.searchSessions({ recent: true, limit: 0 }, recall)).rejects.toThrow("limit");
-    await expect(memory.searchSessions({ query: "x", window: 99 }, recall)).rejects.toThrow("window");
     await expect(memory.readSession({ sessionId: session.id, cursor: "x" }, recall)).rejects.toThrow("必须且只能");
     await expect(memory.readSession({ sessionId: session.id, currentSessionId: session.id }, recall)).rejects.toThrow("当前 Session");
     await expect(memory.readSession({ sessionId: "missing" }, recall)).rejects.toThrow("SESSION_NOT_FOUND");

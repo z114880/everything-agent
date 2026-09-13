@@ -23,7 +23,7 @@ export class SessionRecall {
    * Agent 调用通过 currentSessionId 排除当前会话。
    */
   async searchSessions(
-    input: { query?: string; recent?: boolean; limit?: number; window?: number; currentSessionId?: string },
+    input: { query?: string; recent?: boolean; limit?: number; currentSessionId?: string },
     settings: SessionRecallSettings,
     providedQueryVector?: Float32Array,
     runId?: string,
@@ -32,7 +32,7 @@ export class SessionRecall {
     const query = input.query?.trim() ?? "";
     if (Boolean(query) === Boolean(input.recent)) throw new TypeError("query 与 recent=true 必须且只能提供一个");
     const requestedLimit = boundedInteger(input.limit ?? 4, 1, SEARCH_SESSION_LIMIT, "limit");
-    const radius = Math.min(boundedInteger(input.window ?? settings.searchWindow, 1, 20, "window"), settings.searchWindow);
+    const radius = settings.searchWindow;
     const candidates = query
       ? (await this.search.sessionSearchCandidates(query, input.currentSessionId, providedQueryVector, runId, observer)).slice(0, requestedLimit)
       : this.search.recentCandidates(input.currentSessionId, requestedLimit);
