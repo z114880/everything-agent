@@ -69,7 +69,6 @@ export async function seedMockData(options: SeedOptions): Promise<SeedResult> {
   const provider = await startMockProvider({ plan: () => undefined });
   const runtime = createAgentRuntime({
     home: options.home,
-    envPath: join(options.home, ".env"),
     defaultSystemPromptPath: join(options.home, "EVERYTHING.md"),
   });
   const outcomes: DatasetOutcome[] = [];

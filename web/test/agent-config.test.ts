@@ -12,7 +12,7 @@ vi.mock("../../src/index.ts", async (importOriginal) => ({
 
 it("Web 配置不再暴露或保存 Session 整理间隔", async () => {
   const home = await mkdtemp(join(tmpdir(), "web-agent-config-"));
-  const paths = { home, envPath: join(home, ".env"), defaultSystemPromptPath: join(home, "default.md") };
+  const paths = { home, defaultSystemPromptPath: join(home, "default.md") };
   const runtime = state.runtime = createAgentRuntime(paths);
   let reopened: AgentRuntime | undefined;
   try {
@@ -25,7 +25,7 @@ it("Web 配置不再暴露或保存 Session 整理间隔", async () => {
     });
     expect(result.settings).toMatchObject({ maxTokens: 24_576, maxIterations: 100 });
     expect(result.settings).not.toHaveProperty("consolidationSessionInterval");
-    expect(await readFile(paths.envPath, "utf8")).not.toContain("CONSOLIDATION_SESSION_INTERVAL");
+    expect(await readFile(join(home, ".env"), "utf8")).not.toContain("CONSOLIDATION_SESSION_INTERVAL");
     reopened = createAgentRuntime(paths);
     expect(await reopened.getSettings()).toMatchObject({ maxTokens: 24_576, maxIterations: 100 });
     expect(await reopened.getSettings()).not.toHaveProperty("consolidationSessionInterval");
@@ -39,7 +39,7 @@ it("Web 配置不再暴露或保存 Session 整理间隔", async () => {
 
 it("Web 空库的每日与手动入口都不创建后台任务或占用每日配额", async () => {
   const home = await mkdtemp(join(tmpdir(), "web-consolidate-"));
-  const runtime = state.runtime = createAgentRuntime({ home, envPath: join(home, ".env"), defaultSystemPromptPath: join(home, "default.md") });
+  const runtime = state.runtime = createAgentRuntime({ home, defaultSystemPromptPath: join(home, "default.md") });
   try {
     await writeFile(join(home, "default.md"), "测试助手");
     vi.resetModules();

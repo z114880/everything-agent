@@ -35,7 +35,6 @@ import { createAgentRuntime } from "everything-agent/agent-runtime";
 
 const runtime = createAgentRuntime({
   home: "/absolute/project/.everything",
-  envPath: "/absolute/project/.env",
   defaultSystemPromptPath: "/absolute/project/EVERYTHING.md",
 });
 
@@ -61,9 +60,9 @@ try {
 - `getSettings()`、`saveAgentSettings(input)`、密钥清除与预算重置方法：管理配置，返回不含完整密钥的配置快照。
 - `readSystemPrompt()`、`saveSystemPrompt(text)`：读写本地规则；首次读取时可从指定默认文件初始化。
 - `listSkills()`、`saveSkill(input)`、`deleteSkill(name)`：管理 `.everything/skills/<name>/SKILL.md`；名称受限，写入采用临时文件加 rename，重命名保留目录中的配套资源。
-- `getTools()`、`saveToolSettings(input)`：读取脱敏工具目录并保存可配置工具开关。`TAVILY_API_KEY` 只保存在 `.env`，公开目录仅返回是否配置及末四位；下一回合重新读取配置。
+- `getTools()`、`saveToolSettings(input)`：读取脱敏工具目录并保存可配置工具开关。`TAVILY_API_KEY` 只保存在 `.everything/.env`，公开目录仅返回是否配置及末四位；下一回合重新读取配置。
 - `rebuildEmbeddingIndex()`、`cancelEmbeddingIndexRebuild()`：维护影子索引，退出重建时恢复正常检索配置。
-- `clearLocalAgentData()`：停止取后台任务、等待在途处理、刷新 trace 并关闭资源，再清理数据，保留 `EVERYTHING.md`、`skills/` 和 `config.json`；根目录 `.env` 不在清理范围内。调用方负责取得用户确认。
+- `clearLocalAgentData()`：停止取后台任务、等待在途处理、刷新 trace 并关闭资源，再清理数据，保留 `EVERYTHING.md`、`skills/`、`config.json` 和 `.env`；密钥不在清理范围内。调用方负责取得用户确认。
 - `close()`：等待后台任务与 trace 落盘并关闭资源；活动回合、数据清理或索引重建期间拒绝关闭。关闭后不允许重新创建资源。
 
 ## 执行与可观察性
@@ -76,7 +75,7 @@ try {
 
 ## 本地配置
 
-`local-config.ts` 负责文件持久化。非敏感配置按领域结构保存到 `.everything/config.json`，模型、Embedding 与 Tavily 密钥单独保存到根目录 `.env`；文件值覆盖允许的同名进程环境变量。两类文件都采用临时文件加 rename，不修改 `process.env`。清除密钥时持久化空值，防止下次读取重新继承环境密钥。首次 `start()` 会创建 `.everything`、默认 JSON 配置、`EVERYTHING.md`、`skills/`、数据库和根目录 `.env`（仅含注释占位，不覆盖环境密钥）。缺少默认提示词模板时使用内置中文提示词；重复初始化保留已有配置、密钥和提示词。Web 开发服务器在接受请求前完成初始化；没有 Tavily 密钥时拒绝启用 `search_web`。
+`local-config.ts` 负责文件持久化。非敏感配置按领域结构保存到 `.everything/config.json`，模型、Embedding 与 Tavily 密钥单独保存到同目录的 `.everything/.env`；文件值覆盖允许的同名进程环境变量。两类文件都采用临时文件加 rename，不修改 `process.env`。清除密钥时持久化空值，防止下次读取重新继承环境密钥。首次 `start()` 会创建 `.everything`、默认 JSON 配置、`EVERYTHING.md`、`skills/`、数据库和 `.everything/.env`（仅含注释占位，不覆盖环境密钥）。缺少默认提示词模板时使用内置中文提示词；重复初始化保留已有配置、密钥和提示词。Web 开发服务器在接受请求前完成初始化；没有 Tavily 密钥时拒绝启用 `search_web`。
 
 Web 的请求校验、Memory action 字符串分发、bootstrap/dashboard 数据和清理确认检查保留在 `web/server/agent-service.ts`。目前尚未提供 CLI 交互入口，但宿主可以直接调用本模块执行回合。
 

@@ -13,7 +13,6 @@ export const localAgentDatabasePath = join(localAgentHome, "database", "state.db
 
 const runtime = createAgentRuntime({
   home: localAgentHome,
-  envPath: fileURLToPath(new URL("../../.env", import.meta.url)),
   defaultSystemPromptPath: fileURLToPath(new URL("../../EVERYTHING.md", import.meta.url)),
 });
 export const { subscribeBackgroundEvents, clearEmbeddingApiKey,

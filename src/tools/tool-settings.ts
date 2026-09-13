@@ -28,7 +28,7 @@ export interface PublicToolDescriptor {
   configurationLabel?: string;
 }
 
-/** 管理工具启用状态与外部工具凭证，只有凭证写入根目录 `.env`。 */
+/** 管理工具启用状态与外部工具凭证，只有凭证写入 `.everything/.env`。 */
 export function createToolSettings(config: ReturnType<typeof createLocalConfig>) {
   return { load, save, publicCatalog };
 

@@ -286,12 +286,12 @@ export function ConfigPage() {
         setSettings(result.embeddingRebuild.settings);
         setClearMessage("");
         setSaveMessage(
-          `清理完成，向量索引已自动重建并原子激活，共 ${result.embeddingRebuild.result.chunkCount} 个 chunks。EVERYTHING.md、Skills、config.json 和根目录 .env 密钥已保留。`,
+          `清理完成，向量索引已自动重建并原子激活，共 ${result.embeddingRebuild.result.chunkCount} 个 chunks。EVERYTHING.md、Skills、config.json 和 .everything/.env 密钥已保留。`,
         );
       } else {
         setClearMessage("");
         setSaveMessage(
-          "清理完成。数据库、会话、记忆和运行记录已删除，EVERYTHING.md、Skills、config.json 和根目录 .env 密钥已保留。",
+          "清理完成。数据库、会话、记忆和运行记录已删除，EVERYTHING.md、Skills、config.json 和 .everything/.env 密钥已保留。",
         );
       }
     } catch (error) {
@@ -371,7 +371,7 @@ export function ConfigPage() {
         </AlertTitle>
         <AlertDescription>
           普通配置保存在 <code>.everything/config.json</code>，API Key
-          保存在根目录 <code>.env</code>；保存后下一回合立即生效。
+          保存在 <code>.everything/.env</code>；保存后下一回合立即生效。
         </AlertDescription>
       </Alert>
 
@@ -866,7 +866,7 @@ export function ConfigPage() {
                 <br />
                 保留 <code>.everything/EVERYTHING.md</code>、
                 <code>.everything/skills</code>、
-                <code>.everything/config.json</code> 和根目录 <code>.env</code>{" "}
+                <code>.everything/config.json</code> 和 <code>.everything/.env</code>{" "}
                 密钥。
               </p>
             </div>
@@ -1039,7 +1039,7 @@ function AllDataClearDialog({
           <AlertDialogTitle>永久清除全部本地数据？</AlertDialogTitle>
           <AlertDialogDescription>
             数据库、会话、记忆、索引和运行记录都会被删除。EVERYTHING.md、Skills、config.json
-            与根目录 .env 密钥将保留；如已完整配置
+            与 .everything/.env 密钥将保留；如已完整配置
             Embedding，清理后会自动重建向量索引。
           </AlertDialogDescription>
         </AlertDialogHeader>

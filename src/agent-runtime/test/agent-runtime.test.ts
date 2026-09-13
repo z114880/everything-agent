@@ -24,9 +24,9 @@ async function setup() {
   const home = join(root, ".everything");
   await mkdir(home);
   homes.push(root);
-  const paths = { home, envPath: join(root, ".env"), defaultSystemPromptPath: join(root, "default.md") };
+  const paths = { home, defaultSystemPromptPath: join(root, "default.md") };
   await writeFile(paths.defaultSystemPromptPath, "你是个人助理");
-  await writeFile(paths.envPath, [
+  await writeFile(join(home, ".env"), [
     'EVERYTHING_AGENT_API_KEY="agent-key"', 'EVERYTHING_SMALL_API_KEY="small-key"', "",
   ].join("\n"));
   await writeFile(join(home, "config.json"), `${JSON.stringify({
@@ -308,7 +308,7 @@ describe("Runtime 配置与维护", () => {
     });
     expect(JSON.stringify(settings)).not.toContain("agent-secret");
     expect(JSON.stringify(settings)).not.toContain("small-secret");
-    const env = await readFile(join(homes.at(-1)!, ".env"), "utf8");
+    const env = await readFile(join(homes.at(-1)!, ".everything", ".env"), "utf8");
     expect(env).toContain('EVERYTHING_AGENT_API_KEY="agent-secret"');
     expect(env).toContain('EVERYTHING_SMALL_API_KEY="small-secret"');
     expect(env).not.toContain("OPENAI_API_KEY");
@@ -336,14 +336,14 @@ describe("Runtime 配置与维护", () => {
     expect(catalog.tools.find((tool) => tool.name === "search_web")).toMatchObject({ enabled: true, configured: true });
     expect(catalog.tavily).toEqual({ keyConfigured: true, keyLast4: "cret" });
     expect(JSON.stringify(catalog)).not.toContain("tvly-runtime-secret");
-    const env = await readFile(join(homes.at(-1)!, ".env"), "utf8");
+    const env = await readFile(join(homes.at(-1)!, ".everything", ".env"), "utf8");
     expect(env).toContain('TAVILY_API_KEY="tvly-runtime-secret"');
     const config = JSON.parse(await readFile(join(homes.at(-1)!, ".everything", "config.json"), "utf8"));
     expect(config.tools).toEqual({ getCurrentTimeEnabled: false, searchWebEnabled: true });
 
     const cleared = await runtime.saveToolSettings({ getCurrentTimeEnabled: true, searchWebEnabled: false, clearTavilyApiKey: true });
     expect(cleared.tavily.keyConfigured).toBe(false);
-    expect(await readFile(join(homes.at(-1)!, ".env"), "utf8")).toContain('TAVILY_API_KEY=""');
+    expect(await readFile(join(homes.at(-1)!, ".everything", ".env"), "utf8")).toContain('TAVILY_API_KEY=""');
   });
 
   it("没有 Tavily 密钥时拒绝启用 search_web", async () => {

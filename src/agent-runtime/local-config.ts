@@ -63,16 +63,16 @@ const DEFAULT_CONFIG: JsonObject = {
   tools: { getCurrentTimeEnabled: true, searchWebEnabled: false },
 };
 
-/** 本地文件位置；非密钥配置固定保存到 `home/config.json`。 */
+/** 本地文件位置；配置与密钥固定保存到 `home/config.json` 与 `home/.env`。 */
 export interface LocalConfigPaths {
   home: string;
-  envPath: string;
   defaultSystemPromptPath: string;
 }
 
 /** 创建本地配置实例，将普通设置与密钥分别持久化。 */
 export function createLocalConfig(paths: LocalConfigPaths) {
   const configPath = join(paths.home, "config.json");
+  const envPath = join(paths.home, ".env");
   const systemPromptPath = join(paths.home, "EVERYTHING.md");
   return {
     initialize,
@@ -88,19 +88,18 @@ export function createLocalConfig(paths: LocalConfigPaths) {
     await mkdir(paths.home, { recursive: true });
     await mkdir(join(paths.home, "skills"), { recursive: true });
     await writeIfMissing(configPath, serializeConfig(DEFAULT_CONFIG), 0o600);
-    await mkdir(dirname(paths.envPath), { recursive: true });
     // 注释占位不覆盖进程环境中已配置的密钥。
-    await writeIfMissing(paths.envPath, `# API Key 可在 Web 配置页面保存；请勿提交此文件。\n${SECRET_KEYS.map((key) => `# ${key}=`).join("\n")}\n`, 0o600);
+    await writeIfMissing(envPath, `# API Key 可在 Web 配置页面保存；请勿提交此文件。\n${SECRET_KEYS.map((key) => `# ${key}=`).join("\n")}\n`, 0o600);
     await readSystemPrompt();
   }
 
-  /** 合并允许的进程变量、本地 JSON 设置和根目录密钥文件。 */
+  /** 合并允许的进程变量、本地 JSON 设置和 `.everything/.env` 密钥文件。 */
   async function readValues(): Promise<Record<string, string>> {
     const inherited = Object.fromEntries(CONFIG_KEYS.flatMap((key) => process.env[key] === undefined
       ? []
       : [[key, process.env[key]!]]));
     const config = await readConfigIfPresent(configPath);
-    const secrets = await readSecretsIfPresent(paths.envPath);
+    const secrets = await readSecretsIfPresent(envPath);
     return { ...inherited, ...flattenConfig(config), ...secrets };
   }
 
@@ -115,14 +114,14 @@ export function createLocalConfig(paths: LocalConfigPaths) {
     await atomicWrite(configPath, serializeConfig(document));
   }
 
-  /** 原子更新根目录 `.env`，并确保其中只包含允许的密钥字段。 */
+  /** 原子更新 `.everything/.env`，并确保其中只包含允许的密钥字段。 */
   async function updateSecretEnvFile(updates: Record<string, string>, clears: readonly string[]): Promise<void> {
-    const current = await readSecretsIfPresent(paths.envPath);
+    const current = await readSecretsIfPresent(envPath);
     for (const key of clears) assertSecretKey(key);
     for (const key of Object.keys(updates)) assertSecretKey(key);
     const next = { ...current, ...Object.fromEntries(clears.map((key) => [key, ""])), ...updates };
     const lines = SECRET_KEYS.filter((key) => Object.hasOwn(next, key)).map((key) => `${key}=${encodeEnvValue(next[key]!)}`);
-    await atomicWrite(paths.envPath, `${lines.join("\n")}${lines.length ? "\n" : ""}`);
+    await atomicWrite(envPath, `${lines.join("\n")}${lines.length ? "\n" : ""}`);
   }
 
   async function readSystemPrompt(): Promise<string> {
@@ -235,7 +234,7 @@ async function atomicWrite(path: string, contents: string, mode = 0o600): Promis
   await rename(temporary, path);
 }
 
-/** 解析 dotenv 的常见 KEY=VALUE 语法，仅用于根目录密钥文件。 */
+/** 解析 dotenv 的常见 KEY=VALUE 语法，仅用于 `.everything/.env` 密钥文件。 */
 export function parseEnv(text: string): Record<string, string> {
   const values: Record<string, string> = {};
   for (const line of text.split(/\r?\n/)) {

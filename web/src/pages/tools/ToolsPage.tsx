@@ -151,7 +151,7 @@ export function ToolsPage() {
 
   return <div className="content-wrap tools-page">
     <PageHeading eyebrow="Agent 能力 / 受控执行" title="Tools" description="查看 Agent 当前可用的工具，并配置允许修改的能力。" />
-    <div className="intro-note"><Wrench size={16} /><p><strong>工具注册表是运行时事实来源。</strong> 固定内置工具始终可用；开关保存在 <code>.everything/config.json</code>，Tavily 凭证保存在根目录 <code>.env</code>，密钥不会返回浏览器。</p></div>
+    <div className="intro-note"><Wrench size={16} /><p><strong>工具注册表是运行时事实来源。</strong> 固定内置工具始终可用；开关保存在 <code>.everything/config.json</code>，Tavily 凭证保存在 <code>.everything/.env</code>，密钥不会返回浏览器。</p></div>
     {message && <div className="tools-toast" role="status" aria-live="polite"><CheckCircle2 size={15} />{message}</div>}
     {error && <div className="error-message" role="alert">{error}</div>}
     {loading ? <div className="panel tools-loading">正在读取工具目录…</div> : <>
