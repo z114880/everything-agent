@@ -52,7 +52,12 @@ Embedding 使用确定性词袋向量：共享词越多的文本向量越接近�
 - 133 个 trace 文件、5,390 个事件、40 种事件类型，包含 `gate_*`、`dense_retrieval_completed`、`rrf_completed`、`mmr_completed`、`tool_*`、`memory_*`、`consolidation_*`
 - 后台任务全部 `completed`，无失败任务
 
-## 已知空缺
+## 向量只覆盖 Semantic
 
-向量索引只覆盖 `semantic` 语料。`embedding_chunks` 的 `corpus` 允许 `session`，`vector-store.ts` 也有对应的删除语句，但生产代码中**没有任何写入方**，`EmbeddingCallContext` 的 `run_complete` 用途同样没有使用点。
-因此 Session 召回的 Dense 部分始终为空，实际只有 BM25 生效。这是产品当前状态，不是 Seed 的限制。
+生成的向量索引只有 `semantic` 语料，Session 召回不产生向量。这不是 Seed 的限制，而是产品的既定设计：
+`src/memory/retrieve/README.md` 明确规定「Session Recall 始终只使用 FTS5 + BM25，不生成向量，不执行 RRF 或 MMR」，
+成功 run 只维护消息级 FTS 投影。因此 `embeddingChunkCount` 等于 Semantic Memory 条数是预期结果。
+
+附带一个观察：数据库为这个不做的能力保留了若干未使用结构——`embedding_chunks.corpus` 的 `'session'` 取值、
+`session_id` 与 `anchor_message_id` 两列、`VectorStore.deleteActiveSession()`（仅被测试调用）以及
+`EmbeddingCallContext.purpose` 的 `"run_complete"`。它们在生产代码中没有任何调用方。
