@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-const MANIFEST_FILE = "fake-data-manifest.json";
+const MANIFEST_FILE = "mock-data-manifest.json";
 
 /** 一个数据集在目标目录中的写入记录。 */
 export interface AppliedRecord {

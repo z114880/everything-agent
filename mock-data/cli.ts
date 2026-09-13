@@ -1,14 +1,14 @@
 import { fileURLToPath, URL } from "node:url";
 import { listDatasetIds } from "./dataset.ts";
-import { seedFakeData } from "./seed.ts";
+import { seedMockData } from "./seed.ts";
 
 /**
- * 命令行入口：`pnpm run fake-data`。
- * 默认把假数据合并进仓库根的 `.everything`，即 Web 控制台读取的真实数据目录。
+ * 命令行入口：`pnpm run mock-data`。
+ * 默认把模拟数据合并进仓库根的 `.everything`，即 Web 控制台读取的真实数据目录。
  */
 const args = parseArguments(process.argv.slice(2));
 if (args.help) {
-  console.log(`用法：pnpm run fake-data [选项]
+  console.log(`用法：pnpm run mock-data [选项]
 
   --home <路径>        目标数据目录，默认 .everything
   --dataset <id>       只写入指定数据集，可重复；默认写入全部未写入的数据集
@@ -19,7 +19,7 @@ if (args.help) {
   --list               只列出可用数据集
   --help               显示本说明
 
-已写入过的数据集会被自动跳过。数据由本地假模型驱动真实 Runtime 生成，
+已写入过的数据集会被自动跳过。数据由本地模拟模型驱动真实 Runtime 生成，
 不发生任何外部网络调用；目标目录的模型配置与密钥在运行后原样恢复。`);
   process.exit(0);
 }
@@ -28,7 +28,7 @@ if (args.list) {
   process.exit(0);
 }
 
-const result = await seedFakeData({
+const result = await seedMockData({
   home: args.home ?? fileURLToPath(new URL("../.everything/", import.meta.url)),
   ...(args.datasets.length ? { datasetIds: args.datasets } : {}),
   sessionCount: args.sessions ?? 20,
@@ -55,7 +55,7 @@ if (result.sessionsCreated) {
   if (result.embeddingIndexPresent) {
     console.log(`
 注意：目标目录已有向量索引，但本次写入的 Semantic Memory 没有生成向量
-（假向量会污染真实索引）。需要 Dense/Hybrid 检索时请在配置页重建 Embedding 索引。`);
+（模拟向量会污染真实索引）。需要 Dense/Hybrid 检索时请在配置页重建 Embedding 索引。`);
   }
 } else {
   console.log("\n没有需要写入的数据集。");

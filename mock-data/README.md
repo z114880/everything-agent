@@ -1,11 +1,11 @@
-# 假数据
+# 模拟数据
 
-把一批可复现的假数据合并进现有的 Everything Agent 数据目录，用于在有真实体量的数据上测试检索、召回与页面展示。
+把一批可复现的模拟数据合并进现有的 Everything Agent 数据目录，用于在有真实体量的数据上测试检索、召回与页面展示。
 
-数据由本地假模型驱动**真实** Agent Runtime 产生，全程没有外部网络调用，也不消耗模型额度。
+数据由本地模拟模型驱动**真实** Agent Runtime 产生，全程没有外部网络调用，也不消耗模型额度。
 
 ```bash
-pnpm run fake-data
+pnpm run mock-data
 ```
 
 默认把 `datasets/` 下全部尚未写入的数据集合并进仓库根的 `.everything/`——也就是 Web 控制台读取的真实数据目录。
@@ -25,12 +25,12 @@ pnpm run fake-data
 ## 目录
 
 ```text
-fake-data/
+mock-data/
 ├── datasets/                    数据：每个 JSON 是一个独立数据集
 │   └── personal-assistant.json
 ├── dataset.ts                   数据集加载与校验
 ├── conversations.ts             从数据集构建确定性会话
-├── fake-provider.ts             本地假模型服务
+├── mock-provider.ts             本地模拟模型服务
 ├── manifest.ts                  写入清单与幂等判断
 ├── seed.ts                      合并写入编排
 ├── cli.ts                       命令行入口
@@ -39,7 +39,7 @@ fake-data/
 
 ## 幂等：写过的数据不会重复写
 
-每次写入都会在目标目录的 `fake-data-manifest.json` 中记录数据集 id、校验和与创建的 Session ID。再次运行时该数据集被跳过。
+每次写入都会在目标目录的 `mock-data-manifest.json` 中记录数据集 id、校验和与创建的 Session ID。再次运行时该数据集被跳过。
 
 判断不只看清单，还会核对记录中的 Session 是否仍然存在于数据库：
 
@@ -51,9 +51,9 @@ fake-data/
 
 ## 对现有数据的影响
 
-**模型配置与密钥**：运行前备份 `config.json` 与 `.env`，运行后原样恢复。期间配置被临时指向本地假模型。
+**模型配置与密钥**：运行前备份 `config.json` 与 `.env`，运行后原样恢复。期间配置被临时指向本地模拟模型。
 
-**向量索引不受影响**：写入时强制 `lexical_only` 并清空 Embedding 配置。这样 Semantic 写入不会调用远程服务，也不会向 active generation 写入假向量；`lexical_only` 同时绕过「配置与 active generation 一致」的校验，因此已有真实索引的目录也能安全写入。
+**向量索引不受影响**：写入时强制 `lexical_only` 并清空 Embedding 配置。这样 Semantic 写入不会调用远程服务，也不会向 active generation 写入模拟向量；`lexical_only` 同时绕过「配置与 active generation 一致」的校验，因此已有真实索引的目录也能安全写入。
 
 代价是本次写入的 Semantic Memory **没有向量**。目标目录已有索引时命令行会提示：需要 Dense/Hybrid 检索时请在配置页重建 Embedding 索引。
 
@@ -64,7 +64,7 @@ fake-data/
 数据全部由真实执行路径产生：真实的 Gate 判定、真实的检索、真实的工具执行、真实的记忆决策与校验、真实的 trace 写入。
 被替换的只有模型响应本身——一个 OpenAI 兼容的本地 HTTP 服务，按 system prompt 的特征区分四类请求：
 
-| 请求 | 识别特征 | 假响应 |
+| 请求 | 识别特征 | 模拟响应 |
 | --- | --- | --- |
 | Gate 判定 | `只输出 JSON：{"intent"` | 按用户消息选择 `past_episode` / `fact_with_evidence` / `none` |
 | 主模型 | 其余 | 按会话脚本发起工具调用，或给出最终回复 |

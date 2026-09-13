@@ -1,5 +1,5 @@
 import type { Dataset } from "./dataset.ts";
-import type { TurnScript } from "./fake-provider.ts";
+import type { TurnScript } from "./mock-provider.ts";
 
 /** 一轮对话：用户消息与该回合模型应当产生的行为。 */
 export interface SeedTurn {

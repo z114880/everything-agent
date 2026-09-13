@@ -19,13 +19,13 @@ pnpm test
 pnpm run example
 ```
 
-需要一批本地测试数据时，可用假模型驱动真实 Runtime 生成并合并进现有数据目录，不消耗模型额度也不联网：
+需要一批本地测试数据时，可用模拟模型驱动真实 Runtime 生成并合并进现有数据目录，不消耗模型额度也不联网：
 
 ```bash
-pnpm run fake-data
+pnpm run mock-data
 ```
 
-数据默认合并进 `.everything/`，写过的数据集不会重复写入，模型配置与向量索引不受影响；详见 [`fake-data/README.md`](fake-data/README.md)。
+数据默认合并进 `.everything/`，写过的数据集不会重复写入，模型配置与向量索引不受影响；详见 [`mock-data/README.md`](mock-data/README.md)。
 
 ## 本地可视化控制台
 

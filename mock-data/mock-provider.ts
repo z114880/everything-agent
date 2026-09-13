@@ -8,11 +8,11 @@ export interface TurnScript {
 }
 
 /** 由调用方按当前用户消息决定本回合脚本；返回 undefined 时使用通用回复。 */
-export interface FakeProviderOptions {
+export interface MockProviderOptions {
   plan?: (prompt: string) => TurnScript | undefined;
 }
 
-export interface FakeProviderStats {
+export interface MockProviderStats {
   gate: number;
   agent: number;
   memoryDecision: number;
@@ -20,10 +20,10 @@ export interface FakeProviderStats {
   embedding: number;
 }
 
-export interface FakeProvider {
+export interface MockProvider {
   /** 供 EVERYTHING_*_BASE_URL 使用的本地地址。 */
   baseUrl: string;
-  stats: FakeProviderStats;
+  stats: MockProviderStats;
   /** 切换当前生效的回合脚本，用于在同一服务上依次写入多个数据集。 */
   setPlan(plan: (prompt: string) => TurnScript | undefined): void;
   close(): Promise<void>;
@@ -33,13 +33,13 @@ const VECTOR_DIMENSIONS = 1024;
 const CATEGORIES = ["user_attribute", "preference", "ongoing_project", "constraint", "commitment"] as const;
 
 /**
- * 启动一个 OpenAI 兼容的本地假供应商，覆盖 /chat/completions、/embeddings 与 /models。
+ * 启动一个 OpenAI 兼容的本地模拟供应商，覆盖 /chat/completions、/embeddings 与 /models。
  * 它按 system prompt 的特征区分 Gate、主模型、记忆决策与 consolidation 四类请求，
  * 使真实 Agent Runtime 无需任何改动即可产生完整数据，且不发生任何外部网络调用。
  */
-export async function startFakeProvider(options: FakeProviderOptions = {}): Promise<FakeProvider> {
-  const stats: FakeProviderStats = { gate: 0, agent: 0, memoryDecision: 0, consolidation: 0, embedding: 0 };
-  const state: FakeProviderOptions = { ...options };
+export async function startMockProvider(options: MockProviderOptions = {}): Promise<MockProvider> {
+  const stats: MockProviderStats = { gate: 0, agent: 0, memoryDecision: 0, consolidation: 0, embedding: 0 };
+  const state: MockProviderOptions = { ...options };
   const server: Server = createServer((request, response) => {
     handle(request, response, state, stats).catch((error: unknown) => {
       respondJson(response, 500, { error: { message: error instanceof Error ? error.message : String(error) } });
@@ -58,12 +58,12 @@ export async function startFakeProvider(options: FakeProviderOptions = {}): Prom
 async function handle(
   request: IncomingMessage,
   response: ServerResponse,
-  options: FakeProviderOptions,
-  stats: FakeProviderStats,
+  options: MockProviderOptions,
+  stats: MockProviderStats,
 ): Promise<void> {
   const url = request.url ?? "";
   if (request.method === "GET" && url.endsWith("/models")) {
-    return respondJson(response, 200, { data: [{ id: "fake-agent" }, { id: "fake-small" }, { id: "fake-embedding" }] });
+    return respondJson(response, 200, { data: [{ id: "mock-agent" }, { id: "mock-small" }, { id: "mock-embedding" }] });
   }
   const body = await readJson(request);
   if (url.endsWith("/embeddings")) {
@@ -102,8 +102,8 @@ interface PlannedReply { text: string; toolCalls: Array<{ id: string; name: stri
 function planReply(
   system: string,
   messages: Array<Record<string, unknown>>,
-  options: FakeProviderOptions,
-  stats: FakeProviderStats,
+  options: MockProviderOptions,
+  stats: MockProviderStats,
 ): PlannedReply {
   if (system.includes('只输出 JSON：{"intent"')) {
     stats.gate += 1;

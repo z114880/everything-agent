@@ -5,7 +5,7 @@ import type { AgentObserver } from "../src/agent-loop/agent-loop.ts";
 import { buildSessions } from "./conversations.ts";
 import { listDatasetIds, loadDataset, type Dataset } from "./dataset.ts";
 import { decideApply, readManifest, writeManifest } from "./manifest.ts";
-import { startFakeProvider, type FakeProviderStats, type TurnScript } from "./fake-provider.ts";
+import { startMockProvider, type MockProviderStats, type TurnScript } from "./mock-provider.ts";
 
 export interface SeedOptions {
   /** 目标数据目录，默认仓库根的 `.everything`，即 Web 控制台使用的真实数据。 */
@@ -41,23 +41,23 @@ export interface SeedResult {
   consolidationRan: boolean;
   /** 目标库存在向量索引时为 true：新写入的记忆没有向量，需要用户自行重建。 */
   embeddingIndexPresent: boolean;
-  providerStats: FakeProviderStats;
+  providerStats: MockProviderStats;
   ms: number;
 }
 
 const silentObserver: AgentObserver = () => {};
 
 /**
- * 把假数据合并进一个现有的 Everything Agent 数据目录。
+ * 把模拟数据合并进一个现有的 Everything Agent 数据目录。
  *
- * 数据由本地假供应商驱动真实 Agent Runtime 产生，全程没有外部网络调用。
+ * 数据由本地模拟供应商驱动真实 Agent Runtime 产生，全程没有外部网络调用。
  * 已经写入过的数据集会被跳过；判断同时依赖写入清单与数据库中对应 Session 是否仍然存在，
  * 因此清空数据后可以重新写入。
  *
  * 目标目录中的模型配置与密钥在运行前备份、运行后原样恢复；检索强制使用 lexical_only
- * 且不绑定 Embedding，因此不会用假向量污染用户已有的向量索引。
+ * 且不绑定 Embedding，因此不会用模拟向量污染用户已有的向量索引。
  */
-export async function seedFakeData(options: SeedOptions): Promise<SeedResult> {
+export async function seedMockData(options: SeedOptions): Promise<SeedResult> {
   const report = options.onProgress ?? (() => {});
   const startedAt = performance.now();
   const sessionCount = options.sessionCount ?? 20;
@@ -66,7 +66,7 @@ export async function seedFakeData(options: SeedOptions): Promise<SeedResult> {
   const datasets: Dataset[] = [];
   for (const id of ids) datasets.push(await loadDataset(id));
 
-  const provider = await startFakeProvider({ plan: () => undefined });
+  const provider = await startMockProvider({ plan: () => undefined });
   const runtime = createAgentRuntime({
     home: options.home,
     envPath: join(options.home, ".env"),
@@ -201,15 +201,15 @@ async function backupConfiguration(home: string): Promise<() => Promise<void>> {
 }
 
 /**
- * 指向本地假供应商，并强制 lexical_only、清空 Embedding 配置。
- * 清空 Embedding 后 Semantic 写入不会调用远程服务，也不会向 active generation 写入假向量；
+ * 指向本地模拟供应商，并强制 lexical_only、清空 Embedding 配置。
+ * 清空 Embedding 后 Semantic 写入不会调用远程服务，也不会向 active generation 写入模拟向量；
  * lexical_only 同时绕过「配置与 active generation 一致」的校验，因此已有真实索引的目录也能安全写入。
  */
 async function configureForSeeding(runtime: ReturnType<typeof createAgentRuntime>, baseUrl: string): Promise<void> {
-  const connection = { provider: "openai-compatible" as const, baseUrl, apiKey: "fake-data-local-key" };
+  const connection = { provider: "openai-compatible" as const, baseUrl, apiKey: "mock-data-local-key" };
   await runtime.saveAgentSettings({
-    agentModel: { ...connection, model: "fake-agent" },
-    smallModel: { ...connection, model: "fake-small" },
+    agentModel: { ...connection, model: "mock-agent" },
+    smallModel: { ...connection, model: "mock-small" },
     retrievalMode: "lexical_only",
     embeddingBaseUrl: "",
     embeddingModel: "",

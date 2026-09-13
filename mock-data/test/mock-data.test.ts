@@ -4,10 +4,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildSessions, decideApply, listDatasetIds, loadDataset, readManifest,
-  seedFakeData, startFakeProvider, writeManifest,
+  seedMockData, startMockProvider, writeManifest,
 } from "../index.ts";
 
-describe("假数据集", () => {
+describe("模拟数据集", () => {
   it("加载并校验 datasets 目录下的数据集", async () => {
     const ids = await listDatasetIds();
     expect(ids).toContain("personal-assistant");
@@ -57,7 +57,7 @@ describe("写入清单", () => {
   });
 
   it("同一数据集只保留最后一次记录", async () => {
-    const home = await mkdtemp(join(tmpdir(), "fake-data-manifest-"));
+    const home = await mkdtemp(join(tmpdir(), "mock-data-manifest-"));
     const record = { datasetId: "a", version: 1, checksum: "c1", appliedAt: "t1", sessionCount: 1, sessionIds: ["s1"] };
     await writeManifest(home, record);
     await writeManifest(home, { ...record, appliedAt: "t2", sessionIds: ["s2"] });
@@ -67,9 +67,9 @@ describe("写入清单", () => {
   });
 });
 
-describe("假供应商", () => {
+describe("模拟供应商", () => {
   it("按 system prompt 区分 Gate 与主模型请求，并支持切换脚本", async () => {
-    const provider = await startFakeProvider({ plan: () => ({ reply: "第一版" }) });
+    const provider = await startMockProvider({ plan: () => ({ reply: "第一版" }) });
     try {
       const gate = await postChat(provider.baseUrl, '只输出 JSON：{"intent"', "帮我记一下");
       expect(JSON.parse(textOf(gate)).intent).toBe("fact_with_evidence");
@@ -81,7 +81,7 @@ describe("假供应商", () => {
   });
 
   it("对同一文本返回稳定向量", async () => {
-    const provider = await startFakeProvider();
+    const provider = await startMockProvider();
     try {
       const first = await postEmbedding(provider.baseUrl, ["上午喝手冲咖啡"]);
       expect(first).toEqual(await postEmbedding(provider.baseUrl, ["上午喝手冲咖啡"]));
@@ -93,14 +93,14 @@ describe("假供应商", () => {
 
 describe("合并写入现有数据目录", () => {
   it("写入数据、跳过重复运行，并原样保留用户配置", async () => {
-    const home = await mkdtemp(join(tmpdir(), "fake-data-merge-"));
+    const home = await mkdtemp(join(tmpdir(), "mock-data-merge-"));
     const configPath = join(home, "config.json");
     const envPath = join(home, ".env");
     const originalConfig = JSON.stringify({ models: { agent: { provider: "anthropic", model: "claude-opus-5" } }, maxIterations: 42 });
     await writeFile(configPath, originalConfig, "utf8");
     await writeFile(envPath, "EVERYTHING_AGENT_API_KEY=sk-user-real-key\n", "utf8");
 
-    const first = await seedFakeData({ home, sessionCount: 3 });
+    const first = await seedMockData({ home, sessionCount: 3 });
     expect(first.outcomes[0]).toMatchObject({ datasetId: "personal-assistant", skipped: false });
     expect(first.sessionsCreated).toBe(3);
     expect(first.chatLogAdded).toBeGreaterThan(0);
@@ -111,21 +111,21 @@ describe("合并写入现有数据目录", () => {
     expect(await readFile(configPath, "utf8")).toBe(originalConfig);
     expect(await readFile(envPath, "utf8")).toBe("EVERYTHING_AGENT_API_KEY=sk-user-real-key\n");
 
-    const second = await seedFakeData({ home, sessionCount: 3 });
+    const second = await seedMockData({ home, sessionCount: 3 });
     expect(second.outcomes[0]).toMatchObject({ skipped: true, reason: expect.stringContaining("已于") });
     expect(second.sessionsCreated).toBe(0);
 
     // 数据被清空后，清单记录失效，应允许重新写入。
     await rm(join(home, "database"), { recursive: true, force: true });
-    const third = await seedFakeData({ home, sessionCount: 2 });
+    const third = await seedMockData({ home, sessionCount: 2 });
     expect(third.outcomes[0]).toMatchObject({ skipped: false });
     expect(third.sessionsCreated).toBe(2);
   }, 120_000);
 
   it("force 忽略已写入判断并在现有数据上追加", async () => {
-    const home = await mkdtemp(join(tmpdir(), "fake-data-force-"));
-    await seedFakeData({ home, sessionCount: 2 });
-    const forced = await seedFakeData({ home, sessionCount: 2, force: true });
+    const home = await mkdtemp(join(tmpdir(), "mock-data-force-"));
+    await seedMockData({ home, sessionCount: 2 });
+    const forced = await seedMockData({ home, sessionCount: 2, force: true });
     expect(forced.sessionsCreated).toBe(2);
     expect(forced.outcomes[0]).toMatchObject({ skipped: false });
   }, 120_000);
@@ -135,7 +135,7 @@ async function postChat(baseUrl: string, system: string, prompt: string): Promis
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "fake", stream: false, messages: [{ role: "system", content: system }, { role: "user", content: prompt }] }),
+    body: JSON.stringify({ model: "mock", stream: false, messages: [{ role: "system", content: system }, { role: "user", content: prompt }] }),
   });
   return await response.json() as Record<string, unknown>;
 }
@@ -149,7 +149,7 @@ async function postEmbedding(baseUrl: string, input: string[]): Promise<number[]
   const response = await fetch(`${baseUrl}/embeddings`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "fake", input }),
+    body: JSON.stringify({ model: "mock", input }),
   });
   const payload = await response.json() as { data: Array<{ embedding: number[] }> };
   return payload.data.map((item) => item.embedding);
