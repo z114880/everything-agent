@@ -94,11 +94,11 @@ Web 配置页的 Memory Retrieval 区域提供 Retrieval Mode 与 Minimum Simila
 
 ### Agent 输出与迭代预算
 
-配置页的运行参数支持修改“单次模型输出”和“Agent 最大迭代”，分别默认 **16,384 tokens**（原 2,048）和 **50 轮**（原 10）。允许范围分别为 1–131,072 tokens 和 1–1,000 轮，保存后对新运行生效，恢复默认会重置这两个值。
+配置页的运行参数支持修改“单次模型输出”和“Agent 最大迭代”，分别默认 **32,768 tokens** 和 **100 轮**。允许范围分别为 1–131,072 tokens 和 1–1,000 轮，保存后对新运行生效，恢复默认会重置这两个值。
 
 也可在 `.everything/config.json` 顶层设置 `maxTokens` 与 `maxIterations`。运行记录 `run_started.settings` 保存实际预算，模型请求使用配置的 `max_tokens`。输入估算、输出预算及 512 tokens 安全余量仍须合计不超过 `modelContextWindow`；输出预算需符合模型服务自身的限制。Agent Loop 超时仍为 300 秒。提高预算不会自动续写被截断的回答。
 
-配套默认预算为 `modelContextWindow: 131072` 与 `sessionRecall.entryTokenLimit: 4000`（Recall Entry Token Limit，session_search 的单条正文上限）。单次 session_search 的 token 总额不是独立配置，固定取 `modelContextWindow` 的 25%（默认 32,768），配置页只读展示。初始化、缺省配置、配置页和恢复默认保持一致。预留 16,384 输出 tokens 与 512 安全余量后，输入预算为 114,176 tokens；召回总额占上下文窗口的四分之一，为系统提示、当前会话和工具结果留出空间。50 轮是执行上限，不表示预留 50 份输出；每轮仍检查实际累计上下文。
+配套默认预算为 `modelContextWindow: 262144`（256K）与 `sessionRecall.entryTokenLimit: 8192`（Recall Entry Token Limit，session_search 的单条正文上限）。单次 session_search 的 token 总额不是独立配置，固定取 `modelContextWindow` 的 25%（默认 65,536），配置页只读展示。初始化、缺省配置、配置页和恢复默认保持一致。预留 32,768 输出 tokens 与 512 安全余量后，输入预算为 228,864 tokens；召回总额占上下文窗口的四分之一，为系统提示、当前会话和工具结果留出空间。100 轮是执行上限，不表示预留 100 份输出；每轮仍检查实际累计上下文。
 
 ## 系统指令与程序性记忆
 

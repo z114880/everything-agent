@@ -5,10 +5,10 @@ const VALID_PROVIDERS = new Set<AgentProvider>(["anthropic", "openai-compatible"
 const VALID_RETRIEVAL_MODES = new Set<RetrievalMode>(["lexical_only", "dense_only", "hybrid"]);
 export const RUNTIME_DEFAULTS = {
   sessionSearchWindow: 10,
-  sessionRecallEntryTokenLimit: 4_000,
-  modelContextWindow: 131_072,
-  maxTokens: 16_384,
-  maxIterations: 50,
+  sessionRecallEntryTokenLimit: 8_192,
+  modelContextWindow: 262_144,
+  maxTokens: 32_768,
+  maxIterations: 100,
 } as const;
 
 /** 单次 Session Recall 可占用的 Context Window 比例；总额由它派生，不单独配置。 */

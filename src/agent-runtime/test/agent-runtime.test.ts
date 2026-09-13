@@ -265,7 +265,7 @@ describe("Runtime 配置与维护", () => {
   it("输出与迭代预算持久化并控制实际请求和运行日志", async () => {
     const runtime = await setup();
     // Recall 总额不是独立旋钮：它固定是 Model Context Window 的 25%，随之变化。
-    expect(await runtime.getSettings()).toMatchObject({ maxTokens: 16_384, maxIterations: 50, modelContextWindow: 131_072, sessionRecallTokenLimit: 32_768 });
+    expect(await runtime.getSettings()).toMatchObject({ maxTokens: 32_768, maxIterations: 100, modelContextWindow: 262_144, sessionRecallTokenLimit: 65_536 });
     await runtime.saveAgentSettings({ ...modelSettings(), maxTokens: 8_192, maxIterations: 12, modelContextWindow: 65_536 });
     expect(await runtime.getSettings()).toMatchObject({ maxTokens: 8_192, maxIterations: 12, sessionRecallTokenLimit: 16_384 });
     const config = JSON.parse(await readFile(join(homes.at(-1)!, ".everything", "config.json"), "utf8"));
@@ -284,7 +284,7 @@ describe("Runtime 配置与维护", () => {
     const records = (await runtime.readTraces()).flatMap((file) => file.records);
     expect(records.find((record) => record.type === "run_started")?.payload)
       .toMatchObject({ settings: { maxTokens: 8_192, maxIterations: 12 } });
-    expect((await runtime.resetRuntimeSettings()).settings).toMatchObject({ maxTokens: 16_384, maxIterations: 50, modelContextWindow: 131_072, sessionRecallTokenLimit: 32_768 });
+    expect((await runtime.resetRuntimeSettings()).settings).toMatchObject({ maxTokens: 32_768, maxIterations: 100, modelContextWindow: 262_144, sessionRecallTokenLimit: 65_536 });
   });
 
   it("保存完整配置、恢复预算并安全公开密钥状态", async () => {

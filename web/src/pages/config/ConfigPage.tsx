@@ -81,11 +81,11 @@ export function ConfigPage() {
   const [sessionSearchWindow, setSessionSearchWindow] =
     useState<NumericInputValue>(10);
   const [sessionRecallEntryTokenLimit, setSessionRecallEntryTokenLimit] =
-    useState<NumericInputValue>(4_000);
-  const [maxTokens, setMaxTokens] = useState<NumericInputValue>(16_384);
-  const [maxIterations, setMaxIterations] = useState<NumericInputValue>(50);
+    useState<NumericInputValue>(8_192);
+  const [maxTokens, setMaxTokens] = useState<NumericInputValue>(32_768);
+  const [maxIterations, setMaxIterations] = useState<NumericInputValue>(100);
   const [modelContextWindow, setModelContextWindow] =
-    useState<NumericInputValue>(131_072);
+    useState<NumericInputValue>(262_144);
   const [retrievalMode, setRetrievalMode] =
     useState<RetrievalMode>("lexical_only");
   const [embeddingBaseUrl, setEmbeddingBaseUrl] = useState("");
@@ -753,7 +753,7 @@ export function ConfigPage() {
               </ConfigField>
               <ConfigField
                 label="Recall Entry Token Limit"
-                help="session_search 单条正文上限，默认 4,000；超出部分用 contentCursor 经 session_read 读全。"
+                help="session_search 单条正文上限，默认 8,192；超出部分用 contentCursor 经 session_read 读全。"
               >
                 <Input
                   type="number"
@@ -778,17 +778,17 @@ export function ConfigPage() {
                   disabled
                 />
               </ConfigField>
-              <ConfigField label="单次模型输出（tokens）" help="默认 16,384 tokens，每次新运行生效。">
+              <ConfigField label="单次模型输出（tokens）" help="默认 32,768 tokens，每次新运行生效。">
                 <Input type="number" min={settings?.limits.maxTokens?.min ?? 1} max={settings?.limits.maxTokens?.max ?? 131072}
                   value={maxTokens} onChange={(event) => setMaxTokens(parseNumericInput(event.target.value))} />
               </ConfigField>
-              <ConfigField label="Agent 最大迭代（轮）" help="默认 50 轮，每次新运行生效。">
+              <ConfigField label="Agent 最大迭代（轮）" help="默认 100 轮，每次新运行生效。">
                 <Input type="number" min={settings?.limits.maxIterations?.min ?? 1} max={settings?.limits.maxIterations?.max ?? 1000}
                   value={maxIterations} onChange={(event) => setMaxIterations(parseNumericInput(event.target.value))} />
               </ConfigField>
               <ConfigField
                 label="Model Context Window（tokens）"
-                help="默认 131,072，需容纳输入、单次输出预算及 512 tokens 安全余量。"
+                help="默认 262,144，需容纳输入、单次输出预算及 512 tokens 安全余量。"
               >
                 <Input
                   type="number"

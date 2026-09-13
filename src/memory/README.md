@@ -64,7 +64,7 @@ session_search 是只读的发现工具，有两种互斥模式：按 query 执�
 - 返回量由窗口结构决定，没有条数预算：limit 个 Session 各自拿到完整窗口，不会被按条数裁剪。
 - recent 按 updated_at 降序返回非空 Session，返回首 6 条和尾 6 条，结果使用 retrievalMode: recent 与 match: null。
 - 窗口按可检索对话消息计数，随后展开这些消息所属的完整 run。
-- session_search 是扫描工具：单条正文超过 Recall Entry Token Limit（默认 4,000）时截断，标记 `contentTruncated`，并给出原文总长 `contentLength` 与该条的 `contentCursor`；search 与 recent 两种模式都适用。
+- session_search 是扫描工具：单条正文超过 Recall Entry Token Limit（默认 8,192）时截断，标记 `contentTruncated`，并给出原文总长 `contentLength` 与该条的 `contentCursor`；search 与 recent 两种模式都适用。
 - 首、事件、尾区段重叠时按 chat_log.id 去重。
 - lexical-only 按最佳 BM25 升序，dense-only 按 cosine 降序，hybrid 按 RRF 后的 MMR 顺序排名；同分再按稳定规则决胜。原始信号分别保存在 `retrievalSignals.bm25/dense/fused/mmr`，不伪造统一 score。
 - Agent 调用完全排除当前 Session；Memory 页面手动检索没有当前 Session，因此搜索全部历史。
@@ -92,8 +92,8 @@ cursor 有三种来源，语义相同（都是「从这里往后连续读」）�
 | 配置 | 默认值 | 服务端范围 |
 | --- | ---: | ---: |
 | sessionSearchWindow | 10 | 1–20 |
-| sessionRecallEntryTokenLimit | 4,000 | 256–16,384 |
-| modelContextWindow | 131,072 | 4,096–2,000,000 |
+| sessionRecallEntryTokenLimit | 8,192 | 256–16,384 |
+| modelContextWindow | 262,144 | 4,096–2,000,000 |
 | 单次 session_search 总额 | modelContextWindow × 25% | 派生，不可配置 |
 
 预算不控制返回条数，只有三层防护：

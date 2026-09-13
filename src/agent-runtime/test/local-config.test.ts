@@ -14,8 +14,8 @@ it("首次启动会创建完整的 .everything 基础目录", async () => {
     await runtime.start();
     expect(JSON.parse(await readFile(join(home, "config.json"), "utf8"))).toMatchObject({
       models: { agent: {}, small: {} },
-      maxTokens: 16_384, maxIterations: 50,
-      modelContextWindow: 131_072, sessionRecall: { searchWindow: 10, entryTokenLimit: 4_000 },
+      maxTokens: 32_768, maxIterations: 100,
+      modelContextWindow: 262_144, sessionRecall: { searchWindow: 10, entryTokenLimit: 8_192 },
       retrieval: { mode: "lexical_only", embedding: {} },
       tools: { getCurrentTimeEnabled: true, searchWebEnabled: false },
     });
