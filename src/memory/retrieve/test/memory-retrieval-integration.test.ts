@@ -295,7 +295,7 @@ function sessionVector(text: string): Float32Array {
 
 function recall() {
   return {
-    searchWindow: 5, scrollStep: 10, messageLimit: 100, tokenLimit: 8_192,
+    searchWindow: 5, messageLimit: 100, tokenLimit: 8_192,
     tokenEstimator: { estimateText(text: string) { return text.length } },
   };
 }

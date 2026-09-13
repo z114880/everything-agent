@@ -80,8 +80,6 @@ export function ConfigPage() {
   const [smallApiKey, setSmallApiKey] = useState("");
   const [sessionSearchWindow, setSessionSearchWindow] =
     useState<NumericInputValue>(5);
-  const [sessionScrollStep, setSessionScrollStep] =
-    useState<NumericInputValue>(10);
   const [sessionRecallMessageLimit, setSessionRecallMessageLimit] =
     useState<NumericInputValue>(100);
   const [sessionRecallTokenLimit, setSessionRecallTokenLimit] =
@@ -167,10 +165,6 @@ export function ConfigPage() {
                   "Session Search Window",
                 )
               : settings.sessionSearchWindow,
-          sessionScrollStep:
-            section === "runtime"
-              ? requiredNumericValue(sessionScrollStep, "Session Scroll Step")
-              : settings.sessionScrollStep,
           sessionRecallMessageLimit:
             section === "runtime"
               ? requiredNumericValue(
@@ -251,7 +245,6 @@ export function ConfigPage() {
 
   function applyRuntimeInputs(value: AgentSettings) {
     setSessionSearchWindow(value.sessionSearchWindow);
-    setSessionScrollStep(value.sessionScrollStep);
     setSessionRecallMessageLimit(value.sessionRecallMessageLimit);
     setSessionRecallTokenLimit(value.sessionRecallTokenLimit);
     setModelContextWindow(value.modelContextWindow);
@@ -769,20 +762,6 @@ export function ConfigPage() {
                 />
               </ConfigField>
               <ConfigField
-                label="Session Scroll Step"
-                help="每次完整扩窗的单侧增量，默认 10。"
-              >
-                <Input
-                  type="number"
-                  min={settings?.limits.sessionScrollStep?.min ?? 1}
-                  max={settings?.limits.sessionScrollStep?.max ?? 50}
-                  value={sessionScrollStep}
-                  onChange={(event) =>
-                    setSessionScrollStep(parseNumericInput(event.target.value))
-                  }
-                />
-              </ConfigField>
-              <ConfigField
                 label="Recall Message Limit"
                 help="单次最多返回条目数，默认 100。"
               >
@@ -847,7 +826,6 @@ export function ConfigPage() {
                   !settings ||
                   [
                     sessionSearchWindow,
-                    sessionScrollStep,
                     sessionRecallMessageLimit,
                     sessionRecallTokenLimit,
                     modelContextWindow,

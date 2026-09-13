@@ -85,11 +85,6 @@ export function MemoryPage() {
           ? {
             ...item,
             ...value,
-            ...(value.expandLimitReached ? {
-              entries: item.entries,
-              returnedMessageCount: item.returnedMessageCount,
-              returnedRanges: item.returnedRanges,
-            } : {}),
             rank: item.rank,
             retrievalSignals: item.retrievalSignals,
             match: item.match,
@@ -152,7 +147,6 @@ function RecallCard({ result, read }: { result: SessionRecallResult; read(result
     <span className="memory-id">#{result.rank} · {retrievalScoreLabel(result)}</span>
     <strong>{result.session.title}</strong>
     <small>{local(result.session.updatedAt)} · 返回 {result.returnedMessageCount}/{result.totalMessageCount} · {result.isComplete ? "完整 Session" : "部分范围"}</small>
-    {result.expandLimitReached && <small>完整扩窗已达到预算，请从头分页读取。</small>}
     <div className="recall-entries">{result.entries.map((entry) => <section className="recall-entry" key={entry.id}>
       <span className="memory-id recall-entry-number">{entry.id}</span>
       <div className="recall-entry-body">
@@ -161,7 +155,7 @@ function RecallCard({ result, read }: { result: SessionRecallResult; read(result
       </div>
     </section>)}</div>
   </div><div>
-      {result.nextCursor && !result.isComplete && <Button size="sm" onClick={() => void read(result)}>扩大 / 继续</Button>}
+      {result.nextCursor && <Button size="sm" onClick={() => void read(result)}>继续读取</Button>}
       {!result.isComplete && <Button size="sm" onClick={() => void read(result, true)}>从头读取</Button>}
     </div></article>;
 }

@@ -10,7 +10,7 @@ vi.mock("../../src/index.ts", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../src/index.ts")>(),
   createAgentRuntime: () => ({
     get memory() { return state.memory! },
-    prepareMemory: async () => ({ searchWindow: 5, scrollStep: 10, messageLimit: 100, tokenLimit: 50_000,
+    prepareMemory: async () => ({ searchWindow: 5, messageLimit: 100, tokenLimit: 50_000,
       tokenEstimator: { estimateText: (text: string) => text.length } }),
   }),
 }));

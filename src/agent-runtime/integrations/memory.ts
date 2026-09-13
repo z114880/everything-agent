@@ -7,7 +7,6 @@ import type { RuntimeSettings } from "../configuration/schema.ts";
 export function recallSettings(settings: RuntimeSettings, estimator: TokenEstimator): SessionRecallSettings {
   return {
     searchWindow: settings.sessionSearchWindow,
-    scrollStep: settings.sessionScrollStep,
     messageLimit: settings.sessionRecallMessageLimit,
     tokenLimit: settings.sessionRecallTokenLimit,
     tokenEstimator: estimator,

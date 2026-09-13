@@ -66,14 +66,12 @@ function sessionRecallToolMetadata(value: unknown): unknown {
   }
   const session = result.session as Record<string, unknown> | undefined;
   return {
-    mode: result.mode,
     sessionId: session?.id,
     totalMessageCount: result.totalMessageCount,
     returnedMessageCount: result.returnedMessageCount,
     returnedRanges: result.returnedRanges,
     isComplete: result.isComplete,
     truncated: result.truncated,
-    expandLimitReached: result.expandLimitReached,
   };
 }
 

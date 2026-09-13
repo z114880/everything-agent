@@ -60,7 +60,7 @@ Gate 采用召回率优先策略：宁可多执行一次 Session Recall，也不
 session_search 是只读的发现工具，有两种互斥模式：按 query 执行 FTS5 + BM25 搜索（不受全局 Semantic 检索模式影响），或以 recent: true 返回最近活跃 Session。
 
 - limit 限制 Session 数，默认 4。
-- search 每个 Session 选择FTS 的最佳消息锚点，返回首 3 条、命中点前后各 Session Search Window 条（默认 5，由运行配置决定，Agent 不能通过参数调整）、尾 3 条；窗口不够时用 session_read 的 cursor 扩窗。
+- search 每个 Session 选择FTS 的最佳消息锚点，返回首 3 条、命中点前后各 Session Search Window 条（默认 5，由运行配置决定，Agent 不能通过参数调整）、尾 3 条；内容不够时用返回的 cursor 交给 session_read 继续往后读。
 - recent 按 updated_at 降序返回非空 Session，返回首 6 条和尾 6 条，结果使用 retrievalMode: recent 与 match: null。
 - 窗口按可检索对话消息计数，随后展开这些消息所属的完整 run。
 - 首、事件、尾区段重叠时按 chat_log.id 去重。
@@ -69,9 +69,16 @@ session_search 是只读的发现工具，有两种互斥模式：按 query 执�
 
 ## Session Read
 
-session_read 使用 search 返回的 cursor 扩大命中窗口，或使用 sessionId 从 Session 开头顺序分页。命中窗口初始单侧半径默认 5；每次扩窗默认向两侧各增加 10，并返回整个扩大后的窗口。
+session_read 只做一件事：从某个位置开始往后连续读。传 sessionId 从 Session 开头读，传 cursor 从 cursor 记录的位置继续读。Cursor 是不透明值，记录消息位置与单条超长消息的内容偏移。
 
-若完整窗口超过单次预算，则返回 expandLimitReached: true，调用方应改用 sessionId 顺序分页。Cursor 是不透明值，可记录扩窗半径、消息位置和单条超长消息的内容偏移。
+cursor 有两种来源，语义相同（都是「从这里往后连续读」），只是起点不同：
+
+- search 正常返回时，cursor 指向**锚点窗口的右边界**。窗口含尾 3 条，整段结果的右边界通常就是 Session 末尾，因此续读必须从锚点窗口右边界开始，才能读到锚点之后、尾部之前被跳过的那一段。
+- search 因预算被截断时，cursor 指向 Session 开头。截断结果是带洞的前缀，只有从头读才能保证不跳过中间消息。
+
+每次调用都返回一段连续的、未读过的内容，不会空手返回，也不存在需要中途改换读取方式的死路。代价是 cursor 单向向后：锚点之前的内容只能用 sessionId 从头分页读取。
+
+`isComplete` 严格表示「本次返回覆盖 Session 全部行」，从锚点续读时必为 false；「往后是否还有内容」由 `nextCursor` 是否为空表达，两个字段不重叠。
 
 当前不提供跨调用快照一致性：后续读取观察数据库当下状态；Session 被删除时返回 SESSION_NOT_FOUND。所有结果显式提供实际覆盖范围、返回/总消息数、isComplete、截断状态和下一 cursor。
 
@@ -80,10 +87,9 @@ session_read 使用 search 返回的 cursor 扩大命中窗口，或使用 sessi
 | 配置 | 默认值 | 服务端范围 |
 | --- | ---: | ---: |
 | sessionSearchWindow | 5 | 1–20 |
-| sessionScrollStep | 10 | 1–50 |
 | sessionRecallMessageLimit | 100 | 1–200 |
-| sessionRecallTokenLimit | 8,192 | 256–131,072 |
-| modelContextWindow | 32,768 | 4,096–2,000,000 |
+| sessionRecallTokenLimit | 32,768 | 256–131,072 |
+| modelContextWindow | 131,072 | 4,096–2,000,000 |
 
 多 Session 搜索按排名依次组装。预算不足时省略末尾低排名 Session；第一名自身超限时允许显式截断。单条超长消息可通过 cursor 从截断位置继续读取。
 
@@ -166,7 +172,7 @@ Agent 页面每日首次进入时调用 `runtime.consolidate("daily")`，按服�
 - Dense 目前使用 SQLite 中的精确 cosine 全扫描；个人助理数据规模增大后可评估 ANN，但首版不做。
 - 不索引工具结果可能漏掉仅存在于工具输出、且邻近对话没有关键词的事实。
 - 当前 Session 全量 Working Memory 会持续增加费用与延迟，最终可能触发 Context Limit。
-- 扩窗返回完整累计窗口，会重复消耗上下文。
+- session_read 只能向后连续读；锚点之前的内容需要用 sessionId 从头分页，人工检索场景下比双向扩窗多几步。
 - 固定首尾锚点会占用返回预算；不足时低排名候选被省略。
 - 当前不做时间衰减或 recency boost；它可能在未来作为明确的排序信号加入。
 

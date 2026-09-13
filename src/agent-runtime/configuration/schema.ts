@@ -5,7 +5,6 @@ const VALID_PROVIDERS = new Set<AgentProvider>(["anthropic", "openai-compatible"
 const VALID_RETRIEVAL_MODES = new Set<RetrievalMode>(["lexical_only", "dense_only", "hybrid"]);
 export const RUNTIME_DEFAULTS = {
   sessionSearchWindow: 5,
-  sessionScrollStep: 10,
   sessionRecallMessageLimit: 100,
   sessionRecallTokenLimit: 32_768,
   modelContextWindow: 131_072,
@@ -36,7 +35,6 @@ export interface RuntimeSettings {
   agentModel: ModelConnectionSettings;
   smallModel: ModelConnectionSettings;
   sessionSearchWindow: number;
-  sessionScrollStep: number;
   sessionRecallMessageLimit: number;
   sessionRecallTokenLimit: number;
   modelContextWindow: number;
@@ -72,7 +70,6 @@ export interface PublicAgentSettings {
   agentModel: PublicModelConnection;
   smallModel: PublicModelConnection;
   sessionSearchWindow: number;
-  sessionScrollStep: number;
   sessionRecallMessageLimit: number;
   sessionRecallTokenLimit: number;
   modelContextWindow: number;
@@ -94,7 +91,6 @@ export const SETTING_LIMITS = {
   maxTokens: { min: 1, max: 131_072 },
   maxIterations: { min: 1, max: 1_000 },
   sessionSearchWindow: { min: 1, max: 20 },
-  sessionScrollStep: { min: 1, max: 50 },
   sessionRecallMessageLimit: { min: 1, max: 200 },
   sessionRecallTokenLimit: { min: 256, max: 131_072 },
   modelContextWindow: { min: 4_096, max: 2_000_000 },
@@ -115,7 +111,6 @@ export class AgentConfigError extends Error {
 export function parseRuntimeSettingBody(body: AgentSettingsInput) {
   return {
     sessionSearchWindow: parseSetting(body.sessionSearchWindow, "Session Search Window", RUNTIME_DEFAULTS.sessionSearchWindow, SETTING_LIMITS.sessionSearchWindow),
-    sessionScrollStep: parseSetting(body.sessionScrollStep, "Session Scroll Step", RUNTIME_DEFAULTS.sessionScrollStep, SETTING_LIMITS.sessionScrollStep),
     sessionRecallMessageLimit: parseSetting(body.sessionRecallMessageLimit, "Session Recall Message Limit", RUNTIME_DEFAULTS.sessionRecallMessageLimit, SETTING_LIMITS.sessionRecallMessageLimit),
     sessionRecallTokenLimit: parseSetting(body.sessionRecallTokenLimit, "Session Recall Token Limit", RUNTIME_DEFAULTS.sessionRecallTokenLimit, SETTING_LIMITS.sessionRecallTokenLimit),
     maxTokens: parseSetting(body.maxTokens, "单次模型输出", RUNTIME_DEFAULTS.maxTokens, SETTING_LIMITS.maxTokens),

@@ -14,7 +14,6 @@ export type RetrievalIntent =
 
 export interface SessionRecallSettings {
   searchWindow: number;
-  scrollStep: number;
   messageLimit: number;
   tokenLimit: number;
   tokenEstimator: Pick<TokenEstimator, "estimateText">;
@@ -55,16 +54,16 @@ export interface SessionRecallResult {
   session: SessionSummary; rank: number; retrievalSignals: { bm25?: number; dense?: number; fused?: number; mmr?: number };
   match: null | { messageId: number; bm25?: number; dense?: number; totalMatches: number };
   entries: ChatLogEntry[]; totalMessageCount: number; returnedMessageCount: number; indexedMessageCount: number;
-  returnedRanges: RecallRange[]; isComplete: boolean; truncated: boolean; expandLimitReached: boolean; nextCursor: string | null;
+  returnedRanges: RecallRange[]; isComplete: boolean; truncated: boolean; nextCursor: string | null;
 }
 export interface SessionSearchResult {
   retrievalMode: "search" | "recent"; query?: string; requestedLimit: number; returnedSessionCount: number;
   droppedSessionCount: number; truncated: boolean; sessions: SessionRecallResult[];
 }
 export interface SessionReadResult {
-  mode: "expand" | "sequential"; session: SessionSummary; entries: ChatLogEntry[]; totalMessageCount: number;
+  session: SessionSummary; entries: ChatLogEntry[]; totalMessageCount: number;
   returnedMessageCount: number; returnedRanges: RecallRange[]; isComplete: boolean; truncated: boolean;
-  expandLimitReached: boolean; nextCursor: string | null;
+  nextCursor: string | null;
 }
 export interface ConsolidationRun {
   id: number; runId: string; trigger: string; status: string; totalBatches: number; completedBatches: number; unresolvedConflicts: number;

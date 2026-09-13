@@ -38,7 +38,6 @@ export function createRuntimeSettings(config: ReturnType<typeof createLocalConfi
       EVERYTHING_SMALL_MODEL: smallModel.settings.model,
       EVERYTHING_SMALL_BASE_URL: smallModel.settings.baseUrl,
       EVERYTHING_SESSION_SEARCH_WINDOW: String(runtime.sessionSearchWindow),
-      EVERYTHING_SESSION_SCROLL_STEP: String(runtime.sessionScrollStep),
       EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT: String(runtime.sessionRecallMessageLimit),
       EVERYTHING_SESSION_RECALL_TOKEN_LIMIT: String(runtime.sessionRecallTokenLimit),
       EVERYTHING_AGENT_MAX_TOKENS: String(runtime.maxTokens),
@@ -82,7 +81,6 @@ export function createRuntimeSettings(config: ReturnType<typeof createLocalConfi
   async function resetRuntimeSettings(): Promise<RuntimeSettings> {
     await updateConfigFile({
       EVERYTHING_SESSION_SEARCH_WINDOW: String(RUNTIME_DEFAULTS.sessionSearchWindow),
-      EVERYTHING_SESSION_SCROLL_STEP: String(RUNTIME_DEFAULTS.sessionScrollStep),
       EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT: String(RUNTIME_DEFAULTS.sessionRecallMessageLimit),
       EVERYTHING_SESSION_RECALL_TOKEN_LIMIT: String(RUNTIME_DEFAULTS.sessionRecallTokenLimit),
       EVERYTHING_AGENT_MAX_TOKENS: String(RUNTIME_DEFAULTS.maxTokens),
@@ -98,7 +96,6 @@ export function createRuntimeSettings(config: ReturnType<typeof createLocalConfi
       agentModel: loadModelConnection(values, "AGENT"),
       smallModel: loadModelConnection(values, "SMALL"),
       sessionSearchWindow: parseSetting(values.EVERYTHING_SESSION_SEARCH_WINDOW, "Session Search Window", RUNTIME_DEFAULTS.sessionSearchWindow, SETTING_LIMITS.sessionSearchWindow),
-      sessionScrollStep: parseSetting(values.EVERYTHING_SESSION_SCROLL_STEP, "Session Scroll Step", RUNTIME_DEFAULTS.sessionScrollStep, SETTING_LIMITS.sessionScrollStep),
       sessionRecallMessageLimit: parseSetting(values.EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT, "Session Recall Message Limit", RUNTIME_DEFAULTS.sessionRecallMessageLimit, SETTING_LIMITS.sessionRecallMessageLimit),
       sessionRecallTokenLimit: parseSetting(values.EVERYTHING_SESSION_RECALL_TOKEN_LIMIT, "Session Recall Token Limit", RUNTIME_DEFAULTS.sessionRecallTokenLimit, SETTING_LIMITS.sessionRecallTokenLimit),
       maxTokens: parseSetting(values.EVERYTHING_AGENT_MAX_TOKENS, "单次模型输出", RUNTIME_DEFAULTS.maxTokens, SETTING_LIMITS.maxTokens),
@@ -129,7 +126,6 @@ export function publicSettings(settings: RuntimeSettings, memory: MemoryRuntime)
     agentModel: publicModelConnection(settings.agentModel),
     smallModel: publicModelConnection(settings.smallModel),
     sessionSearchWindow: settings.sessionSearchWindow,
-    sessionScrollStep: settings.sessionScrollStep,
     sessionRecallMessageLimit: settings.sessionRecallMessageLimit,
     sessionRecallTokenLimit: settings.sessionRecallTokenLimit,
     maxTokens: settings.maxTokens,

@@ -12,7 +12,6 @@ const CONFIG_PATHS = {
   EVERYTHING_SMALL_MODEL: ["models", "small", "model"],
   EVERYTHING_SMALL_BASE_URL: ["models", "small", "baseUrl"],
   EVERYTHING_SESSION_SEARCH_WINDOW: ["sessionRecall", "searchWindow"],
-  EVERYTHING_SESSION_SCROLL_STEP: ["sessionRecall", "scrollStep"],
   EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT: ["sessionRecall", "messageLimit"],
   EVERYTHING_SESSION_RECALL_TOKEN_LIMIT: ["sessionRecall", "tokenLimit"],
   EVERYTHING_AGENT_MAX_TOKENS: ["maxTokens"],
@@ -37,7 +36,6 @@ const SECRET_KEYS = [
 const CONFIG_KEYS = [...Object.keys(CONFIG_PATHS), ...SECRET_KEYS];
 const NUMBER_CONFIG_KEYS = new Set([
   "EVERYTHING_SESSION_SEARCH_WINDOW",
-  "EVERYTHING_SESSION_SCROLL_STEP",
   "EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT",
   "EVERYTHING_SESSION_RECALL_TOKEN_LIMIT",
   "EVERYTHING_AGENT_MAX_TOKENS",
@@ -58,7 +56,6 @@ const DEFAULT_CONFIG: JsonObject = {
   models: { agent: {}, small: {} },
   sessionRecall: {
     searchWindow: RUNTIME_DEFAULTS.sessionSearchWindow,
-    scrollStep: RUNTIME_DEFAULTS.sessionScrollStep,
     messageLimit: RUNTIME_DEFAULTS.sessionRecallMessageLimit,
     tokenLimit: RUNTIME_DEFAULTS.sessionRecallTokenLimit,
   },

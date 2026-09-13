@@ -8,7 +8,7 @@ import { LocalToolRegistry } from "../tool-registry.ts";
 
 const memories: MemoryRuntime[] = [];
 const recall: SessionRecallSettings = {
-  searchWindow: 5, scrollStep: 10, messageLimit: 100, tokenLimit: 50_000,
+  searchWindow: 5, messageLimit: 100, tokenLimit: 50_000,
   tokenEstimator: { estimateText(text: string) { return text.length } },
 };
 afterEach(() => memories.splice(0).forEach((memory) => memory.close()));

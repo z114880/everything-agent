@@ -15,7 +15,6 @@ export interface AgentSettings {
   agentModel: ModelConnectionSettings;
   smallModel: ModelConnectionSettings;
   sessionSearchWindow: number;
-  sessionScrollStep: number;
   sessionRecallMessageLimit: number;
   sessionRecallTokenLimit: number;
   modelContextWindow: number;
@@ -78,7 +77,6 @@ export interface SessionRecallResult {
   returnedRanges: Array<{ fromMessageId: number; toMessageId: number }>;
   isComplete: boolean;
   truncated: boolean;
-  expandLimitReached: boolean;
   nextCursor: string | null;
 }
 export interface SessionSearchResult {
@@ -91,7 +89,6 @@ export interface SessionSearchResult {
   sessions: SessionRecallResult[];
 }
 export interface SessionReadResult {
-  mode: "expand" | "sequential";
   session: SessionSummary;
   entries: ChatLogEntry[];
   totalMessageCount: number;
@@ -99,7 +96,6 @@ export interface SessionReadResult {
   returnedRanges: Array<{ fromMessageId: number; toMessageId: number }>;
   isComplete: boolean;
   truncated: boolean;
-  expandLimitReached: boolean;
   nextCursor: string | null;
 }
 
@@ -238,7 +234,6 @@ export function saveAgentConfig(value: {
   agentModel: ModelConnectionSettingsInput;
   smallModel: ModelConnectionSettingsInput;
   sessionSearchWindow: number;
-  sessionScrollStep: number;
   sessionRecallMessageLimit: number;
   sessionRecallTokenLimit: number;
   modelContextWindow: number;

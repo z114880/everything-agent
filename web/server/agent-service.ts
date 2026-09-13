@@ -117,7 +117,6 @@ export async function handleMemoryAction(body: Record<string, unknown>): Promise
       query: body.query === undefined ? undefined : requiredText(body.query, "Query", 2_000),
       recent: body.recent === true,
       limit: body.limit === undefined ? undefined : Number(body.limit),
-      window: body.window === undefined ? undefined : Number(body.window),
     }, recall, undefined, undefined, manualSearchObserver);
   }
   if (action === "session_read") {
@@ -191,7 +190,7 @@ export function saveAgentSettings(body: Record<string, unknown>) {
   for (const key of ["embeddingApiKey", "embeddingBaseUrl", "embeddingModel", "embeddingQueryTemplate", "embeddingDocumentTemplate"] as const) {
     if (body[key] !== undefined) input[key] = optionalText(body[key], key, 10_000);
   }
-  for (const key of ["maxTokens", "maxIterations", "sessionSearchWindow", "sessionScrollStep", "sessionRecallMessageLimit", "sessionRecallTokenLimit", "modelContextWindow", "embeddingMinimumSimilarity"] as const) {
+  for (const key of ["maxTokens", "maxIterations", "sessionSearchWindow", "sessionRecallMessageLimit", "sessionRecallTokenLimit", "modelContextWindow", "embeddingMinimumSimilarity"] as const) {
     if (body[key] !== undefined && body[key] !== "") input[key] = Number(body[key]);
   }
   if (body.retrievalMode !== undefined) {

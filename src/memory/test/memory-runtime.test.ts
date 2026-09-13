@@ -3,11 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AgentModelClient, ModelResponse } from "../../agent-loop/agent-loop.ts";
-import { MemoryRuntime, toSearchText, type SessionRecallSettings } from "../index.ts";
+import { MemoryRuntime, toSearchText, type SessionReadResult, type SessionRecallSettings } from "../index.ts";
 
 const runtimes: MemoryRuntime[] = [];
 const tokenEstimator = { estimateText(text: string) { return text.length } };
-const recall: SessionRecallSettings = { searchWindow: 5, scrollStep: 10, messageLimit: 100, tokenLimit: 50_000, tokenEstimator };
+const recall: SessionRecallSettings = { searchWindow: 5, messageLimit: 100, tokenLimit: 50_000, tokenEstimator };
 afterEach(() => { for (const runtime of runtimes.splice(0)) runtime.close() });
 
 describe("Memory Runtime", () => {
@@ -82,17 +82,43 @@ describe("Memory Runtime", () => {
     expect(result.sessions[0]?.isComplete).toBe(true);
   });
 
-  it("扩窗返回完整扩大窗口，达到预算后要求改用顺序读取", async () => {
+  it("search cursor 从锚点窗口右边界续读，返回不重复的新内容", async () => {
     const memory = await createMemory(); const session = memory.createSession();
     for (let index = 0; index < 20; index += 1) await addCompletedRun(memory, session.id, "r" + index, "问题" + index, index === 10 ? "关键决定 ALPHA" : "回答" + index);
-    const smallWindow = { ...recall, searchWindow: 1, scrollStep: 2 };
+    const smallWindow = { ...recall, searchWindow: 1 };
     const found = await memory.searchSessions({ query: "ALPHA" }, smallWindow);
     const initial = found.sessions[0]!;
-    const expanded = await memory.readSession({ cursor: initial.nextCursor! }, smallWindow);
-    expect(expanded.mode).toBe("expand");
-    expect(expanded.returnedMessageCount).toBeGreaterThan(initial.returnedMessageCount);
-    const blocked = await memory.readSession({ cursor: initial.nextCursor! }, { ...smallWindow, messageLimit: 2 });
-    expect(blocked).toMatchObject({ expandLimitReached: true, nextCursor: null, entries: [] });
+    const anchorId = initial.match!.messageId;
+    const next = await memory.readSession({ cursor: initial.nextCursor! }, smallWindow);
+    // 续读起点在锚点之后：锚点窗口及其之前的内容不会被重复返回。
+    expect(next.entries.length).toBeGreaterThan(0);
+    expect(Math.min(...next.entries.map((entry) => entry.id))).toBeGreaterThan(anchorId);
+    // 必须带来 search 未给过的新内容；与 search 的尾部语境片段重叠是预期的，
+    // 顺序读到 Session 末尾必然再次经过它们。
+    const already = new Set(initial.entries.map((entry) => entry.id));
+    expect(next.entries.some((entry) => !already.has(entry.id))).toBe(true);
+    // 未覆盖 Session 全部行，isComplete 必须如实为 false。
+    expect(next.isComplete).toBe(false);
+    expect(next.totalMessageCount).toBeGreaterThan(next.returnedMessageCount);
+  });
+
+  it("续读始终有产出，逐页推进直到 nextCursor 为空", async () => {
+    const memory = await createMemory(); const session = memory.createSession();
+    for (let index = 0; index < 20; index += 1) await addCompletedRun(memory, session.id, "r" + index, "问题" + index, index === 10 ? "关键决定 ALPHA" : "回答" + index);
+    const tightBudget = { ...recall, searchWindow: 1, messageLimit: 3 };
+    const found = await memory.searchSessions({ query: "ALPHA" }, tightBudget);
+    let cursor = found.sessions[0]!.nextCursor;
+    const seen = new Set<number>();
+    let pages = 0;
+    while (cursor && pages < 50) {
+      const page: SessionReadResult = await memory.readSession({ cursor }, tightBudget);
+      // 预算再紧也不会空手返回，不存在需要改用从头分页的死路。
+      expect(page.entries.length).toBeGreaterThan(0);
+      page.entries.forEach((entry) => seen.add(entry.id));
+      cursor = page.nextCursor; pages += 1;
+    }
+    expect(cursor).toBeNull();
+    expect(seen.size).toBeGreaterThan(0);
   });
 
   it("顺序读取使用不透明 cursor，并支持单条消息内部续读", async () => {

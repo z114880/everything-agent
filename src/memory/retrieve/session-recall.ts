@@ -59,58 +59,44 @@ export class SessionRecall {
   }
 
   /**
-   * 使用 search 返回的 cursor 扩大完整窗口，或用 sessionId 从头顺序分页。
-   * 两个参数必须二选一。
+   * 从 cursor 记录的位置继续顺序读取，或用 sessionId 从 Session 开头读取。
+   * 两个参数必须二选一；cursor 只有「从该位置往后连续读」一种语义。
    */
   async readSession(input: { sessionId?: string; cursor?: string; currentSessionId?: string }, settings: SessionRecallSettings): Promise<SessionReadResult> {
     if (Boolean(input.sessionId) === Boolean(input.cursor)) throw new TypeError("sessionId 与 cursor 必须且只能提供一个");
     const cursor: Cursor = input.cursor ? decodeCursor(input.cursor) : {
-      version: 1, mode: "sequential", sessionId: input.sessionId!, afterId: 0, contentOffset: 0,
+      version: 1, sessionId: input.sessionId!, afterId: 0, contentOffset: 0,
     };
     if (input.currentSessionId && cursor.sessionId === input.currentSessionId) {
       throw new Error("当前 Session 不参与 Session Recall");
-    }
-    if (cursor.mode === "expand") {
-      const candidate: SearchCandidate = { sourceId: cursor.sessionId, sessionId: cursor.sessionId, messageId: cursor.anchorMessageId, totalMatches: 1 };
-      const expanded = this.buildRecallResult(candidate, 1, cursor.radius + settings.scrollStep, "search");
-      const size = settings.tokenEstimator.estimateText(JSON.stringify(expanded.entries));
-      if (expanded.entries.length > settings.messageLimit || size > settings.tokenLimit) {
-        return {
-          mode: "expand", session: expanded.session, entries: [], totalMessageCount: expanded.totalMessageCount,
-          returnedMessageCount: 0, returnedRanges: [], isComplete: false, truncated: true,
-          expandLimitReached: true, nextCursor: null,
-        };
-      }
-      return {
-        mode: "expand", session: expanded.session, entries: expanded.entries,
-        totalMessageCount: expanded.totalMessageCount, returnedMessageCount: expanded.returnedMessageCount,
-        returnedRanges: expanded.returnedRanges, isComplete: expanded.isComplete, truncated: false,
-        expandLimitReached: false, nextCursor: expanded.nextCursor,
-      };
     }
     return this.readSequential(cursor, settings);
   }
 
   private buildRecallResult(candidate: SearchCandidate, rank: number, radius: number, mode: "search" | "recent"): SessionRecallResult {
     const session = this.sessions.requireSession(candidate.sessionId);
-    // 失败 run 仍保存在 Chat Log，但 Session Recall 的发现、展开和读取都完全忽略它。
+    // 失败 run 仍保存在 Chat Log，但 Session Recall 的发现与读取都完全忽略它。
     const rows = this.sessions.completedRunRows(candidate.sessionId);
     const indexed = rows.filter((row) => row.kind === "user_message" || row.kind === "assistant_message");
     const chosen = new Set<number>();
+    let anchorIndex = -1;
     const add = (items: Row[]) => items.forEach((row) => chosen.add(Number(row.id)));
     if (mode === "recent") {
       add(indexed.slice(0, 6)); add(indexed.slice(-6));
     } else {
       add(indexed.slice(0, 3)); add(indexed.slice(-3));
-      const anchorIndex = indexed.findIndex((row) => Number(row.id) === candidate.messageId);
+      anchorIndex = indexed.findIndex((row) => Number(row.id) === candidate.messageId);
       if (anchorIndex >= 0) add(indexed.slice(Math.max(0, anchorIndex - radius), anchorIndex + radius + 1));
     }
     const selectedRuns = new Set(rows.filter((row) => chosen.has(Number(row.id))).map((row) => String(row.run_id)));
     const selectedRows = rows.filter((row) => selectedRuns.has(String(row.run_id)));
     const entries = this.sessions.decorateEntries(selectedRows);
     const isComplete = entries.length === rows.length;
-    const nextCursor = mode === "search" && candidate.messageId !== undefined && !isComplete
-      ? encodeCursor({ version: 1, mode: "expand", sessionId: candidate.sessionId, anchorMessageId: candidate.messageId, radius })
+    // 窗口含尾 3 条，整段 entries 的右边界通常就是 Session 末尾；续读必须从锚点窗口的
+    // 右边界开始，才能读到锚点之后、尾部之前被跳过的那一段。
+    const resumeAfterId = isComplete || anchorIndex < 0 ? 0 : runEndRowId(rows, indexed[Math.min(anchorIndex + radius, indexed.length - 1)]!);
+    const nextCursor = resumeAfterId && resumeAfterId !== Number(rows[rows.length - 1]?.id)
+      ? encodeCursor({ version: 1, sessionId: candidate.sessionId, afterId: resumeAfterId, contentOffset: 0 })
       : null;
     return {
       session, rank, retrievalSignals: {
@@ -125,7 +111,7 @@ export class SessionRecall {
         ...(candidate.dense === undefined ? {} : { dense: candidate.dense }),
       },
       entries, totalMessageCount: rows.length, returnedMessageCount: entries.length, indexedMessageCount: indexed.length,
-      returnedRanges: rangesFor(entries, rows), isComplete, truncated: false, expandLimitReached: false, nextCursor,
+      returnedRanges: rangesFor(entries, rows), isComplete, truncated: false, nextCursor,
     };
   }
 
@@ -141,11 +127,11 @@ export class SessionRecall {
       ...result, entries, returnedMessageCount: entries.length, returnedRanges: rangesFor(entries, allRows),
       isComplete: false, truncated: true,
       // 截断的 search 结果可能包含不连续的首/事件/尾区间；从头分页才能保证不跳过中间消息。
-      nextCursor: encodeCursor({ version: 1, mode: "sequential", sessionId: result.session.id, afterId: 0, contentOffset: 0 }),
+      nextCursor: encodeCursor({ version: 1, sessionId: result.session.id, afterId: 0, contentOffset: 0 }),
     };
   }
 
-  private async readSequential(cursor: Extract<Cursor, { mode: "sequential" }>, settings: SessionRecallSettings): Promise<SessionReadResult> {
+  private async readSequential(cursor: Cursor, settings: SessionRecallSettings): Promise<SessionReadResult> {
     const session = this.sessions.requireSession(cursor.sessionId);
     const allRows = this.sessions.completedRunRows(cursor.sessionId);
     const startIndex = cursor.afterId === 0 ? 0 : Math.max(0, allRows.findIndex((row) => Number(row.id) === cursor.afterId));
@@ -161,28 +147,39 @@ export class SessionRecall {
         const fragment = await fitEntryPrefix(selected, entry, raw, offset, settings);
         if (fragment) {
           selected.push(fragment.entry);
-          next = { version: 1, mode: "sequential", sessionId: cursor.sessionId, afterId: Number(row.id), contentOffset: fragment.nextOffset };
+          next = { version: 1, sessionId: cursor.sessionId, afterId: Number(row.id), contentOffset: fragment.nextOffset };
         } else {
           throw new Error("Session Recall Token Limit 过小，无法容纳单条记录元数据");
         }
         break;
       }
       selected.push(entry);
-      if (index < allRows.length - 1) next = { version: 1, mode: "sequential", sessionId: cursor.sessionId, afterId: Number(row.id), contentOffset: 0 };
+      if (index < allRows.length - 1) next = { version: 1, sessionId: cursor.sessionId, afterId: Number(row.id), contentOffset: 0 };
       else next = null;
     }
     const decorated = this.sessions.decorateEntriesFromEntries(selected, allRows);
     return {
-      mode: "sequential", session, entries: decorated, totalMessageCount: allRows.length,
+      session, entries: decorated, totalMessageCount: allRows.length,
       returnedMessageCount: decorated.length, returnedRanges: rangesFor(decorated, allRows),
-      isComplete: next === null, truncated: next !== null, expandLimitReached: false, nextCursor: next ? encodeCursor(next) : null,
+      // isComplete 严格表示「本次返回覆盖 Session 全部行」；从锚点续读时它必为 false。
+      // 「往后是否还有内容」由 nextCursor 表达，两个字段不重叠。
+      isComplete: decorated.length === allRows.length, truncated: next !== null,
+      nextCursor: next ? encodeCursor(next) : null,
     };
   }
 }
 
-type Cursor =
-  | { version: 1; mode: "expand"; sessionId: string; anchorMessageId: number; radius: number }
-  | { version: 1; mode: "sequential"; sessionId: string; afterId: number; contentOffset: number };
+/** Cursor 只有一种语义：从 afterId / contentOffset 记录的位置往后连续读。 */
+interface Cursor { version: 1; sessionId: string; afterId: number; contentOffset: number }
+
+/** 返回某条消息所属 run 在 rows 中的最后一行 id，保证续读起点落在 run 边界上。 */
+function runEndRowId(rows: Row[], anchor: Row): number {
+  const runId = String(anchor.run_id);
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    if (String(rows[index]!.run_id) === runId) return Number(rows[index]!.id);
+  }
+  return 0;
+}
 
 function rangesFor(entries: ChatLogEntry[], allRows: Array<Row | ChatLogEntry>): RecallRange[] {
   if (!entries.length) return [];
@@ -236,7 +233,7 @@ function encodeCursor(value: Cursor): string { return Buffer.from(JSON.stringify
 function decodeCursor(value: string): Cursor {
   try {
     const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as Cursor;
-    if (parsed.version !== 1 || (parsed.mode !== "expand" && parsed.mode !== "sequential") || !parsed.sessionId) throw new Error();
+    if (parsed.version !== 1 || !parsed.sessionId) throw new Error();
     return parsed;
   } catch { throw new TypeError("Session cursor 无效") }
 }

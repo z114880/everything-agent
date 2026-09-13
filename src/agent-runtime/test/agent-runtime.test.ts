@@ -292,7 +292,7 @@ describe("Runtime 配置与维护", () => {
       agentModel: { provider: "openai-compatible", model: "main", apiKey: "agent-secret", baseUrl: "https://agent.example/v1" },
       smallModel: { provider: "anthropic", model: "small", apiKey: "small-secret", baseUrl: "https://small.example" },
       force: true,
-      sessionSearchWindow: 3, sessionScrollStep: 4, sessionRecallMessageLimit: 20,
+      sessionSearchWindow: 3, sessionRecallMessageLimit: 20,
       sessionRecallTokenLimit: 1024, modelContextWindow: 8192,
       retrievalMode: "lexical_only", embeddingBaseUrl: "https://example.com/v1",
       embeddingApiKey: "embedding-key", embeddingModel: "embedding",
@@ -376,7 +376,6 @@ describe("Runtime 配置与维护", () => {
 
   it.each([
     [{ sessionSearchWindow: 0 }, "Session Search Window"],
-    [{ sessionScrollStep: 51 }, "Session Scroll Step"],
     [{ sessionRecallMessageLimit: 0 }, "Session Recall Message Limit"],
     [{ sessionRecallTokenLimit: 1 }, "Session Recall Token Limit"],
     [{ modelContextWindow: 1 }, "Model Context Window"],
