@@ -19,6 +19,14 @@ pnpm test
 pnpm run example
 ```
 
+需要一批本地测试数据时，可用假模型驱动真实 Runtime 生成，不消耗模型额度也不联网：
+
+```bash
+pnpm run seed -- --sessions 60 --consolidate
+```
+
+数据默认写入 `.everything-seed/`，覆盖 SQLite、JSONL trace、Semantic Memory 与向量索引；详见 [`src/seed/README.md`](src/seed/README.md)。
+
 ## 本地可视化控制台
 
 仓库已包含一个 React + Tailwind CSS v4 + shadcn/ui 的本地控制台。页面共用本地设计令牌和可复用基础组件，Graph 与 Agent Harness 画布仍以真实拓扑和 observer 事件为唯一事实来源：

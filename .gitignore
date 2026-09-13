@@ -8,3 +8,4 @@ coverage/
 dist-web/
 *.tgz
 .everything/
+.everything-seed/
