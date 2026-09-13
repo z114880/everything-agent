@@ -349,7 +349,7 @@ Trace 不记录候选正文、查询正文或向量。
 - 自动 `retrieve()`：Semantic Memory 最多 4 条，Session Recall 最多 4 个不同 Session。
 - `manage_memory search`：最多 20 条。
 - `session_search`：默认 4，最多 20 个 Session。
-- Memory 管理页：全量浏览不经过 MMR；手动搜索最多 100 条。
+- Memory 管理页：全量浏览不经过 MMR；手动搜索最多 50 条，与单路候选池深度一致。
 
 MMR 的目标数量取调用方 limit。相似度阈值和完全重复排除都可能使实际数量少于 limit，系统不会用低质量或重复内容补足。
 

@@ -108,7 +108,9 @@ export async function handleMemoryAction(body: Record<string, unknown>): Promise
     await runtime.prepareMemory();
   }
   if (action === "create_semantic") return memory.createSemantic(requiredText(body.subject, "Subject", 500), requiredText(body.content, "Content", 20_000), "ui");
-  if (action === "search_semantic") return memory.searchSemantic(requiredText(body.query, "Query", 2_000), 100, undefined, undefined, manualSearchObserver);
+  // 三种检索模式的候选池深度都是 50（Dense 与 Semantic Lexical 各取 50，RRF 也按 50 截断），
+  // 再大的 limit 只会被静默截断，因此这里如实声明 50。
+  if (action === "search_semantic") return memory.searchSemantic(requiredText(body.query, "Query", 2_000), 50, undefined, undefined, manualSearchObserver);
   if (action === "update_semantic") return memory.updateSemantic(positiveId(body.id), requiredText(body.subject, "Subject", 500), requiredText(body.content, "Content", 20_000), "ui");
   if (action === "delete_semantic") return void memory.deleteSemantic(positiveId(body.id), "ui");
   if (action === "session_search") {
