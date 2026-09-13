@@ -102,6 +102,30 @@ describe("Memory Runtime", () => {
     expect(next.totalMessageCount).toBeGreaterThan(next.returnedMessageCount);
   });
 
+  it("消息预算不足时保留命中窗口，而不是 Session 开头", async () => {
+    const memory = await createMemory(); const session = memory.createSession();
+    for (let index = 0; index < 20; index += 1) await addCompletedRun(memory, session.id, "r" + index, "问题" + index, index === 10 ? "关键决定 ALPHA" : "回答" + index);
+    const found = await memory.searchSessions({ query: "ALPHA" }, { ...recall, messageLimit: 5 });
+    const hit = found.sessions[0]!;
+    expect(hit.entries).toHaveLength(5);
+    expect(hit.entries.map((entry) => entry.id)).toContain(hit.match!.messageId);
+    expect(hit.truncated).toBe(true);
+  });
+
+  it("高排名 Session 用不完的消息预算留给后续 Session", async () => {
+    const memory = await createMemory();
+    const short = memory.createSession("短"); const long = memory.createSession("长");
+    await addCompletedRun(memory, short.id, "s1", "ALPHA ALPHA ALPHA", "ALPHA ALPHA 是发布代号");
+    for (let index = 0; index < 10; index += 1) await addCompletedRun(memory, long.id, "l" + index, "问题" + index, index === 5 ? "ALPHA 的排期" : "回答" + index);
+    const found = await memory.searchSessions({ query: "ALPHA", limit: 2 }, { ...recall, messageLimit: 5 });
+    // 排名第一的短 Session 只用掉 2 条额度，剩余 3 条必须留给排名第二的长 Session。
+    expect(found.sessions[0]?.session.id).toBe(short.id);
+    expect(found.returnedSessionCount).toBe(2);
+    expect(found.sessions.reduce((sum, item) => sum + item.entries.length, 0)).toBe(5);
+    // 被截断的低排名 Session 仍必须带着自己的命中内容返回。
+    for (const item of found.sessions) expect(item.entries.map((entry) => entry.id)).toContain(item.match!.messageId);
+  });
+
   it("续读始终有产出，逐页推进直到 nextCursor 为空", async () => {
     const memory = await createMemory(); const session = memory.createSession();
     for (let index = 0; index < 20; index += 1) await addCompletedRun(memory, session.id, "r" + index, "问题" + index, index === 10 ? "关键决定 ALPHA" : "回答" + index);

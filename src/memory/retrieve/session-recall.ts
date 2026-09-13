@@ -37,15 +37,21 @@ export class SessionRecall {
       ? (await this.search.sessionSearchCandidates(query, input.currentSessionId, providedQueryVector, runId, observer)).slice(0, requestedLimit)
       : this.search.recentCandidates(input.currentSessionId, requestedLimit);
     const sessions: SessionRecallResult[] = [];
-    let usedMessages = 0; let usedTokens = 0; let firstTruncated = false;
+    let usedMessages = 0; let usedTokens = 0; let anyTruncated = false;
     for (let index = 0; index < candidates.length; index += 1) {
+      const remainingMessages = settings.messageLimit - usedMessages;
+      const remainingTokens = settings.tokenLimit - usedTokens;
+      if (remainingMessages <= 0 || remainingTokens <= 0) break;
       const candidate = candidates[index]!;
       let result = this.buildRecallResult(candidate, index + 1, query ? radius : 0, query ? "search" : "recent");
-      const size = settings.tokenEstimator.estimateText(JSON.stringify(result.entries));
-      if (usedMessages + result.entries.length > settings.messageLimit || usedTokens + size > settings.tokenLimit) {
-        if (sessions.length) break;
-        result = await this.truncateRecallResult(result, settings);
-        firstTruncated = true;
+      let size = settings.tokenEstimator.estimateText(JSON.stringify(result.entries));
+      // 预算是整次调用的总额：装不下整段就按剩余额度截断，不整体丢弃，
+      // 否则高排名 Session 用不完的额度会白白浪费。
+      if (result.entries.length > remainingMessages || size > remainingTokens) {
+        result = this.truncateRecallResult(result, { ...settings, messageLimit: remainingMessages, tokenLimit: remainingTokens });
+        if (!result.entries.length) break;
+        size = settings.tokenEstimator.estimateText(JSON.stringify(result.entries));
+        anyTruncated = true;
       }
       sessions.push(result);
       usedMessages += result.entries.length; usedTokens += size;
@@ -54,7 +60,7 @@ export class SessionRecall {
     return {
       retrievalMode: query ? "search" : "recent", ...(query ? { query } : {}), requestedLimit,
       returnedSessionCount: sessions.length, droppedSessionCount,
-      truncated: firstTruncated || droppedSessionCount > 0, sessions,
+      truncated: anyTruncated || droppedSessionCount > 0, sessions,
     };
   }
 
@@ -115,18 +121,13 @@ export class SessionRecall {
     };
   }
 
-  private async truncateRecallResult(result: SessionRecallResult, settings: SessionRecallSettings): Promise<SessionRecallResult> {
-    const entries: ChatLogEntry[] = [];
+  private truncateRecallResult(result: SessionRecallResult, settings: SessionRecallSettings): SessionRecallResult {
     const allRows = this.sessions.completedRunRows(result.session.id);
-    for (const entry of result.entries.slice(0, settings.messageLimit)) {
-      const candidate = [...entries, entry];
-      if (settings.tokenEstimator.estimateText(JSON.stringify(candidate)) > settings.tokenLimit) break;
-      entries.push(entry);
-    }
+    const entries = fitEntriesAroundAnchor(result.entries, result.match?.messageId, settings);
     return {
       ...result, entries, returnedMessageCount: entries.length, returnedRanges: rangesFor(entries, allRows),
       isComplete: false, truncated: true,
-      // 截断的 search 结果可能包含不连续的首/事件/尾区间；从头分页才能保证不跳过中间消息。
+      // 截断结果只保留命中点附近的一段，其前后都有缺口；从头分页才能保证不跳过中间消息。
       nextCursor: encodeCursor({ version: 1, sessionId: result.session.id, afterId: 0, contentOffset: 0 }),
     };
   }
@@ -179,6 +180,27 @@ function runEndRowId(rows: Row[], anchor: Row): number {
     if (String(rows[index]!.run_id) === runId) return Number(rows[index]!.id);
   }
   return 0;
+}
+
+/**
+ * 预算不足时保留命中点周围的连续片段：先放下锚点所在的那条消息，再在消息数与
+ * token 额度内交替向后、向前扩展。截断绝不能丢掉命中内容，否则搜索结果只剩
+ * Session 开头的无关语境。recent 模式没有锚点，从首条开始保留。
+ */
+function fitEntriesAroundAnchor(entries: ChatLogEntry[], anchorId: number | undefined, settings: SessionRecallSettings): ChatLogEntry[] {
+  if (!entries.length || settings.messageLimit <= 0) return [];
+  const anchorIndex = Math.max(0, anchorId === undefined ? 0 : entries.findIndex((entry) => entry.id === anchorId));
+  const fits = (from: number, to: number): boolean =>
+    to - from + 1 <= settings.messageLimit
+    && settings.tokenEstimator.estimateText(JSON.stringify(entries.slice(from, to + 1))) <= settings.tokenLimit;
+  if (!fits(anchorIndex, anchorIndex)) return [];
+  let low = anchorIndex; let high = anchorIndex;
+  for (let grew = true; grew;) {
+    grew = false;
+    if (high + 1 < entries.length && fits(low, high + 1)) { high += 1; grew = true }
+    if (low > 0 && fits(low - 1, high)) { low -= 1; grew = true }
+  }
+  return entries.slice(low, high + 1);
 }
 
 function rangesFor(entries: ChatLogEntry[], allRows: Array<Row | ChatLogEntry>): RecallRange[] {
