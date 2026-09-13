@@ -1,0 +1,156 @@
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import {
+  buildSessions, decideApply, listDatasetIds, loadDataset, readManifest,
+  seedFakeData, startFakeProvider, writeManifest,
+} from "../index.ts";
+
+describe("假数据集", () => {
+  it("加载并校验 datasets 目录下的数据集", async () => {
+    const ids = await listDatasetIds();
+    expect(ids).toContain("personal-assistant");
+    const dataset = await loadDataset("personal-assistant");
+    expect(dataset.topics.length).toBeGreaterThan(0);
+    expect(dataset.checksum).toHaveLength(16);
+    expect(dataset.topics.every((topic) => topic.facts.length > 0)).toBe(true);
+  });
+
+  it("拒绝非法数据集 id", async () => {
+    await expect(loadDataset("../secrets")).rejects.toThrow("只能包含小写字母");
+  });
+
+  it("相同数据集与 seed 产生完全相同的会话", async () => {
+    const dataset = await loadDataset("personal-assistant");
+    expect(buildSessions(dataset, 6, 7)).toEqual(buildSessions(dataset, 6, 7));
+    expect(buildSessions(dataset, 6, 7)).not.toEqual(buildSessions(dataset, 6, 8));
+  });
+
+  it("重复出现的主题使用不同侧面的事实，避免全部被去重", async () => {
+    const dataset = await loadDataset("personal-assistant");
+    const statements = buildSessions(dataset, dataset.topics.length * 2, 1).map((session) => session.turns[0]!.prompt);
+    expect(new Set(statements).size).toBe(statements.length);
+  });
+});
+
+describe("写入清单", () => {
+  it("未写入过时允许写入", () => {
+    expect(decideApply({ version: 1, applied: [] }, "a", "c1", new Set())).toMatchObject({ skip: false });
+  });
+
+  it("已写入且会话仍在时跳过，并标记内容变更", () => {
+    const manifest = {
+      version: 1 as const,
+      applied: [{ datasetId: "a", version: 1, checksum: "c1", appliedAt: "t", sessionCount: 1, sessionIds: ["s1"] }],
+    };
+    expect(decideApply(manifest, "a", "c1", new Set(["s1"]))).toMatchObject({ skip: true, reason: "already-applied" });
+    expect(decideApply(manifest, "a", "c2", new Set(["s1"]))).toMatchObject({ skip: true, checksumChanged: true });
+  });
+
+  it("会话已不存在时重新允许写入，避免清单与数据不一致", () => {
+    const manifest = {
+      version: 1 as const,
+      applied: [{ datasetId: "a", version: 1, checksum: "c1", appliedAt: "t", sessionCount: 1, sessionIds: ["s1"] }],
+    };
+    expect(decideApply(manifest, "a", "c1", new Set(["other"]))).toMatchObject({ skip: false });
+  });
+
+  it("同一数据集只保留最后一次记录", async () => {
+    const home = await mkdtemp(join(tmpdir(), "fake-data-manifest-"));
+    const record = { datasetId: "a", version: 1, checksum: "c1", appliedAt: "t1", sessionCount: 1, sessionIds: ["s1"] };
+    await writeManifest(home, record);
+    await writeManifest(home, { ...record, appliedAt: "t2", sessionIds: ["s2"] });
+    const manifest = await readManifest(home);
+    expect(manifest.applied).toHaveLength(1);
+    expect(manifest.applied[0]).toMatchObject({ appliedAt: "t2" });
+  });
+});
+
+describe("假供应商", () => {
+  it("按 system prompt 区分 Gate 与主模型请求，并支持切换脚本", async () => {
+    const provider = await startFakeProvider({ plan: () => ({ reply: "第一版" }) });
+    try {
+      const gate = await postChat(provider.baseUrl, '只输出 JSON：{"intent"', "帮我记一下");
+      expect(JSON.parse(textOf(gate)).intent).toBe("fact_with_evidence");
+      expect(textOf(await postChat(provider.baseUrl, "你是用户的个人助理。", "帮我记一下"))).toBe("第一版");
+      provider.setPlan(() => ({ reply: "第二版" }));
+      expect(textOf(await postChat(provider.baseUrl, "你是用户的个人助理。", "帮我记一下"))).toBe("第二版");
+      expect(provider.stats).toMatchObject({ gate: 1, agent: 2 });
+    } finally { await provider.close() }
+  });
+
+  it("对同一文本返回稳定向量", async () => {
+    const provider = await startFakeProvider();
+    try {
+      const first = await postEmbedding(provider.baseUrl, ["上午喝手冲咖啡"]);
+      expect(first).toEqual(await postEmbedding(provider.baseUrl, ["上午喝手冲咖啡"]));
+      expect(first).not.toEqual(await postEmbedding(provider.baseUrl, ["马拉松训练计划"]));
+      expect(first[0]).toHaveLength(1024);
+    } finally { await provider.close() }
+  });
+});
+
+describe("合并写入现有数据目录", () => {
+  it("写入数据、跳过重复运行，并原样保留用户配置", async () => {
+    const home = await mkdtemp(join(tmpdir(), "fake-data-merge-"));
+    const configPath = join(home, "config.json");
+    const envPath = join(home, ".env");
+    const originalConfig = JSON.stringify({ models: { agent: { provider: "anthropic", model: "claude-opus-5" } }, maxIterations: 42 });
+    await writeFile(configPath, originalConfig, "utf8");
+    await writeFile(envPath, "EVERYTHING_AGENT_API_KEY=sk-user-real-key\n", "utf8");
+
+    const first = await seedFakeData({ home, sessionCount: 3 });
+    expect(first.outcomes[0]).toMatchObject({ datasetId: "personal-assistant", skipped: false });
+    expect(first.sessionsCreated).toBe(3);
+    expect(first.chatLogAdded).toBeGreaterThan(0);
+    expect(first.semanticMemoryAdded).toBeGreaterThan(0);
+    expect(first.toolCallsExecuted).toBeGreaterThan(0);
+
+    // 模型配置与密钥必须与运行前完全一致，否则会破坏用户的真实设置。
+    expect(await readFile(configPath, "utf8")).toBe(originalConfig);
+    expect(await readFile(envPath, "utf8")).toBe("EVERYTHING_AGENT_API_KEY=sk-user-real-key\n");
+
+    const second = await seedFakeData({ home, sessionCount: 3 });
+    expect(second.outcomes[0]).toMatchObject({ skipped: true, reason: expect.stringContaining("已于") });
+    expect(second.sessionsCreated).toBe(0);
+
+    // 数据被清空后，清单记录失效，应允许重新写入。
+    await rm(join(home, "database"), { recursive: true, force: true });
+    const third = await seedFakeData({ home, sessionCount: 2 });
+    expect(third.outcomes[0]).toMatchObject({ skipped: false });
+    expect(third.sessionsCreated).toBe(2);
+  }, 120_000);
+
+  it("force 忽略已写入判断并在现有数据上追加", async () => {
+    const home = await mkdtemp(join(tmpdir(), "fake-data-force-"));
+    await seedFakeData({ home, sessionCount: 2 });
+    const forced = await seedFakeData({ home, sessionCount: 2, force: true });
+    expect(forced.sessionsCreated).toBe(2);
+    expect(forced.outcomes[0]).toMatchObject({ skipped: false });
+  }, 120_000);
+});
+
+async function postChat(baseUrl: string, system: string, prompt: string): Promise<Record<string, unknown>> {
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "fake", stream: false, messages: [{ role: "system", content: system }, { role: "user", content: prompt }] }),
+  });
+  return await response.json() as Record<string, unknown>;
+}
+
+function textOf(payload: Record<string, unknown>): string {
+  const choices = payload.choices as Array<{ message?: { content?: string } }>;
+  return choices[0]?.message?.content ?? "";
+}
+
+async function postEmbedding(baseUrl: string, input: string[]): Promise<number[][]> {
+  const response = await fetch(`${baseUrl}/embeddings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "fake", input }),
+  });
+  const payload = await response.json() as { data: Array<{ embedding: number[] }> };
+  return payload.data.map((item) => item.embedding);
+}

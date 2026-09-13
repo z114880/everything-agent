@@ -24,6 +24,8 @@ export interface FakeProvider {
   /** 供 EVERYTHING_*_BASE_URL 使用的本地地址。 */
   baseUrl: string;
   stats: FakeProviderStats;
+  /** 切换当前生效的回合脚本，用于在同一服务上依次写入多个数据集。 */
+  setPlan(plan: (prompt: string) => TurnScript | undefined): void;
   close(): Promise<void>;
 }
 
@@ -37,8 +39,9 @@ const CATEGORIES = ["user_attribute", "preference", "ongoing_project", "constrai
  */
 export async function startFakeProvider(options: FakeProviderOptions = {}): Promise<FakeProvider> {
   const stats: FakeProviderStats = { gate: 0, agent: 0, memoryDecision: 0, consolidation: 0, embedding: 0 };
+  const state: FakeProviderOptions = { ...options };
   const server: Server = createServer((request, response) => {
-    handle(request, response, options, stats).catch((error: unknown) => {
+    handle(request, response, state, stats).catch((error: unknown) => {
       respondJson(response, 500, { error: { message: error instanceof Error ? error.message : String(error) } });
     });
   });
@@ -47,6 +50,7 @@ export async function startFakeProvider(options: FakeProviderOptions = {}): Prom
   return {
     baseUrl: `http://127.0.0.1:${port}`,
     stats,
+    setPlan(plan) { state.plan = plan },
     close: () => new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())),
   };
 }

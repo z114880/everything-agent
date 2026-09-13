@@ -55,7 +55,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "example": "node src/engine/examples/basic.ts",
-    "seed": "node src/seed/cli.ts"
+    "fake-data": "node fake-data/cli.ts"
   },
   "engines": {
     "node": ">=24.12"

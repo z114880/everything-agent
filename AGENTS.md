@@ -76,7 +76,7 @@
 - `src/skills/`：基于 `.everything/skills/<skill-name>/SKILL.md` 的按需过程知识存取；行为测试放在 `src/skills/test/`。
 - `src/tracing/`：classic Agent Loop 与 Memory 的 JSONL 运行记录；行为测试放在 `src/tracing/test/`。
 - `src/workflows/`：与 Engine、Agent 同级的本地工作流；行为测试放在 `src/workflows/test/`。
-- `src/seed/`：用本地假模型驱动真实 Runtime 生成测试数据的开发工具，不参与产品运行；行为测试放在 `src/seed/test/`。
+- `fake-data/`：与 `src`、`web` 同级的假数据工具；`datasets/` 存放数据集 JSON，其余为写入脚本，用本地假模型驱动真实 Runtime 把数据合并进现有数据目录，不参与产品运行；行为测试放在 `fake-data/test/`。
 - `web/test/`：Web 模块的行为测试。
 - `src/index.ts`：包的统一公开接口。
 

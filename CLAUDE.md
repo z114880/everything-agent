@@ -49,7 +49,7 @@ pnpm test
 pnpm run test:coverage
 pnpm run build
 pnpm run example
-pnpm run seed -- --sessions 60
+pnpm run fake-data
 ```
 
 ## 交付前自查

@@ -1,0 +1,10 @@
+export { seedFakeData } from "./seed.ts";
+export type { SeedOptions, SeedResult, DatasetOutcome } from "./seed.ts";
+export { listDatasetIds, loadDataset } from "./dataset.ts";
+export type { Dataset, DatasetTopic, DatasetFact } from "./dataset.ts";
+export { buildSessions } from "./conversations.ts";
+export type { SeedSession, SeedTurn } from "./conversations.ts";
+export { startFakeProvider } from "./fake-provider.ts";
+export type { FakeProvider, FakeProviderOptions, FakeProviderStats, TurnScript } from "./fake-provider.ts";
+export { readManifest, writeManifest, decideApply } from "./manifest.ts";
+export type { Manifest, AppliedRecord, ApplyDecision } from "./manifest.ts";
