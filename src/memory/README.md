@@ -61,8 +61,10 @@ session_search 是只读的发现工具，有两种互斥模式：按 query 执�
 
 - limit 限制 Session 数，默认 4。
 - search 每个 Session 选择FTS 的最佳消息锚点，返回首 3 条、命中点前后各 Session Search Window 条（默认 10，由运行配置决定，Agent 不能通过参数调整）、尾 3 条；内容不够时用返回的 cursor 交给 session_read 继续往后读。
+- 返回量由窗口结构决定，没有条数预算：limit 个 Session 各自拿到完整窗口，不会被按条数裁剪。
 - recent 按 updated_at 降序返回非空 Session，返回首 6 条和尾 6 条，结果使用 retrievalMode: recent 与 match: null。
 - 窗口按可检索对话消息计数，随后展开这些消息所属的完整 run。
+- session_search 是扫描工具：单条正文超过 Recall Entry Token Limit（默认 4,000）时截断，标记 `contentTruncated`，并给出原文总长 `contentLength` 与该条的 `contentCursor`；search 与 recent 两种模式都适用。
 - 首、事件、尾区段重叠时按 chat_log.id 去重。
 - lexical-only 按最佳 BM25 升序，dense-only 按 cosine 降序，hybrid 按 RRF 后的 MMR 顺序排名；同分再按稳定规则决胜。原始信号分别保存在 `retrievalSignals.bm25/dense/fused/mmr`，不伪造统一 score。
 - Agent 调用完全排除当前 Session；Memory 页面手动检索没有当前 Session，因此搜索全部历史。
@@ -71,10 +73,13 @@ session_search 是只读的发现工具，有两种互斥模式：按 query 执�
 
 session_read 只做一件事：从某个位置开始往后连续读。传 sessionId 从 Session 开头读，传 cursor 从 cursor 记录的位置继续读。Cursor 是不透明值，记录消息位置与单条超长消息的内容偏移。
 
-cursor 有两种来源，语义相同（都是「从这里往后连续读」），只是起点不同：
+session_read 不受 Recall Entry Token Limit 约束：它是按需取全文的工具，页大小由召回总额决定，单条超过一页时按 `contentOffset` 逐页推进，最终能读到完整正文。
 
-- search 正常返回时，cursor 指向**锚点窗口的右边界**。窗口含尾 3 条，整段结果的右边界通常就是 Session 末尾，因此续读必须从锚点窗口右边界开始，才能读到锚点之后、尾部之前被跳过的那一段。
-- search 因预算被截断时，cursor 指向 Session 开头。截断结果只是命中点附近的一段，其前后都有缺口，只有从头读才能保证不跳过中间消息。
+cursor 有三种来源，语义相同（都是「从这里往后连续读」），只是起点不同：
+
+- search 正常返回时，结果的 nextCursor 指向**锚点窗口的右边界**。窗口含尾 3 条，整段结果的右边界通常就是 Session 末尾，因此续读必须从锚点窗口右边界开始，才能读到锚点之后、尾部之前被跳过的那一段。
+- 某条消息正文被单条上限截断时，该 entry 自带 `contentCursor`，指向这条消息的断点。它是读回完整单条的唯一出口，与 Session 级 nextCursor 不重叠。
+- search 因总额被收缩时，结果的 nextCursor 指向 Session 开头。收缩结果只保留命中点附近的若干 run，其前后都有缺口，只有从头读才能保证不跳过中间消息。
 
 每次调用都返回一段连续的、未读过的内容，不会空手返回，也不存在需要中途改换读取方式的死路。代价是 cursor 单向向后：锚点之前的内容只能用 sessionId 从头分页读取。
 
@@ -87,11 +92,17 @@ cursor 有两种来源，语义相同（都是「从这里往后连续读」）�
 | 配置 | 默认值 | 服务端范围 |
 | --- | ---: | ---: |
 | sessionSearchWindow | 10 | 1–20 |
-| sessionRecallMessageLimit | 100 | 1–200 |
-| sessionRecallTokenLimit | 32,768 | 256–131,072 |
+| sessionRecallEntryTokenLimit | 4,000 | 256–16,384 |
 | modelContextWindow | 131,072 | 4,096–2,000,000 |
+| 单次 session_search 总额 | modelContextWindow × 25% | 派生，不可配置 |
 
-多 Session 搜索按排名依次组装，消息数与 token 预算是整次调用的总额，不是每个 Session 的配额。装不下整段的 Session 按剩余额度截断后仍然返回，不整体丢弃，因此高排名 Session 用不完的额度会留给后续 Session；额度耗尽后才省略末尾低排名 Session。截断以命中消息为中心向两侧扩展，命中内容一定在返回结果里；被截断的 Session 用返回的 cursor 从 Session 开头分页续读。单条超长消息可通过 cursor 从截断位置继续读取。
+预算不控制返回条数，只有三层防护：
+
+1. **单条正文上限**（`sessionRecallEntryTokenLimit`）。这是唯一压得住成本的一层：个别超长记录（如大段工具结果）被截断到上限内，窗口结构与 Session 数完全不受影响，全文通过 `contentCursor` 交给 session_read 读取。
+2. **单次调用的 token 总额**，由 `modelContextWindow` 派生。只有第 1 层压完仍超额时才触发，裁剪单位是整个 Session：从最低排名开始丢弃，绝不切碎已经给出的窗口，并在结果中如实上报 `droppedSessionCount` 与 `droppedReason: "token_budget"`。排名第一的 Session 不能空手返回，按 run 粒度从尾 3、首 3 交替向命中所在 run 收缩；只剩命中 run 仍超额时在 run 内围绕命中消息收缩，保证总额是硬上界。
+3. **`modelContextWindow` 硬失败**，由 Agent Loop 在请求前判定，不静默裁剪。
+
+`estimatedTokens`、`droppedReason` 与每个 Session 的 `truncatedEntryCount` 都进入检索事件，预算去向可在 trace 中解释。
 
 ## 内容隔离与可观测性
 

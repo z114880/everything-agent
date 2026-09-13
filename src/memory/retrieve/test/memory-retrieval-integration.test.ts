@@ -119,7 +119,7 @@ describe("MemoryRuntime Dense/Hybrid 集成", () => {
 
     const result = await memory.searchSessions(
       { query: "ORBIT", limit: 4 },
-      { ...recall(), messageLimit: 1_000, tokenLimit: 1_000_000 },
+      { ...recall(), tokenLimit: 1_000_000 },
     );
     const sessionIds = result.sessions.map((item) => item.session.id);
     expect(sessionIds).toHaveLength(4);
@@ -295,7 +295,7 @@ function sessionVector(text: string): Float32Array {
 
 function recall() {
   return {
-    searchWindow: 5, messageLimit: 100, tokenLimit: 8_192,
+    searchWindow: 5, entryTokenLimit: 4_000, tokenLimit: 8_192,
     tokenEstimator: { estimateText(text: string) { return text.length } },
   };
 }

@@ -5,12 +5,19 @@ const VALID_PROVIDERS = new Set<AgentProvider>(["anthropic", "openai-compatible"
 const VALID_RETRIEVAL_MODES = new Set<RetrievalMode>(["lexical_only", "dense_only", "hybrid"]);
 export const RUNTIME_DEFAULTS = {
   sessionSearchWindow: 10,
-  sessionRecallMessageLimit: 100,
-  sessionRecallTokenLimit: 32_768,
+  sessionRecallEntryTokenLimit: 4_000,
   modelContextWindow: 131_072,
   maxTokens: 16_384,
   maxIterations: 50,
 } as const;
+
+/** 单次 Session Recall 可占用的 Context Window 比例；总额由它派生，不单独配置。 */
+export const SESSION_RECALL_TOKEN_SHARE = 0.25;
+
+/** 由 Context Window 派生单次 session_search 的 token 总额。 */
+export function sessionRecallTokenLimit(modelContextWindow: number): number {
+  return Math.floor(modelContextWindow * SESSION_RECALL_TOKEN_SHARE);
+}
 
 /** 内部配置包含完整凭证，只能经 publicSettings 投影后交给宿主。 */
 export interface ModelConnectionSettings {
@@ -35,8 +42,7 @@ export interface RuntimeSettings {
   agentModel: ModelConnectionSettings;
   smallModel: ModelConnectionSettings;
   sessionSearchWindow: number;
-  sessionRecallMessageLimit: number;
-  sessionRecallTokenLimit: number;
+  sessionRecallEntryTokenLimit: number;
   modelContextWindow: number;
   maxTokens: number;
   maxIterations: number;
@@ -70,7 +76,8 @@ export interface PublicAgentSettings {
   agentModel: PublicModelConnection;
   smallModel: PublicModelConnection;
   sessionSearchWindow: number;
-  sessionRecallMessageLimit: number;
+  sessionRecallEntryTokenLimit: number;
+  /** 由 modelContextWindow 派生的只读总额，配置页展示但不可编辑。 */
   sessionRecallTokenLimit: number;
   modelContextWindow: number;
   maxTokens: number;
@@ -91,8 +98,7 @@ export const SETTING_LIMITS = {
   maxTokens: { min: 1, max: 131_072 },
   maxIterations: { min: 1, max: 1_000 },
   sessionSearchWindow: { min: 1, max: 20 },
-  sessionRecallMessageLimit: { min: 1, max: 200 },
-  sessionRecallTokenLimit: { min: 256, max: 131_072 },
+  sessionRecallEntryTokenLimit: { min: 256, max: 16_384 },
   modelContextWindow: { min: 4_096, max: 2_000_000 },
 } as const;
 
@@ -111,8 +117,7 @@ export class AgentConfigError extends Error {
 export function parseRuntimeSettingBody(body: AgentSettingsInput) {
   return {
     sessionSearchWindow: parseSetting(body.sessionSearchWindow, "Session Search Window", RUNTIME_DEFAULTS.sessionSearchWindow, SETTING_LIMITS.sessionSearchWindow),
-    sessionRecallMessageLimit: parseSetting(body.sessionRecallMessageLimit, "Session Recall Message Limit", RUNTIME_DEFAULTS.sessionRecallMessageLimit, SETTING_LIMITS.sessionRecallMessageLimit),
-    sessionRecallTokenLimit: parseSetting(body.sessionRecallTokenLimit, "Session Recall Token Limit", RUNTIME_DEFAULTS.sessionRecallTokenLimit, SETTING_LIMITS.sessionRecallTokenLimit),
+    sessionRecallEntryTokenLimit: parseSetting(body.sessionRecallEntryTokenLimit, "Session Recall Entry Token Limit", RUNTIME_DEFAULTS.sessionRecallEntryTokenLimit, SETTING_LIMITS.sessionRecallEntryTokenLimit),
     maxTokens: parseSetting(body.maxTokens, "单次模型输出", RUNTIME_DEFAULTS.maxTokens, SETTING_LIMITS.maxTokens),
     maxIterations: parseSetting(body.maxIterations, "Agent 最大迭代", RUNTIME_DEFAULTS.maxIterations, SETTING_LIMITS.maxIterations),
     modelContextWindow: parseSetting(body.modelContextWindow, "Model Context Window", RUNTIME_DEFAULTS.modelContextWindow, SETTING_LIMITS.modelContextWindow),

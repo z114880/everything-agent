@@ -190,7 +190,7 @@ export function saveAgentSettings(body: Record<string, unknown>) {
   for (const key of ["embeddingApiKey", "embeddingBaseUrl", "embeddingModel", "embeddingQueryTemplate", "embeddingDocumentTemplate"] as const) {
     if (body[key] !== undefined) input[key] = optionalText(body[key], key, 10_000);
   }
-  for (const key of ["maxTokens", "maxIterations", "sessionSearchWindow", "sessionRecallMessageLimit", "sessionRecallTokenLimit", "modelContextWindow", "embeddingMinimumSimilarity"] as const) {
+  for (const key of ["maxTokens", "maxIterations", "sessionSearchWindow", "sessionRecallEntryTokenLimit", "modelContextWindow", "embeddingMinimumSimilarity"] as const) {
     if (body[key] !== undefined && body[key] !== "") input[key] = Number(body[key]);
   }
   if (body.retrievalMode !== undefined) {

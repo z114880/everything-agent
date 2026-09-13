@@ -15,7 +15,8 @@ export interface AgentSettings {
   agentModel: ModelConnectionSettings;
   smallModel: ModelConnectionSettings;
   sessionSearchWindow: number;
-  sessionRecallMessageLimit: number;
+  sessionRecallEntryTokenLimit: number;
+  /** 由 Model Context Window 派生的只读总额。 */
   sessionRecallTokenLimit: number;
   modelContextWindow: number;
   maxTokens: number;
@@ -234,8 +235,7 @@ export function saveAgentConfig(value: {
   agentModel: ModelConnectionSettingsInput;
   smallModel: ModelConnectionSettingsInput;
   sessionSearchWindow: number;
-  sessionRecallMessageLimit: number;
-  sessionRecallTokenLimit: number;
+  sessionRecallEntryTokenLimit: number;
   modelContextWindow: number;
   maxTokens: number;
   maxIterations: number;

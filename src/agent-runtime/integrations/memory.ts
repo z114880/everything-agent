@@ -1,14 +1,15 @@
 import { OpenAIEmbeddingClient } from "../../memory/index.ts";
 import type { MemoryRuntime, SessionRecallSettings } from "../../memory/index.ts";
 import type { AgentObserver, TokenEstimator } from "../../agent-loop/agent-loop.ts";
+import { sessionRecallTokenLimit } from "../configuration/schema.ts";
 import type { RuntimeSettings } from "../configuration/schema.ts";
 
 /** 将配置预算映射到 Memory 的召回接口，使用 Runtime 实例的 token 估算器。 */
 export function recallSettings(settings: RuntimeSettings, estimator: TokenEstimator): SessionRecallSettings {
   return {
     searchWindow: settings.sessionSearchWindow,
-    messageLimit: settings.sessionRecallMessageLimit,
-    tokenLimit: settings.sessionRecallTokenLimit,
+    entryTokenLimit: settings.sessionRecallEntryTokenLimit,
+    tokenLimit: sessionRecallTokenLimit(settings.modelContextWindow),
     tokenEstimator: estimator,
   };
 }

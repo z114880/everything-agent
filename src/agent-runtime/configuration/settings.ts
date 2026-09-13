@@ -4,7 +4,7 @@ import type { createLocalConfig } from "../local-config.ts";
 import {
   AgentConfigError, RUNTIME_DEFAULTS, SETTING_LIMITS,
   optionalText, parseProvider, parseRetrievalMode, parseRuntimeSettingBody,
-  parseSetting, parseSimilarity, requiredText, validateBaseUrl,
+  parseSetting, parseSimilarity, requiredText, sessionRecallTokenLimit, validateBaseUrl,
 } from "./schema.ts";
 import type {
   AgentSettingsInput, ModelConnectionInput, ModelConnectionSettings, ModelConnectionTarget,
@@ -38,8 +38,7 @@ export function createRuntimeSettings(config: ReturnType<typeof createLocalConfi
       EVERYTHING_SMALL_MODEL: smallModel.settings.model,
       EVERYTHING_SMALL_BASE_URL: smallModel.settings.baseUrl,
       EVERYTHING_SESSION_SEARCH_WINDOW: String(runtime.sessionSearchWindow),
-      EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT: String(runtime.sessionRecallMessageLimit),
-      EVERYTHING_SESSION_RECALL_TOKEN_LIMIT: String(runtime.sessionRecallTokenLimit),
+      EVERYTHING_SESSION_RECALL_ENTRY_TOKEN_LIMIT: String(runtime.sessionRecallEntryTokenLimit),
       EVERYTHING_AGENT_MAX_TOKENS: String(runtime.maxTokens),
       EVERYTHING_AGENT_MAX_ITERATIONS: String(runtime.maxIterations),
       EVERYTHING_MODEL_CONTEXT_WINDOW: String(runtime.modelContextWindow),
@@ -81,8 +80,7 @@ export function createRuntimeSettings(config: ReturnType<typeof createLocalConfi
   async function resetRuntimeSettings(): Promise<RuntimeSettings> {
     await updateConfigFile({
       EVERYTHING_SESSION_SEARCH_WINDOW: String(RUNTIME_DEFAULTS.sessionSearchWindow),
-      EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT: String(RUNTIME_DEFAULTS.sessionRecallMessageLimit),
-      EVERYTHING_SESSION_RECALL_TOKEN_LIMIT: String(RUNTIME_DEFAULTS.sessionRecallTokenLimit),
+      EVERYTHING_SESSION_RECALL_ENTRY_TOKEN_LIMIT: String(RUNTIME_DEFAULTS.sessionRecallEntryTokenLimit),
       EVERYTHING_AGENT_MAX_TOKENS: String(RUNTIME_DEFAULTS.maxTokens),
       EVERYTHING_AGENT_MAX_ITERATIONS: String(RUNTIME_DEFAULTS.maxIterations),
       EVERYTHING_MODEL_CONTEXT_WINDOW: String(RUNTIME_DEFAULTS.modelContextWindow),
@@ -96,8 +94,7 @@ export function createRuntimeSettings(config: ReturnType<typeof createLocalConfi
       agentModel: loadModelConnection(values, "AGENT"),
       smallModel: loadModelConnection(values, "SMALL"),
       sessionSearchWindow: parseSetting(values.EVERYTHING_SESSION_SEARCH_WINDOW, "Session Search Window", RUNTIME_DEFAULTS.sessionSearchWindow, SETTING_LIMITS.sessionSearchWindow),
-      sessionRecallMessageLimit: parseSetting(values.EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT, "Session Recall Message Limit", RUNTIME_DEFAULTS.sessionRecallMessageLimit, SETTING_LIMITS.sessionRecallMessageLimit),
-      sessionRecallTokenLimit: parseSetting(values.EVERYTHING_SESSION_RECALL_TOKEN_LIMIT, "Session Recall Token Limit", RUNTIME_DEFAULTS.sessionRecallTokenLimit, SETTING_LIMITS.sessionRecallTokenLimit),
+      sessionRecallEntryTokenLimit: parseSetting(values.EVERYTHING_SESSION_RECALL_ENTRY_TOKEN_LIMIT, "Session Recall Entry Token Limit", RUNTIME_DEFAULTS.sessionRecallEntryTokenLimit, SETTING_LIMITS.sessionRecallEntryTokenLimit),
       maxTokens: parseSetting(values.EVERYTHING_AGENT_MAX_TOKENS, "单次模型输出", RUNTIME_DEFAULTS.maxTokens, SETTING_LIMITS.maxTokens),
       maxIterations: parseSetting(values.EVERYTHING_AGENT_MAX_ITERATIONS, "Agent 最大迭代", RUNTIME_DEFAULTS.maxIterations, SETTING_LIMITS.maxIterations),
       modelContextWindow: parseSetting(values.EVERYTHING_MODEL_CONTEXT_WINDOW, "Model Context Window", RUNTIME_DEFAULTS.modelContextWindow, SETTING_LIMITS.modelContextWindow),
@@ -126,8 +123,8 @@ export function publicSettings(settings: RuntimeSettings, memory: MemoryRuntime)
     agentModel: publicModelConnection(settings.agentModel),
     smallModel: publicModelConnection(settings.smallModel),
     sessionSearchWindow: settings.sessionSearchWindow,
-    sessionRecallMessageLimit: settings.sessionRecallMessageLimit,
-    sessionRecallTokenLimit: settings.sessionRecallTokenLimit,
+    sessionRecallEntryTokenLimit: settings.sessionRecallEntryTokenLimit,
+    sessionRecallTokenLimit: sessionRecallTokenLimit(settings.modelContextWindow),
     maxTokens: settings.maxTokens,
     maxIterations: settings.maxIterations,
     modelContextWindow: settings.modelContextWindow,

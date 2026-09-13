@@ -12,8 +12,7 @@ const CONFIG_PATHS = {
   EVERYTHING_SMALL_MODEL: ["models", "small", "model"],
   EVERYTHING_SMALL_BASE_URL: ["models", "small", "baseUrl"],
   EVERYTHING_SESSION_SEARCH_WINDOW: ["sessionRecall", "searchWindow"],
-  EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT: ["sessionRecall", "messageLimit"],
-  EVERYTHING_SESSION_RECALL_TOKEN_LIMIT: ["sessionRecall", "tokenLimit"],
+  EVERYTHING_SESSION_RECALL_ENTRY_TOKEN_LIMIT: ["sessionRecall", "entryTokenLimit"],
   EVERYTHING_AGENT_MAX_TOKENS: ["maxTokens"],
   EVERYTHING_AGENT_MAX_ITERATIONS: ["maxIterations"],
   EVERYTHING_MODEL_CONTEXT_WINDOW: ["modelContextWindow"],
@@ -36,8 +35,7 @@ const SECRET_KEYS = [
 const CONFIG_KEYS = [...Object.keys(CONFIG_PATHS), ...SECRET_KEYS];
 const NUMBER_CONFIG_KEYS = new Set([
   "EVERYTHING_SESSION_SEARCH_WINDOW",
-  "EVERYTHING_SESSION_RECALL_MESSAGE_LIMIT",
-  "EVERYTHING_SESSION_RECALL_TOKEN_LIMIT",
+  "EVERYTHING_SESSION_RECALL_ENTRY_TOKEN_LIMIT",
   "EVERYTHING_AGENT_MAX_TOKENS",
   "EVERYTHING_AGENT_MAX_ITERATIONS",
   "EVERYTHING_MODEL_CONTEXT_WINDOW",
@@ -56,8 +54,7 @@ const DEFAULT_CONFIG: JsonObject = {
   models: { agent: {}, small: {} },
   sessionRecall: {
     searchWindow: RUNTIME_DEFAULTS.sessionSearchWindow,
-    messageLimit: RUNTIME_DEFAULTS.sessionRecallMessageLimit,
-    tokenLimit: RUNTIME_DEFAULTS.sessionRecallTokenLimit,
+    entryTokenLimit: RUNTIME_DEFAULTS.sessionRecallEntryTokenLimit,
   },
   maxTokens: RUNTIME_DEFAULTS.maxTokens,
   maxIterations: RUNTIME_DEFAULTS.maxIterations,

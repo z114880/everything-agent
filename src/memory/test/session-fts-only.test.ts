@@ -15,7 +15,7 @@ it("Session 归档、重建和 dense_only 下历史搜索均不调用 embedding"
     await memory.completeRun(session.id, "r1", [{ role: "assistant", content: "好的" }]);
     await memory.rebuildEmbeddings();
     memory.configureRetrieval({ mode: "dense_only", embedding });
-    const result = await memory.searchSessions({ query: "红茶" }, { searchWindow: 5, messageLimit: 100, tokenLimit: 50000, tokenEstimator: { estimateText: (text) => text.length } });
+    const result = await memory.searchSessions({ query: "红茶" }, { searchWindow: 5, entryTokenLimit: 4_000, tokenLimit: 50000, tokenEstimator: { estimateText: (text) => text.length } });
     expect(result.sessions.map((item) => item.session.id)).toEqual([session.id]);
     expect(calls).toBe(0);
   } finally { memory.close(); }

@@ -264,9 +264,10 @@ describe("个人助理 Runtime", () => {
 describe("Runtime 配置与维护", () => {
   it("输出与迭代预算持久化并控制实际请求和运行日志", async () => {
     const runtime = await setup();
+    // Recall 总额不是独立旋钮：它固定是 Model Context Window 的 25%，随之变化。
     expect(await runtime.getSettings()).toMatchObject({ maxTokens: 16_384, maxIterations: 50, modelContextWindow: 131_072, sessionRecallTokenLimit: 32_768 });
-    await runtime.saveAgentSettings({ ...modelSettings(), maxTokens: 8_192, maxIterations: 12, modelContextWindow: 65_536, sessionRecallTokenLimit: 16_384 });
-    expect(await runtime.getSettings()).toMatchObject({ maxTokens: 8_192, maxIterations: 12 });
+    await runtime.saveAgentSettings({ ...modelSettings(), maxTokens: 8_192, maxIterations: 12, modelContextWindow: 65_536 });
+    expect(await runtime.getSettings()).toMatchObject({ maxTokens: 8_192, maxIterations: 12, sessionRecallTokenLimit: 16_384 });
     const config = JSON.parse(await readFile(join(homes.at(-1)!, ".everything", "config.json"), "utf8"));
     expect(config).toMatchObject({ maxTokens: 8_192, maxIterations: 12 });
     let calls = 0;
@@ -292,8 +293,8 @@ describe("Runtime 配置与维护", () => {
       agentModel: { provider: "openai-compatible", model: "main", apiKey: "agent-secret", baseUrl: "https://agent.example/v1" },
       smallModel: { provider: "anthropic", model: "small", apiKey: "small-secret", baseUrl: "https://small.example" },
       force: true,
-      sessionSearchWindow: 3, sessionRecallMessageLimit: 20,
-      sessionRecallTokenLimit: 1024, modelContextWindow: 8192,
+      sessionSearchWindow: 3, sessionRecallEntryTokenLimit: 512,
+      modelContextWindow: 8192,
       retrievalMode: "lexical_only", embeddingBaseUrl: "https://example.com/v1",
       embeddingApiKey: "embedding-key", embeddingModel: "embedding",
       embeddingQueryTemplate: "问题：{text}", embeddingDocumentTemplate: "文档：{text}",
@@ -303,6 +304,7 @@ describe("Runtime 配置与维护", () => {
       agentModel: { provider: "openai-compatible", model: "main", keyLast4: "cret" },
       smallModel: { provider: "anthropic", model: "small", keyLast4: "cret" },
       embeddingKeyConfigured: true, sessionSearchWindow: 3,
+      sessionRecallEntryTokenLimit: 512, sessionRecallTokenLimit: 2_048,
     });
     expect(JSON.stringify(settings)).not.toContain("agent-secret");
     expect(JSON.stringify(settings)).not.toContain("small-secret");
@@ -376,8 +378,7 @@ describe("Runtime 配置与维护", () => {
 
   it.each([
     [{ sessionSearchWindow: 0 }, "Session Search Window"],
-    [{ sessionRecallMessageLimit: 0 }, "Session Recall Message Limit"],
-    [{ sessionRecallTokenLimit: 1 }, "Session Recall Token Limit"],
+    [{ sessionRecallEntryTokenLimit: 1 }, "Session Recall Entry Token Limit"],
     [{ modelContextWindow: 1 }, "Model Context Window"],
     [{ maxTokens: 0 }, "单次模型输出"],
     [{ maxTokens: 131_073 }, "单次模型输出"],

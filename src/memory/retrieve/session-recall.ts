@@ -37,30 +37,28 @@ export class SessionRecall {
       ? (await this.search.sessionSearchCandidates(query, input.currentSessionId, providedQueryVector, runId, observer)).slice(0, requestedLimit)
       : this.search.recentCandidates(input.currentSessionId, requestedLimit);
     const sessions: SessionRecallResult[] = [];
-    let usedMessages = 0; let usedTokens = 0; let anyTruncated = false;
+    let usedTokens = 0; let exceededBudget = false;
     for (let index = 0; index < candidates.length; index += 1) {
-      const remainingMessages = settings.messageLimit - usedMessages;
-      const remainingTokens = settings.tokenLimit - usedTokens;
-      if (remainingMessages <= 0 || remainingTokens <= 0) break;
       const candidate = candidates[index]!;
-      let result = this.buildRecallResult(candidate, index + 1, query ? radius : 0, query ? "search" : "recent");
+      let result = this.buildRecallResult(candidate, index + 1, query ? radius : 0, query ? "search" : "recent", settings);
       let size = settings.tokenEstimator.estimateText(JSON.stringify(result.entries));
-      // 预算是整次调用的总额：装不下整段就按剩余额度截断，不整体丢弃，
-      // 否则高排名 Session 用不完的额度会白白浪费。
-      if (result.entries.length > remainingMessages || size > remainingTokens) {
-        result = this.truncateRecallResult(result, { ...settings, messageLimit: remainingMessages, tokenLimit: remainingTokens });
-        if (!result.entries.length) break;
+      if (usedTokens + size > settings.tokenLimit) {
+        // 总额不足时整个 Session 一起丢弃，绝不切碎已经给出的窗口；
+        // 只有排名第一的 Session 不能空手返回，按 run 粒度收缩到装得下为止。
+        if (sessions.length) { exceededBudget = true; break }
+        result = this.shrinkToBudget(result, settings);
         size = settings.tokenEstimator.estimateText(JSON.stringify(result.entries));
-        anyTruncated = true;
       }
       sessions.push(result);
-      usedMessages += result.entries.length; usedTokens += size;
+      usedTokens += size;
     }
     const droppedSessionCount = candidates.length - sessions.length;
     return {
       retrievalMode: query ? "search" : "recent", ...(query ? { query } : {}), requestedLimit,
       returnedSessionCount: sessions.length, droppedSessionCount,
-      truncated: anyTruncated || droppedSessionCount > 0, sessions,
+      droppedReason: exceededBudget ? "token_budget" : null,
+      estimatedTokens: usedTokens,
+      truncated: sessions.some((item) => item.truncated) || droppedSessionCount > 0, sessions,
     };
   }
 
@@ -79,7 +77,7 @@ export class SessionRecall {
     return this.readSequential(cursor, settings);
   }
 
-  private buildRecallResult(candidate: SearchCandidate, rank: number, radius: number, mode: "search" | "recent"): SessionRecallResult {
+  private buildRecallResult(candidate: SearchCandidate, rank: number, radius: number, mode: "search" | "recent", settings: SessionRecallSettings): SessionRecallResult {
     const session = this.sessions.requireSession(candidate.sessionId);
     // 失败 run 仍保存在 Chat Log，但 Session Recall 的发现与读取都完全忽略它。
     const rows = this.sessions.completedRunRows(candidate.sessionId);
@@ -96,8 +94,8 @@ export class SessionRecall {
     }
     const selectedRuns = new Set(rows.filter((row) => chosen.has(Number(row.id))).map((row) => String(row.run_id)));
     const selectedRows = rows.filter((row) => selectedRuns.has(String(row.run_id)));
-    const entries = this.sessions.decorateEntries(selectedRows);
-    const isComplete = entries.length === rows.length;
+    const entries = capEntries(this.sessions.decorateEntries(selectedRows), selectedRows, settings);
+    const isComplete = entries.length === rows.length && !entries.some((entry) => entry.contentTruncated);
     // 窗口含尾 3 条，整段 entries 的右边界通常就是 Session 末尾；续读必须从锚点窗口的
     // 右边界开始，才能读到锚点之后、尾部之前被跳过的那一段。
     const resumeAfterId = isComplete || anchorIndex < 0 ? 0 : runEndRowId(rows, indexed[Math.min(anchorIndex + radius, indexed.length - 1)]!);
@@ -117,17 +115,38 @@ export class SessionRecall {
         ...(candidate.dense === undefined ? {} : { dense: candidate.dense }),
       },
       entries, totalMessageCount: rows.length, returnedMessageCount: entries.length, indexedMessageCount: indexed.length,
-      returnedRanges: rangesFor(entries, rows), isComplete, truncated: false, nextCursor,
+      returnedRanges: rangesFor(entries, rows), isComplete,
+      truncated: entries.some((entry) => entry.contentTruncated), nextCursor,
     };
   }
 
-  private truncateRecallResult(result: SessionRecallResult, settings: SessionRecallSettings): SessionRecallResult {
+  /**
+   * 排名第一的 Session 自己就超总额时的兜底：按 run 分组，先丢尾部 run、再丢首部 run，
+   * 交替向命中所在 run 收缩；只剩命中 run 仍超额时，在 run 内围绕命中消息收缩，
+   * 保证 tokenLimit 始终是硬上界。
+   */
+  private shrinkToBudget(result: SessionRecallResult, settings: SessionRecallSettings): SessionRecallResult {
+    const groups: ChatLogEntry[][] = [];
+    for (const entry of result.entries) {
+      const last = groups[groups.length - 1];
+      if (last && last[0]!.runId === entry.runId) last.push(entry); else groups.push([entry]);
+    }
+    const anchor = Math.max(0, groups.findIndex((group) => group.some((entry) => entry.id === result.match?.messageId)));
+    const size = (items: ChatLogEntry[]): number => settings.tokenEstimator.estimateText(JSON.stringify(items));
+    let low = 0; let high = groups.length - 1; let dropTail = true;
+    while (size(groups.slice(low, high + 1).flat()) > settings.tokenLimit && (low < anchor || high > anchor)) {
+      if (dropTail ? high > anchor : low >= anchor) high -= 1; else low += 1;
+      dropTail = !dropTail;
+    }
+    const kept = groups.slice(low, high + 1).flat();
+    const entries = size(kept) > settings.tokenLimit
+      ? fitEntriesAroundAnchor(kept, result.match?.messageId, settings)
+      : kept;
     const allRows = this.sessions.completedRunRows(result.session.id);
-    const entries = fitEntriesAroundAnchor(result.entries, result.match?.messageId, settings);
     return {
       ...result, entries, returnedMessageCount: entries.length, returnedRanges: rangesFor(entries, allRows),
       isComplete: false, truncated: true,
-      // 截断结果只保留命中点附近的一段，其前后都有缺口；从头分页才能保证不跳过中间消息。
+      // 收缩结果只保留命中点附近的若干 run，其前后都有缺口；从头分页才能保证不跳过中间消息。
       nextCursor: encodeCursor({ version: 1, sessionId: result.session.id, afterId: 0, contentOffset: 0 }),
     };
   }
@@ -137,7 +156,7 @@ export class SessionRecall {
     const allRows = this.sessions.completedRunRows(cursor.sessionId);
     const startIndex = cursor.afterId === 0 ? 0 : Math.max(0, allRows.findIndex((row) => Number(row.id) === cursor.afterId));
     const selected: ChatLogEntry[] = []; let next: Cursor | null = null;
-    for (let index = startIndex; index < allRows.length && selected.length < settings.messageLimit; index += 1) {
+    for (let index = startIndex; index < allRows.length; index += 1) {
       const row = allRows[index]!;
       if (cursor.afterId !== 0 && Number(row.id) === cursor.afterId && cursor.contentOffset === 0) continue;
       const raw = String(row.content_json); const offset = Number(row.id) === cursor.afterId ? cursor.contentOffset : 0;
@@ -149,9 +168,10 @@ export class SessionRecall {
         if (fragment) {
           selected.push(fragment.entry);
           next = { version: 1, sessionId: cursor.sessionId, afterId: Number(row.id), contentOffset: fragment.nextOffset };
-        } else {
+        } else if (!selected.length) {
           throw new Error("Session Recall Token Limit 过小，无法容纳单条记录元数据");
         }
+        // 本页已装了内容却挤不下这一条时就此收尾；next 仍指向上一条，下一页从这条重新开始。
         break;
       }
       selected.push(entry);
@@ -170,6 +190,37 @@ export class SessionRecall {
   }
 }
 
+/**
+ * session_search 是扫描而不是取全文：单条正文超过 entryTokenLimit 就截断，并附带原文
+ * 总长与 contentCursor。Agent 拿 contentCursor 调 session_read 即可从断点续读到完整正文，
+ * session_read 本身不受 entryTokenLimit 约束。
+ */
+function capEntries(entries: ChatLogEntry[], rows: Row[], settings: SessionRecallSettings): ChatLogEntry[] {
+  const raws = new Map(rows.map((row) => [Number(row.id), String(row.content_json)]));
+  return entries.map((entry) => {
+    const raw = raws.get(entry.id) ?? "";
+    const kept = cappedContentLength(raw, settings);
+    if (kept >= raw.length) return entry;
+    return {
+      ...entry, content: raw.slice(0, kept), contentTruncated: true, contentFragment: true,
+      contentOffset: 0, contentLength: raw.length,
+      contentCursor: encodeCursor({ version: 1, sessionId: entry.sessionId, afterId: entry.id, contentOffset: kept }),
+    };
+  });
+}
+
+/** 二分出不超过单条上限的最长正文前缀；整条本来就在上限内时返回原长度。 */
+function cappedContentLength(raw: string, settings: SessionRecallSettings): number {
+  if (settings.tokenEstimator.estimateText(raw) <= settings.entryTokenLimit) return raw.length;
+  let low = 0; let high = raw.length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (settings.tokenEstimator.estimateText(raw.slice(0, middle)) <= settings.entryTokenLimit) low = middle;
+    else high = middle - 1;
+  }
+  return low;
+}
+
 /** Cursor 只有一种语义：从 afterId / contentOffset 记录的位置往后连续读。 */
 interface Cursor { version: 1; sessionId: string; afterId: number; contentOffset: number }
 
@@ -183,16 +234,14 @@ function runEndRowId(rows: Row[], anchor: Row): number {
 }
 
 /**
- * 预算不足时保留命中点周围的连续片段：先放下锚点所在的那条消息，再在消息数与
- * token 额度内交替向后、向前扩展。截断绝不能丢掉命中内容，否则搜索结果只剩
- * Session 开头的无关语境。recent 模式没有锚点，从首条开始保留。
+ * 收缩到只剩命中所在 run 仍超额时使用：先放下锚点那条消息，再在 token 额度内
+ * 交替向后、向前扩展。截断绝不能丢掉命中内容，否则搜索结果只剩无关语境。
  */
 function fitEntriesAroundAnchor(entries: ChatLogEntry[], anchorId: number | undefined, settings: SessionRecallSettings): ChatLogEntry[] {
-  if (!entries.length || settings.messageLimit <= 0) return [];
+  if (!entries.length) return [];
   const anchorIndex = Math.max(0, anchorId === undefined ? 0 : entries.findIndex((entry) => entry.id === anchorId));
   const fits = (from: number, to: number): boolean =>
-    to - from + 1 <= settings.messageLimit
-    && settings.tokenEstimator.estimateText(JSON.stringify(entries.slice(from, to + 1))) <= settings.tokenLimit;
+    settings.tokenEstimator.estimateText(JSON.stringify(entries.slice(from, to + 1))) <= settings.tokenLimit;
   if (!fits(anchorIndex, anchorIndex)) return [];
   let low = anchorIndex; let high = anchorIndex;
   for (let grew = true; grew;) {

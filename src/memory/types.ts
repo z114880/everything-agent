@@ -14,7 +14,9 @@ export type RetrievalIntent =
 
 export interface SessionRecallSettings {
   searchWindow: number;
-  messageLimit: number;
+  /** session_search 的单条正文上限；session_read 取全文时不受它约束。 */
+  entryTokenLimit: number;
+  /** 单次 session_search 的总 token 上限，由 modelContextWindow 派生。 */
   tokenLimit: number;
   tokenEstimator: Pick<TokenEstimator, "estimateText">;
 }
@@ -45,6 +47,8 @@ export interface SessionSummary {
 export interface ChatLogEntry {
   id: number; sessionId: string; runId: string; role: string; kind: string; content: unknown; createdAt: string;
   runComplete?: boolean; contentTruncated?: boolean; contentFragment?: boolean; contentOffset?: number;
+  /** 正文被截断时给出原文总长与「继续读这一条」的 cursor。 */
+  contentLength?: number; contentCursor?: string;
 }
 export interface SemanticMemory {
   id: number; subject: string; content: string; source: string; createdAt: string; updatedAt: string; score?: number; sources?: MemorySource[];
@@ -58,7 +62,12 @@ export interface SessionRecallResult {
 }
 export interface SessionSearchResult {
   retrievalMode: "search" | "recent"; query?: string; requestedLimit: number; returnedSessionCount: number;
-  droppedSessionCount: number; truncated: boolean; sessions: SessionRecallResult[];
+  droppedSessionCount: number;
+  /** 丢弃 Session 的原因；候选本来就不足时为 null。 */
+  droppedReason: "token_budget" | null;
+  /** 返回内容的估算 token 量，供 trace 解释预算去向。 */
+  estimatedTokens: number;
+  truncated: boolean; sessions: SessionRecallResult[];
 }
 export interface SessionReadResult {
   session: SessionSummary; entries: ChatLogEntry[]; totalMessageCount: number;

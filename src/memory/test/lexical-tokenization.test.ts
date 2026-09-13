@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { MemoryRuntime, toMatchQuery, toSearchText, type SessionRecallSettings } from "../index.ts";
 
 const resources: { memory: MemoryRuntime; home: string }[] = [];
-const recall: SessionRecallSettings = { searchWindow: 5, messageLimit: 100, tokenLimit: 50_000, tokenEstimator: { estimateText: (text) => text.length } };
+const recall: SessionRecallSettings = { searchWindow: 5, entryTokenLimit: 4_000, tokenLimit: 50_000, tokenEstimator: { estimateText: (text) => text.length } };
 afterEach(async () => {
   for (const { memory, home } of resources.splice(0)) { memory.close(); await rm(home, { recursive: true, force: true }); }
 });

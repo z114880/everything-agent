@@ -7,7 +7,7 @@ import { MemoryRuntime, toSearchText, type SessionReadResult, type SessionRecall
 
 const runtimes: MemoryRuntime[] = [];
 const tokenEstimator = { estimateText(text: string) { return text.length } };
-const recall: SessionRecallSettings = { searchWindow: 5, messageLimit: 100, tokenLimit: 50_000, tokenEstimator };
+const recall: SessionRecallSettings = { searchWindow: 5, entryTokenLimit: 4_000, tokenLimit: 50_000, tokenEstimator };
 afterEach(() => { for (const runtime of runtimes.splice(0)) runtime.close() });
 
 describe("Memory Runtime", () => {
@@ -102,34 +102,91 @@ describe("Memory Runtime", () => {
     expect(next.totalMessageCount).toBeGreaterThan(next.returnedMessageCount);
   });
 
-  it("消息预算不足时保留命中窗口，而不是 Session 开头", async () => {
-    const memory = await createMemory(); const session = memory.createSession();
-    for (let index = 0; index < 20; index += 1) await addCompletedRun(memory, session.id, "r" + index, "问题" + index, index === 10 ? "关键决定 ALPHA" : "回答" + index);
-    const found = await memory.searchSessions({ query: "ALPHA" }, { ...recall, messageLimit: 5 });
-    const hit = found.sessions[0]!;
-    expect(hit.entries).toHaveLength(5);
-    expect(hit.entries.map((entry) => entry.id)).toContain(hit.match!.messageId);
-    expect(hit.truncated).toBe(true);
+  it("窗口结构决定返回量，token 充足时每个 Session 都拿到完整窗口", async () => {
+    const memory = await createMemory();
+    for (let session = 0; session < 4; session += 1) {
+      const created = memory.createSession("会话" + session);
+      for (let index = 0; index < 12; index += 1) {
+        await addCompletedRun(memory, created.id, `s${session}r${index}`, "问题" + index, index === 6 ? "关键决定 ALPHA" : "回答" + index);
+      }
+    }
+    const found = await memory.searchSessions({ query: "ALPHA", limit: 4 }, { ...recall, searchWindow: 2 });
+    expect(found).toMatchObject({ returnedSessionCount: 4, droppedSessionCount: 0, droppedReason: null, truncated: false });
+    for (const item of found.sessions) {
+      // 首 3 + 命中前后各 2 + 尾 3，按 run 展开后每条都完整，没有被预算切过。
+      expect(item.entries.map((entry) => entry.id)).toContain(item.match!.messageId);
+      expect(item.truncated).toBe(false);
+      expect(item.entries.some((entry) => entry.contentTruncated)).toBe(false);
+    }
+    expect(found.estimatedTokens).toBeGreaterThan(0);
   });
 
-  it("高排名 Session 用不完的消息预算留给后续 Session", async () => {
+  it("session_search 截断超长单条，contentCursor 经 session_read 能读回完整正文", async () => {
+    const memory = await createMemory(); const session = memory.createSession();
+    const long = "超长记录".repeat(2_000);
+    await addCompletedRun(memory, session.id, "r1", "ALPHA 的完整日志", long);
+    const settings = { ...recall, entryTokenLimit: 200 };
+    const found = await memory.searchSessions({ query: "ALPHA" }, settings);
+    const entry = found.sessions[0]!.entries.find((item) => item.contentTruncated)!;
+    expect(entry.contentLength).toBeGreaterThan(entry.contentOffset!);
+    expect(entry.contentCursor).toEqual(expect.any(String));
+    expect(found.sessions[0]?.isComplete).toBe(false);
+
+    // session_read 不受单条上限约束：从 contentCursor 续读即可拼回与原文一致的完整正文。
+    let text = String(entry.content);
+    let cursor: string | null = entry.contentCursor!;
+    for (let page = 0; cursor && page < 20; page += 1) {
+      const result: SessionReadResult = await memory.readSession({ cursor }, settings);
+      const first = result.entries[0]!;
+      if (first.id !== entry.id) break;
+      text += String(first.content);
+      cursor = result.nextCursor;
+    }
+    expect(JSON.parse(text)).toEqual([{ type: "text", text: long }]);
+  });
+
+  it("总额不足时整个 Session 一起丢弃，不切碎已经给出的窗口", async () => {
     const memory = await createMemory();
-    const short = memory.createSession("短"); const long = memory.createSession("长");
-    await addCompletedRun(memory, short.id, "s1", "ALPHA ALPHA ALPHA", "ALPHA ALPHA 是发布代号");
-    for (let index = 0; index < 10; index += 1) await addCompletedRun(memory, long.id, "l" + index, "问题" + index, index === 5 ? "ALPHA 的排期" : "回答" + index);
-    const found = await memory.searchSessions({ query: "ALPHA", limit: 2 }, { ...recall, messageLimit: 5 });
-    // 排名第一的短 Session 只用掉 2 条额度，剩余 3 条必须留给排名第二的长 Session。
-    expect(found.sessions[0]?.session.id).toBe(short.id);
-    expect(found.returnedSessionCount).toBe(2);
-    expect(found.sessions.reduce((sum, item) => sum + item.entries.length, 0)).toBe(5);
-    // 被截断的低排名 Session 仍必须带着自己的命中内容返回。
-    for (const item of found.sessions) expect(item.entries.map((entry) => entry.id)).toContain(item.match!.messageId);
+    for (let session = 0; session < 3; session += 1) {
+      const created = memory.createSession("会话" + session);
+      await addCompletedRun(memory, created.id, "r" + session, "ALPHA 的排期", "回答".repeat(200));
+    }
+    const found = await memory.searchSessions({ query: "ALPHA", limit: 3 }, { ...recall, tokenLimit: 1_200 });
+    expect(found.returnedSessionCount).toBeLessThan(3);
+    expect(found).toMatchObject({ droppedReason: "token_budget", truncated: true });
+    expect(found.estimatedTokens).toBeLessThanOrEqual(1_200);
+    // 返回的 Session 都是完整窗口，被丢的那些一条都不给。
+    for (const item of found.sessions) expect(item.truncated).toBe(false);
+  });
+
+  it("排名第一的 Session 超额时按 run 收缩兜底，始终带着命中返回", async () => {
+    const memory = await createMemory(); const session = memory.createSession();
+    for (let index = 0; index < 12; index += 1) {
+      await addCompletedRun(memory, session.id, "r" + index, "问题" + index, index === 6 ? "关键决定 ALPHA" : "回答".repeat(100));
+    }
+    const found = await memory.searchSessions({ query: "ALPHA" }, { ...recall, tokenLimit: 800 });
+    const hit = found.sessions[0]!;
+    expect(hit.entries.length).toBeGreaterThan(0);
+    expect(hit.entries.map((entry) => entry.id)).toContain(hit.match!.messageId);
+    expect(hit.truncated).toBe(true);
+    expect(found.estimatedTokens).toBeLessThanOrEqual(800);
+    // 收缩结果前后都有缺口，续读必须从 Session 开头开始。
+    expect(hit.nextCursor).toEqual(expect.any(String));
+  });
+
+  it("recent 模式同样应用单条正文上限", async () => {
+    const memory = await createMemory(); const session = memory.createSession("最近");
+    await addCompletedRun(memory, session.id, "r1", "问题", "超长记录".repeat(2_000));
+    const found = await memory.searchSessions({ recent: true }, { ...recall, entryTokenLimit: 200 });
+    const entry = found.sessions[0]!.entries.find((item) => item.contentTruncated)!;
+    expect(entry.contentCursor).toEqual(expect.any(String));
+    expect(entry.contentLength).toEqual(expect.any(Number));
   });
 
   it("续读始终有产出，逐页推进直到 nextCursor 为空", async () => {
     const memory = await createMemory(); const session = memory.createSession();
     for (let index = 0; index < 20; index += 1) await addCompletedRun(memory, session.id, "r" + index, "问题" + index, index === 10 ? "关键决定 ALPHA" : "回答" + index);
-    const tightBudget = { ...recall, searchWindow: 1, messageLimit: 3 };
+    const tightBudget = { ...recall, searchWindow: 1, tokenLimit: 800 };
     const found = await memory.searchSessions({ query: "ALPHA" }, tightBudget);
     let cursor = found.sessions[0]!.nextCursor;
     const seen = new Set<number>();
@@ -291,13 +348,13 @@ describe("Memory Runtime", () => {
     expect(none).toMatchObject({ retrieved: false, semantic: [], sessionRecall: null, context: "" });
   });
 
-  it("搜索预算不足时省略低排名 Session，顺序读取可到达结尾", async () => {
+  it("token 预算不足时省略低排名 Session，顺序读取可到达结尾", async () => {
     const memory = await createMemory();
     const first = memory.createSession(); const second = memory.createSession();
     await addCompletedRun(memory, first.id, "r1", "共同关键词", "第一结果");
     await addCompletedRun(memory, second.id, "r2", "共同关键词", "第二结果");
-    const limited = await memory.searchSessions({ query: "共同关键词", limit: 2 }, { ...recall, messageLimit: 2 });
-    expect(limited).toMatchObject({ returnedSessionCount: 1, droppedSessionCount: 1, truncated: true });
+    const limited = await memory.searchSessions({ query: "共同关键词", limit: 2 }, { ...recall, tokenLimit: 260 });
+    expect(limited).toMatchObject({ returnedSessionCount: 1, droppedSessionCount: 1, droppedReason: "token_budget", truncated: true });
     let page = await memory.readSession({ sessionId: first.id }, recall);
     while (page.nextCursor) page = await memory.readSession({ cursor: page.nextCursor }, recall);
     expect(page.isComplete).toBe(true);

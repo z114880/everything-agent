@@ -79,11 +79,9 @@ export function ConfigPage() {
   const [smallBaseUrl, setSmallBaseUrl] = useState("");
   const [smallApiKey, setSmallApiKey] = useState("");
   const [sessionSearchWindow, setSessionSearchWindow] =
-    useState<NumericInputValue>(5);
-  const [sessionRecallMessageLimit, setSessionRecallMessageLimit] =
-    useState<NumericInputValue>(100);
-  const [sessionRecallTokenLimit, setSessionRecallTokenLimit] =
-    useState<NumericInputValue>(32_768);
+    useState<NumericInputValue>(10);
+  const [sessionRecallEntryTokenLimit, setSessionRecallEntryTokenLimit] =
+    useState<NumericInputValue>(4_000);
   const [maxTokens, setMaxTokens] = useState<NumericInputValue>(16_384);
   const [maxIterations, setMaxIterations] = useState<NumericInputValue>(50);
   const [modelContextWindow, setModelContextWindow] =
@@ -165,20 +163,13 @@ export function ConfigPage() {
                   "Session Search Window",
                 )
               : settings.sessionSearchWindow,
-          sessionRecallMessageLimit:
+          sessionRecallEntryTokenLimit:
             section === "runtime"
               ? requiredNumericValue(
-                  sessionRecallMessageLimit,
-                  "Recall Message Limit",
+                  sessionRecallEntryTokenLimit,
+                  "Recall Entry Token Limit",
                 )
-              : settings.sessionRecallMessageLimit,
-          sessionRecallTokenLimit:
-            section === "runtime"
-              ? requiredNumericValue(
-                  sessionRecallTokenLimit,
-                  "Recall Token Limit",
-                )
-              : settings.sessionRecallTokenLimit,
+              : settings.sessionRecallEntryTokenLimit,
           maxTokens: section === "runtime" ? requiredNumericValue(maxTokens, "单次模型输出") : settings.maxTokens,
           maxIterations: section === "runtime" ? requiredNumericValue(maxIterations, "Agent 最大迭代") : settings.maxIterations,
           modelContextWindow:
@@ -245,8 +236,7 @@ export function ConfigPage() {
 
   function applyRuntimeInputs(value: AgentSettings) {
     setSessionSearchWindow(value.sessionSearchWindow);
-    setSessionRecallMessageLimit(value.sessionRecallMessageLimit);
-    setSessionRecallTokenLimit(value.sessionRecallTokenLimit);
+    setSessionRecallEntryTokenLimit(value.sessionRecallEntryTokenLimit);
     setModelContextWindow(value.modelContextWindow);
     setMaxTokens(value.maxTokens);
     setMaxIterations(value.maxIterations);
@@ -578,7 +568,7 @@ export function ConfigPage() {
               <BrainCircuit size={18} />
             </div>
             <div>
-              <CardTitle>Memory Retrieval</CardTitle>
+              <CardTitle>Semantic Memory Retrieval</CardTitle>
               <CardDescription>
                 配置 Semantic Memory 的词法、向量或混合检索。
               </CardDescription>
@@ -762,16 +752,16 @@ export function ConfigPage() {
                 />
               </ConfigField>
               <ConfigField
-                label="Recall Message Limit"
-                help="单次最多返回条目数，默认 100。"
+                label="Recall Entry Token Limit"
+                help="session_search 单条正文上限，默认 4,000；超出部分用 contentCursor 经 session_read 读全。"
               >
                 <Input
                   type="number"
-                  min={settings?.limits.sessionRecallMessageLimit?.min ?? 1}
-                  max={settings?.limits.sessionRecallMessageLimit?.max ?? 200}
-                  value={sessionRecallMessageLimit}
+                  min={settings?.limits.sessionRecallEntryTokenLimit?.min ?? 256}
+                  max={settings?.limits.sessionRecallEntryTokenLimit?.max ?? 16384}
+                  value={sessionRecallEntryTokenLimit}
                   onChange={(event) =>
-                    setSessionRecallMessageLimit(
+                    setSessionRecallEntryTokenLimit(
                       parseNumericInput(event.target.value),
                     )
                   }
@@ -779,18 +769,13 @@ export function ConfigPage() {
               </ConfigField>
               <ConfigField
                 label="Recall Token Limit"
-                help="估算 token 预算，默认 32,768。"
+                help="单次 session_search 总额，按 Model Context Window 的 25% 自动派生，不可编辑。"
               >
                 <Input
                   type="number"
-                  min={settings?.limits.sessionRecallTokenLimit?.min ?? 256}
-                  max={settings?.limits.sessionRecallTokenLimit?.max ?? 131072}
-                  value={sessionRecallTokenLimit}
-                  onChange={(event) =>
-                    setSessionRecallTokenLimit(
-                      parseNumericInput(event.target.value),
-                    )
-                  }
+                  value={settings?.sessionRecallTokenLimit ?? 0}
+                  readOnly
+                  disabled
                 />
               </ConfigField>
               <ConfigField label="单次模型输出（tokens）" help="默认 16,384 tokens，每次新运行生效。">
@@ -826,8 +811,7 @@ export function ConfigPage() {
                   !settings ||
                   [
                     sessionSearchWindow,
-                    sessionRecallMessageLimit,
-                    sessionRecallTokenLimit,
+                    sessionRecallEntryTokenLimit,
                     modelContextWindow,
                     maxTokens,
                     maxIterations,

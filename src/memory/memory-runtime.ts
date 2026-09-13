@@ -259,10 +259,14 @@ function formatMemoryContext(semantic: SemanticMemory[], recall: SessionSearchRe
 function recallMetadata(result: SessionSearchResult): Record<string, unknown> {
   return {
     mode: result.retrievalMode, query: result.query, truncated: result.truncated,
+    // 预算去向必须可解释：丢了几个 Session、为什么丢、每个 Session 花了多少、哪些正文被截断。
+    droppedSessionCount: result.droppedSessionCount, droppedReason: result.droppedReason,
+    estimatedTokens: result.estimatedTokens,
     sessions: result.sessions.map((item) => ({
       sessionId: item.session.id, rank: item.rank, anchorMessageId: item.match?.messageId,
       retrievalSignals: item.retrievalSignals, returnedRanges: item.returnedRanges,
       returnedMessageCount: item.returnedMessageCount, isComplete: item.isComplete,
+      truncatedEntryCount: item.entries.filter((entry) => entry.contentTruncated).length,
     })),
   };
 }
