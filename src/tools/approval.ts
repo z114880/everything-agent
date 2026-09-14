@@ -25,8 +25,6 @@ export interface ApprovalGate {
 export type CommandVerdict =
   | { action: "allow" }
   | { action: "approve"; reason: string }
-  /** 需要先确认工作树是否有未提交改动，干净时无损。 */
-  | { action: "approve_if_dirty"; reason: string }
   | { action: "block"; reason: string };
 
 /**
@@ -43,15 +41,17 @@ const HARDLINE_PATTERNS: { pattern: RegExp; reason: string }[] = [
   { pattern: /\bdd\b[^|;]*\bof=\/dev\/(disk|sd|nvme)/, reason: "直接写入磁盘设备" },
 ];
 
-/** 产生外部可见后果、无法靠本地回滚挽回的命令。 */
+/**
+ * 需要人工确认的命令：外部可见的后果，以及会丢弃工作成果的本地操作。
+ *
+ * 不去查工作树是否干净。判定要么只看命令文本，要么就得为每条候选命令额外执行
+ * 一次 git，既拖慢执行也让判定依赖另一次沙箱调用的成败；这些命令本就少见，
+ * 多问一次不会累积成审批疲劳。
+ */
 const IRREVERSIBLE_PATTERNS: { pattern: RegExp; reason: string }[] = [
   { pattern: /\bgit\s+push\b/, reason: "向远端推送提交" },
   { pattern: /\bgit\s+push\b.*(--force|-f)\b/, reason: "强制推送会覆盖远端历史" },
   { pattern: /\bnpm\s+publish\b|\bpnpm\s+publish\b/, reason: "发布软件包" },
-];
-
-/** 会吃掉未提交改动的命令；工作树干净时它们无损。 */
-const DESTRUCTIVE_WHEN_DIRTY: { pattern: RegExp; reason: string }[] = [
   { pattern: /\bgit\s+reset\s+.*--hard\b/, reason: "硬重置会丢弃未提交改动" },
   { pattern: /\bgit\s+clean\b.*-[a-zA-Z]*[fd]/, reason: "清理未跟踪文件" },
   { pattern: /\bgit\s+checkout\s+--\s+\./, reason: "回退工作区全部改动" },
@@ -61,8 +61,8 @@ const DESTRUCTIVE_WHEN_DIRTY: { pattern: RegExp; reason: string }[] = [
 /**
  * 判定一条命令在执行前需要什么处理。
  *
- * 只做粗粒度分流：允许、需要确认、需要按工作树状态确认、直接拒绝。命令能碰到
- * 什么由沙箱决定，这里关心的是沙箱管不到的后果。
+ * 只做粗粒度分流：允许、需要确认、直接拒绝。命令能碰到什么由沙箱决定，这里
+ * 关心的是沙箱管不到的后果。
  */
 export function evaluateCommand(command: string): CommandVerdict {
   for (const { pattern, reason } of HARDLINE_PATTERNS) {
@@ -70,9 +70,6 @@ export function evaluateCommand(command: string): CommandVerdict {
   }
   for (const { pattern, reason } of IRREVERSIBLE_PATTERNS) {
     if (pattern.test(command)) return { action: "approve", reason };
-  }
-  for (const { pattern, reason } of DESTRUCTIVE_WHEN_DIRTY) {
-    if (pattern.test(command)) return { action: "approve_if_dirty", reason };
   }
   return { action: "allow" };
 }

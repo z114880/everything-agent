@@ -223,9 +223,6 @@ describe.skipIf(process.platform !== "darwin")("run_terminal 真实执行", () =
 });
 
 describe("run_terminal 人工审批", () => {
-  const clean = (command: string) => (command.startsWith("git status") ? { stdout: "" } : {});
-  const dirty = (command: string) => (command.startsWith("git status") ? { stdout: " M src/index.ts\n" } : {});
-
   function build(answer: boolean, respond: ((command: string) => Partial<SandboxResult>) | null = null) {
     const sandbox = new RecordingSandbox();
     sandbox.respond = respond;
@@ -264,24 +261,13 @@ describe("run_terminal 人工审批", () => {
     expect(sandbox.calls).toHaveLength(0);
   });
 
-  it("工作树干净时破坏性 git 命令无需确认", async () => {
-    const { approval, tool } = build(true, clean);
-    const result = await tool.execute({ command: "git reset --hard HEAD~1" }, noop, context);
-    expect(approval.requests).toHaveLength(0);
-    expect(result.approved).toBeUndefined();
-  });
-
-  it("工作树有未提交改动时同一命令需要确认", async () => {
-    const { approval, tool } = build(true, dirty);
+  it("会丢弃工作成果的命令需要确认，且不额外执行 git 查询", async () => {
+    const { sandbox, approval, tool } = build(true);
     const result = await tool.execute({ command: "git reset --hard HEAD~1" }, noop, context);
     expect(approval.requests[0]?.reason).toContain("未提交");
     expect(result.approved).toBe(true);
-  });
-
-  it("无法判定工作树状态时按需要确认处理", async () => {
-    const { approval, tool } = build(true, (command) => (command.startsWith("git status") ? { exitCode: 128 } : {}));
-    await tool.execute({ command: "git clean -fd" }, noop, context);
-    expect(approval.requests).toHaveLength(1);
+    // 判定只看命令文本：整轮只应执行用户那一条命令。
+    expect(sandbox.calls.map((call) => call.command)).toEqual(["git reset --hard HEAD~1"]);
   });
 
   it("网络越界经确认后放行网络重跑", async () => {

@@ -34,11 +34,11 @@ describe("命令审批判定", () => {
     expect(evaluateCommand("pnpm publish").action).toBe("approve");
   });
 
-  it("会吃掉未提交改动的命令按工作树状态判定", () => {
-    expect(evaluateCommand("git reset --hard HEAD~1").action).toBe("approve_if_dirty");
-    expect(evaluateCommand("git clean -fd").action).toBe("approve_if_dirty");
-    expect(evaluateCommand("git checkout -- .").action).toBe("approve_if_dirty");
-    expect(evaluateCommand("git restore .").action).toBe("approve_if_dirty");
+  it("会丢弃工作成果的命令一律需要审批，不去查工作树", () => {
+    expect(evaluateCommand("git reset --hard HEAD~1").action).toBe("approve");
+    expect(evaluateCommand("git clean -fd").action).toBe("approve");
+    expect(evaluateCommand("git checkout -- .").action).toBe("approve");
+    expect(evaluateCommand("git restore .").action).toBe("approve");
   });
 
   it("硬拒优先于审批", () => {

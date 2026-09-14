@@ -114,7 +114,7 @@ export class TerminalTool {
     if (context.signal?.aborted) throw context.signal.reason;
     const input = parseTerminalInput(value, this.defaultTimeoutMs);
     const workdir = this.resolveWorkdir(input.workdir);
-    const approved = await this.authorize(input.command, workdir, notify, context);
+    const approved = await this.authorize(input.command, notify, context);
 
     const result = await this.sandbox.run({
       command: input.command,
@@ -160,7 +160,6 @@ export class TerminalTool {
    */
   private async authorize(
     command: string,
-    workdir: string,
     notify: AgentObserver,
     context: ToolExecutionContext,
   ): Promise<boolean> {
@@ -170,8 +169,6 @@ export class TerminalTool {
       await notify("command_blocked", { command, reason: verdict.reason });
       throw new Error(`命令被拒绝执行：${verdict.reason}`);
     }
-    if (verdict.action === "approve_if_dirty" && !await this.isWorkingTreeDirty(workdir, context)) return false;
-
     const approved = await this.requestApproval({
       kind: "irreversible",
       command,
@@ -187,20 +184,6 @@ export class TerminalTool {
   ): Promise<boolean> {
     if (this.approval === null) return false;
     return this.approval.request(request, context.signal);
-  }
-
-  /** 工作树是否有未提交改动；判定依据是仓库状态，不是命令文本。 */
-  private async isWorkingTreeDirty(workdir: string, context: ToolExecutionContext): Promise<boolean> {
-    const status = await this.sandbox.run({
-      command: "git status --porcelain",
-      cwd: workdir,
-      timeoutMs: 30_000,
-      env: buildSandboxEnv({ TMPDIR: this.sessionTempDir }),
-      signal: context.signal,
-    });
-    // 无法判定时按脏处理：宁可多问一次，也不要静默执行破坏性操作。
-    if (status.exitCode !== 0) return true;
-    return status.stdout.trim() !== "";
   }
 
   private networkSandbox(): Sandbox {
