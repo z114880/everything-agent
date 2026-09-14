@@ -15,6 +15,7 @@ export default defineConfig({
         "src/sandbox/**/*.ts",
         "src/tools/manage-memory.ts",
         "src/tools/tool-registry.ts",
+        "src/tools/approval.ts",
         "src/tools/tavily-search.ts",
         "src/tools/terminal.ts",
         "src/tools/tool-settings.ts",

@@ -1,8 +1,10 @@
 import { mkdirSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { buildSandboxEnv, createSandbox } from "../sandbox/index.ts";
-import type { Sandbox, SandboxDenialHint } from "../sandbox/index.ts";
-import type { ToolExecutionContext } from "../agent-loop/types.ts";
+import type { Sandbox, SandboxDenialHint, SandboxPolicy } from "../sandbox/index.ts";
+import type { AgentObserver, ToolExecutionContext } from "../agent-loop/types.ts";
+import { evaluateCommand } from "./approval.ts";
+import type { ApprovalGate } from "./approval.ts";
 
 export const RUN_TERMINAL_TOOL = "run_terminal";
 
@@ -46,6 +48,10 @@ export interface TerminalToolOptions {
   defaultTimeoutMs?: number;
   /** 注入沙箱实现，省略时按当前平台探测。 */
   sandbox?: Sandbox;
+  /** 经审批放行网络后使用的沙箱；文件系统边界与默认沙箱一致。 */
+  networkSandbox?: Sandbox;
+  /** 人工审批通道；缺省时需要审批的命令一律拒绝执行。 */
+  approval?: ApprovalGate;
 }
 
 /** 一次终端执行的结构化结果。 */
@@ -60,6 +66,10 @@ export interface TerminalToolResult {
   /** 命令可能撞上的沙箱边界，供上层决定是否发起审批。 */
   denialHint: SandboxDenialHint;
   sandbox: string;
+  /** 本次执行是否经过人工确认。 */
+  approved?: boolean;
+  /** 出站网络是否被放行；仅在审批通过后为 true。 */
+  networkAllowed?: boolean;
 }
 
 /**
@@ -73,26 +83,39 @@ export class TerminalTool {
   private readonly sessionTempDir: string;
   private readonly defaultTimeoutMs: number;
   private readonly sandbox: Sandbox;
+  private readonly approval: ApprovalGate | null;
+  private readonly networkSandboxOption: Sandbox | undefined;
+  private readonly policy: SandboxPolicy;
+  private networkSandboxInstance: Sandbox | null = null;
 
   constructor(options: TerminalToolOptions) {
     this.workspaceRoot = resolve(requireAbsolute(options.workspaceRoot, "workspaceRoot"));
     this.sessionTempDir = resolve(requireAbsolute(options.sessionTempDir, "sessionTempDir"));
     this.defaultTimeoutMs = options.defaultTimeoutMs ?? DEFAULT_TERMINAL_TIMEOUT_MS;
+    this.approval = options.approval ?? null;
+    this.networkSandboxOption = options.networkSandbox;
     // 临时目录必须先存在：bubblewrap 无法绑定不存在的路径，TMPDIR 指向缺失目录也会让命令失败。
     mkdirSync(this.sessionTempDir, { recursive: true });
-    this.sandbox = options.sandbox ?? createSandbox({
+    this.policy = {
       workspaceRoot: this.workspaceRoot,
       writableRoots: [this.sessionTempDir],
       denyWrite: [join(this.workspaceRoot, ".git"), join(this.workspaceRoot, ".everything")],
       denyRead: options.denyRead ?? defaultDenyRead(),
       allowNetwork: false,
-    });
+    };
+    this.sandbox = options.sandbox ?? createSandbox(this.policy);
   }
 
-  async execute(value: unknown, context: ToolExecutionContext): Promise<TerminalToolResult> {
+  async execute(
+    value: unknown,
+    notify: AgentObserver,
+    context: ToolExecutionContext,
+  ): Promise<TerminalToolResult> {
     if (context.signal?.aborted) throw context.signal.reason;
     const input = parseTerminalInput(value, this.defaultTimeoutMs);
     const workdir = this.resolveWorkdir(input.workdir);
+    const approved = await this.authorize(input.command, workdir, notify, context);
+
     const result = await this.sandbox.run({
       command: input.command,
       cwd: workdir,
@@ -100,17 +123,90 @@ export class TerminalTool {
       env: buildSandboxEnv({ TMPDIR: this.sessionTempDir }),
       signal: context.signal,
     });
-    return {
+
+    const base = {
       command: input.command,
       workdir: relative(this.workspaceRoot, workdir) || ".",
-      exitCode: result.exitCode,
-      stdout: result.stdout,
-      stderr: result.stderr,
-      truncated: result.truncated,
-      timedOut: result.timedOut,
-      denialHint: result.denialHint,
       sandbox: this.sandbox.kind,
+      ...(approved ? { approved: true } : {}),
     };
+    if (result.denialHint !== "network") return { ...base, ...projectResult(result) };
+
+    await notify("sandbox_denied", { command: input.command, boundary: "network" });
+    const allowNetwork = await this.requestApproval({
+      kind: "sandbox_denial",
+      command: input.command,
+      reason: "命令需要访问网络，沙箱已默认切断",
+      detail: "确认后仅本次放行网络，文件系统边界保持不变",
+    }, context);
+    if (!allowNetwork) return { ...base, ...projectResult(result) };
+
+    const retried = await this.networkSandbox().run({
+      command: input.command,
+      cwd: workdir,
+      timeoutMs: input.timeoutMs,
+      env: buildSandboxEnv({ TMPDIR: this.sessionTempDir }),
+      signal: context.signal,
+    });
+    return { ...base, ...projectResult(retried), approved: true, networkAllowed: true };
+  }
+
+  /**
+   * 执行前的授权判定。
+   *
+   * 文件系统越界不提供「放开后重试」：放开可写范围基本等同于取消沙箱，而工作区
+   * 本就是为写代码配置的，越界写几乎总是命令本身写错了。网络是独立的一层，
+   * 单独放行不会削弱文件系统边界，因此只有它支持审批后重试。
+   */
+  private async authorize(
+    command: string,
+    workdir: string,
+    notify: AgentObserver,
+    context: ToolExecutionContext,
+  ): Promise<boolean> {
+    const verdict = evaluateCommand(command);
+    if (verdict.action === "allow") return false;
+    if (verdict.action === "block") {
+      await notify("command_blocked", { command, reason: verdict.reason });
+      throw new Error(`命令被拒绝执行：${verdict.reason}`);
+    }
+    if (verdict.action === "approve_if_dirty" && !await this.isWorkingTreeDirty(workdir, context)) return false;
+
+    const approved = await this.requestApproval({
+      kind: "irreversible",
+      command,
+      reason: verdict.reason,
+    }, context);
+    if (!approved) throw new Error(`用户未确认该命令：${verdict.reason}`);
+    return true;
+  }
+
+  private async requestApproval(
+    request: Parameters<ApprovalGate["request"]>[0],
+    context: ToolExecutionContext,
+  ): Promise<boolean> {
+    if (this.approval === null) return false;
+    return this.approval.request(request, context.signal);
+  }
+
+  /** 工作树是否有未提交改动；判定依据是仓库状态，不是命令文本。 */
+  private async isWorkingTreeDirty(workdir: string, context: ToolExecutionContext): Promise<boolean> {
+    const status = await this.sandbox.run({
+      command: "git status --porcelain",
+      cwd: workdir,
+      timeoutMs: 30_000,
+      env: buildSandboxEnv({ TMPDIR: this.sessionTempDir }),
+      signal: context.signal,
+    });
+    // 无法判定时按脏处理：宁可多问一次，也不要静默执行破坏性操作。
+    if (status.exitCode !== 0) return true;
+    return status.stdout.trim() !== "";
+  }
+
+  private networkSandbox(): Sandbox {
+    if (this.networkSandboxOption !== undefined) return this.networkSandboxOption;
+    this.networkSandboxInstance ??= createSandbox({ ...this.policy, allowNetwork: true });
+    return this.networkSandboxInstance;
   }
 
   /**
@@ -128,6 +224,21 @@ export class TerminalTool {
     }
     return target;
   }
+}
+
+/** 把沙箱结果投影为工具结果中与执行有关的字段。 */
+function projectResult(result: {
+  exitCode: number | null; stdout: string; stderr: string;
+  truncated: boolean; timedOut: boolean; denialHint: SandboxDenialHint;
+}) {
+  return {
+    exitCode: result.exitCode,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    truncated: result.truncated,
+    timedOut: result.timedOut,
+    denialHint: result.denialHint,
+  };
 }
 
 /** 默认遮挡的凭证目录；沙箱只需路径，不要求它们存在。 */

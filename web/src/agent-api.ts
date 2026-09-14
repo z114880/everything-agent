@@ -211,6 +211,14 @@ export interface AgentEvent {
   stopReason?: string;
   error?: string;
   messageCount?: number;
+  /** 人工审批事件携带的字段。 */
+  approvalId?: string;
+  kind?: string;
+  command?: string;
+  reason?: string;
+  detail?: string;
+  approved?: boolean;
+  boundary?: string;
 }
 
 export interface AgentRunResult {
@@ -430,6 +438,25 @@ export async function clearAllAgentData(rebuildEmbeddings = false): Promise<{
     }
   }
   return { ...cleared, embeddingRebuild };
+}
+
+/** 一次等待人工确认的命令请求。 */
+export interface PendingApproval {
+  id: string;
+  kind: string;
+  command: string;
+  reason: string;
+  detail?: string;
+}
+
+/** 兑现一次命令确认；请求已失效时服务端返回 ok: false。 */
+export async function settleApproval(approvalId: string, approved: boolean): Promise<boolean> {
+  const result = await requestJson<{ ok: boolean }>(`${endpoint}/approval`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ approvalId, approved }),
+  });
+  return result.ok;
 }
 
 /** 执行一次 Agent 回合并消费服务端 NDJSON observer 事件。 */

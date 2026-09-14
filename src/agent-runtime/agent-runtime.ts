@@ -6,6 +6,8 @@ import { MemoryRuntime } from "../memory/index.ts";
 import { JsonlTracer, readTraceFiles } from "../tracing/jsonl-tracer.ts";
 import { AgentLoopAbortError, AgentLoopTimeoutError, runAgentLoop } from "../agent-loop/agent-loop.ts";
 import type { AgentMessage, AgentObserver } from "../agent-loop/agent-loop.ts";
+import { ApprovalRegistry } from "./approval-registry.ts";
+import type { PendingApproval } from "./approval-registry.ts";
 import { createLocalConfig } from "./local-config.ts";
 import type { LocalConfigPaths } from "./local-config.ts";
 import { clearEverythingData } from "./local-data.ts";
@@ -37,6 +39,8 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
   const toolSettingsStore = createToolSettings(config);
   // 终端工具在工作区之外唯一可写的目录，同时作为子进程 TMPDIR。
   const terminalTempDir = join(everythingHome, "terminal-tmp");
+  // 同一时刻只允许一轮运行，因此活跃的审批通道最多一个；界面的确认走独立请求进来。
+  let activeApprovals: ApprovalRegistry | null = null;
   const loadRuntimeSettings = settingsStore.load;
   let closed = false;
   let memoryRuntime: MemoryRuntime | null = null;
@@ -180,11 +184,14 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
           "dense_retrieval_completed", "lexical_retrieval_completed", "rrf_completed", "mmr_completed",
           "model_request", "model_response", "model_failed", "stream_fallback",
           "tool_started", "tool_completed", "tool_failed", "skills_discovered", "skill_loaded",
+          "approval_requested", "approval_resolved", "command_blocked", "sandbox_denied",
         ].includes(kind) || kind.startsWith("memory_")) {
           const modelFields = kind.startsWith("model_") ? { provider: settings.agentModel.provider, model: settings.agentModel.model } : {};
           await trace.record(kind, { ...enriched, ...modelFields });
         }
       };
+      const approvals = new ApprovalRegistry(emit);
+      activeApprovals = approvals;
       try {
         const history = memory.getWorkingMemory(sessionId);
         const gateHistory = memory.getWorkingMemory(sessionId, 3);
@@ -235,6 +242,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
             terminalEnabled: toolSettings.terminalEnabled,
             terminalWorkspaceRoot: toolSettings.terminalWorkspaceRoot,
             terminalSessionTempDir: terminalTempDir,
+            approval: approvals,
             searchWebEnabled: toolSettings.searchWebEnabled,
             tavilyApiKey: toolSettings.tavilyApiKey,
           }),
@@ -311,8 +319,22 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
           retrievalMs,
         });
         throw error;
+      } finally {
+        // 运行结束后不能留下悬空的等待：界面上的确认卡此刻已经失效。
+        approvals.rejectAll();
+        if (activeApprovals === approvals) activeApprovals = null;
       }
     });
+  }
+
+  /** 兑现一次界面上的确认；返回 false 表示该请求已经失效。 */
+  function settleApproval(approvalId: string, approved: boolean): boolean {
+    return activeApprovals?.settle(approvalId, approved) ?? false;
+  }
+
+  /** 列出当前待确认的请求，供界面重新连接后恢复。 */
+  function listPendingApprovals(): PendingApproval[] {
+    return activeApprovals?.pending() ?? [];
   }
 
   /**
@@ -516,6 +538,8 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
     saveAgentSettings, clearModelApiKey, clearEmbeddingApiKey, resetRuntimeSettings,
     rebuildEmbeddingIndex, cancelEmbeddingIndexRebuild, saveSystemPrompt,
     saveToolSettings,
+    settleApproval,
+    listPendingApprovals,
     clearLocalAgentData, readTraces, contextUsage,
     readSystemPrompt,
     listSkills, saveSkill, deleteSkill,

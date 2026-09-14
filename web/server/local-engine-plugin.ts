@@ -14,7 +14,9 @@ import {
   handleMemoryAction,
   loadTraceDashboard,
   localAgentDatabasePath,
+  listPendingApprovals,
   runLocalAgent,
+  settleApproval,
   saveAgentSettings,
   resetRuntimeSettings,
   rebuildEmbeddingIndex,
@@ -263,6 +265,16 @@ async function handleAgentRequest(
 
   if (request.method === "POST" && pathname === `${agentApiPrefix}/clear-data`) {
     sendJson(response, 200, { ok: true, ...await clearLocalAgentData(await readJsonBody(request)) });
+    return;
+  }
+
+  if (request.method === "POST" && pathname === `${agentApiPrefix}/approval`) {
+    sendJson(response, 200, settleApproval(await readJsonBody(request)));
+    return;
+  }
+
+  if (request.method === "GET" && pathname === `${agentApiPrefix}/approval`) {
+    sendJson(response, 200, { pending: listPendingApprovals() });
     return;
   }
 

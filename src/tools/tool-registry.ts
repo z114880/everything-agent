@@ -15,6 +15,7 @@ import {
 } from "./session-recall.ts";
 import { SEARCH_WEB_TOOL, TavilySearchTool, searchWebSchema } from "./tavily-search.ts";
 import { RUN_TERMINAL_TOOL, TerminalTool, runTerminalSchema } from "./terminal.ts";
+import type { ApprovalGate } from "./approval.ts";
 
 export const TIME_TOOL = "get_current_time";
 export const timeToolSchema = {
@@ -36,6 +37,8 @@ export interface LocalToolOptions {
   terminalWorkspaceRoot?: string;
   /** 终端工具可写的临时目录，同时作为子进程 TMPDIR。 */
   terminalSessionTempDir?: string;
+  /** 人工审批通道；缺省时需要审批的命令一律拒绝执行。 */
+  approval?: ApprovalGate;
 }
 
 /** 注册本地受控工具，并在执行前统一检查取消信号和参数。 */
@@ -43,7 +46,7 @@ export class LocalToolRegistry implements ToolRegistry {
   private readonly manageMemory: ManageMemoryTool | null;
   private readonly sessionRecall: SessionRecallTools | null;
   private readonly readSkill: ReadSkillTool | null;
-  private readonly options: Required<LocalToolOptions>;
+  private readonly options: Required<Omit<LocalToolOptions, "approval">> & { approval: ApprovalGate | null };
   private readonly tavilySearch: TavilySearchTool | null;
   private readonly terminal: TerminalTool | null;
   /** 终端工具未注册的原因，供上层解释为何模型看不到该能力。 */
@@ -66,6 +69,7 @@ export class LocalToolRegistry implements ToolRegistry {
       terminalEnabled: options.terminalEnabled ?? false,
       terminalWorkspaceRoot: options.terminalWorkspaceRoot ?? "",
       terminalSessionTempDir: options.terminalSessionTempDir ?? "",
+      approval: options.approval ?? null,
     };
     this.tavilySearch = this.options.searchWebEnabled && this.options.tavilyApiKey
       ? new TavilySearchTool(this.options.tavilyApiKey)
@@ -90,6 +94,7 @@ export class LocalToolRegistry implements ToolRegistry {
         tool: new TerminalTool({
           workspaceRoot: this.options.terminalWorkspaceRoot,
           sessionTempDir: this.options.terminalSessionTempDir || this.options.terminalWorkspaceRoot,
+          ...(this.options.approval === null ? {} : { approval: this.options.approval }),
         }),
         reason: null,
       };
@@ -122,7 +127,7 @@ export class LocalToolRegistry implements ToolRegistry {
     }
     if (name === READ_SKILL_TOOL && this.readSkill) return this.readSkill.execute(args, notify, context);
     if (name === SEARCH_WEB_TOOL && this.tavilySearch) return this.tavilySearch.execute(args, context);
-    if (name === RUN_TERMINAL_TOOL && this.terminal) return this.terminal.execute(args, context);
+    if (name === RUN_TERMINAL_TOOL && this.terminal) return this.terminal.execute(args, notify, context);
     if (name !== TIME_TOOL || !this.options.getCurrentTimeEnabled) throw new Error(`工具未注册：${name}`);
     if (!isEmptyObject(args)) throw new TypeError(`${TIME_TOOL} 不接受参数`);
 

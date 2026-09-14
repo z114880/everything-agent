@@ -8,6 +8,8 @@ export function publicToolEvent(call: ToolCallRecord): Record<string, unknown> {
     ? skillToolMetadata(call.result)
     : call.tool === "session_search" || call.tool === "session_read"
     ? sessionRecallToolMetadata(call.result)
+    : call.tool === "run_terminal"
+    ? terminalToolMetadata(call.result)
     : call.tool === "manage_memory" ? memoryToolMetadata(call.result) : removeCredentials(call.result);
   return {
     tool: call.tool,
@@ -28,6 +30,25 @@ function skillToolMetadata(value: unknown): unknown {
     name: result.name,
     description: result.description,
     instructionLength: typeof result.instructions === "string" ? result.instructions.length : 0,
+  };
+}
+
+/** 终端执行只保留命令与边界信息；完整输出留在工具结果里，不灌进事件流。 */
+function terminalToolMetadata(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { redacted: true };
+  const result = value as Record<string, unknown>;
+  return {
+    command: result.command,
+    workdir: result.workdir,
+    exitCode: result.exitCode,
+    truncated: result.truncated,
+    timedOut: result.timedOut,
+    denialHint: result.denialHint,
+    sandbox: result.sandbox,
+    approved: result.approved ?? false,
+    networkAllowed: result.networkAllowed ?? false,
+    stdoutLength: typeof result.stdout === "string" ? result.stdout.length : 0,
+    stderrLength: typeof result.stderr === "string" ? result.stderr.length : 0,
   };
 }
 

@@ -17,7 +17,15 @@ const runtime = createAgentRuntime({
 });
 export const { subscribeBackgroundEvents, clearEmbeddingApiKey,
   resetRuntimeSettings, rebuildEmbeddingIndex, cancelEmbeddingIndexRebuild,
+  listPendingApprovals,
 } = runtime;
+
+/** 兑现界面上的一次命令确认；请求已失效时返回 ok: false。 */
+export function settleApproval(body: Record<string, unknown>) {
+  const approvalId = requiredText(body.approvalId, "Approval ID", 200);
+  if (typeof body.approved !== "boolean") throw new TypeError("approved 必须是布尔值");
+  return { ok: runtime.settleApproval(approvalId, body.approved), pending: runtime.listPendingApprovals() };
+}
 
 /** 列出 `.everything/skills` 中的可用 Skill。 */
 export function loadSkills() {

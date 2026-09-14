@@ -21,15 +21,18 @@ import {
   loadContextUsage,
   memoryAction,
   runAgent,
+  settleApproval,
   subscribeBackgroundEvents,
   type AgentBootstrap,
   type AgentEvent,
   type AgentRunResult,
   type ChatLogEntry,
   type ContextUsage,
+  type PendingApproval,
   type SessionSummary,
 } from "../../agent-api";
 import { shouldSubmitAgentComposer } from "../../agent-composer";
+import { ApprovalPrompt } from "./ApprovalPrompt";
 import { createEdgePlayback } from "../../edge-playback";
 import { withMinimumDuration } from "../../lib/minimum-duration";
 import type { VisualNodeState } from "../../visual-node-state";
@@ -114,6 +117,8 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
   const [input, setInput] = useState("");
   const creatingSessionRef = useRef(false);
   const [running, setRunning] = useState(false);
+  const [approvals, setApprovals] = useState<PendingApproval[]>([]);
+  const [approvalBusyId, setApprovalBusyId] = useState("");
   const [nodeStates, setNodeStates] =
     useState<Record<string, VisualNodeState>>(idleStates);
   const [activeEdges, setActiveEdges] = useState<Set<string>>(new Set());
@@ -516,6 +521,18 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
         prompt,
         activeSessionId,
         (kind, event) => {
+          if (kind === "approval_requested") {
+            setApprovals((current) => [...current, {
+              id: String(event.approvalId ?? ""),
+              kind: String(event.kind ?? ""),
+              command: String(event.command ?? ""),
+              reason: String(event.reason ?? ""),
+              ...(event.detail === undefined ? {} : { detail: String(event.detail) }),
+            }]);
+          }
+          if (kind === "approval_resolved") {
+            setApprovals((current) => current.filter((item) => item.id !== event.approvalId));
+          }
           const memory = advanceHarnessMemory(kind, event, memoryStates);
           memoryStates = memory.states;
           setNodeStates((states) => ({ ...states, ...memory.states }));
@@ -574,8 +591,24 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
     } finally {
       abortRef.current = null;
       setRunning(false);
+      // 运行结束后服务端已拒绝全部等待中的请求，界面上的确认卡随之失效。
+      setApprovals([]);
+      setApprovalBusyId("");
       // 成功、失败和取消都会改变历史长度，一律重新估算水位。
       setContextUsageRevision((value) => value + 1);
+    }
+  }
+
+  /** 把用户的决定送回服务端；请求已失效时直接从界面移除。 */
+  async function onDecideApproval(approvalId: string, approved: boolean) {
+    setApprovalBusyId(approvalId);
+    try {
+      await settleApproval(approvalId, approved);
+    } catch {
+      // 运行已经结束或连接已断开，等待中的请求在服务端一并作废。
+    } finally {
+      setApprovals((current) => current.filter((item) => item.id !== approvalId));
+      setApprovalBusyId("");
     }
   }
 
@@ -820,6 +853,11 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
               )}
             </div>
             <div className="agent-composer">
+              <ApprovalPrompt
+                approvals={approvals}
+                busyId={approvalBusyId}
+                onDecide={onDecideApproval}
+              />
               <div className="composer-input-box">
                 <Textarea
                   aria-label="消息内容"
