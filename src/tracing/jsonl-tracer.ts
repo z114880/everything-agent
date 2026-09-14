@@ -26,7 +26,7 @@ export interface JsonlTracerOptions {
   now?: () => Date;
 }
 
-/** 按本地日期目录与 Session JSONL 文件持久化 classic loop 和 memory 事件。 */
+/** 按本地日期目录与 run JSONL 文件持久化 classic loop 和 memory 事件。 */
 export class JsonlTracer {
   private readonly traceDirectory: string;
   private readonly onWarning: (message: string) => void;
@@ -73,6 +73,8 @@ export class JsonlTracer {
     };
   }
 
+  // 固定使用前台运行首个事件的本地日期，避免跨午夜拆分。
+  private readonly runDates = new Map<string, string>();
   private readonly consolidationDates = new Map<string, string>();
 
   private async write(record: TraceRecord): Promise<void> {
@@ -80,10 +82,13 @@ export class JsonlTracer {
     if (consolidation && !this.consolidationDates.has(record.runId)) {
       this.consolidationDates.set(record.runId, typeof record.payload?.createdAt === "string" ? record.payload.createdAt : record.timestamp);
     }
-    const dateDirectory = join(this.traceDirectory, (this.consolidationDates.get(record.runId) ?? (typeof record.taskCreatedAt === "string" ? record.taskCreatedAt : record.timestamp)).slice(0, 10));
+    if (record.sessionId && !this.runDates.has(record.runId)) {
+      this.runDates.set(record.runId, record.timestamp);
+    }
+    const dateDirectory = join(this.traceDirectory, (this.consolidationDates.get(record.runId) ?? (typeof record.taskCreatedAt === "string" ? record.taskCreatedAt : this.runDates.get(record.runId) ?? record.timestamp)).slice(0, 10));
     await mkdir(dateDirectory, { recursive: true });
-    const sessionFile = traceFileName(consolidation ? `consolidation-${record.runId}` : typeof record.taskId === "string" ? `${record.taskKind}-${record.taskId}` : record.sessionId ? `session-${record.sessionId}` : `system-${this.systemId}`);
-    const primaryPath = await numberedTracePath(dateDirectory, sessionFile);
+    const traceFile = traceFileName(consolidation ? `consolidation-${record.runId}` : typeof record.taskId === "string" ? `${record.taskKind}-${record.taskId}` : record.sessionId ? `run-${record.runId}` : `system-${this.systemId}`);
+    const primaryPath = await numberedTracePath(dateDirectory, traceFile);
     let path = this.recoveryPaths.get(primaryPath) ?? primaryPath;
     if (!this.checkedPaths.has(path)) {
       try {
@@ -91,7 +96,7 @@ export class JsonlTracer {
       } catch {
         path = `${primaryPath.slice(0, -6)}.recovered-${record.timestamp.slice(11, 19).replaceAll(":", "")}.jsonl`;
         this.recoveryPaths.set(primaryPath, path);
-        this.onWarning("当前 Session 的运行记录文件无法安全追加，已切换到恢复文件。");
+        this.onWarning("当前运行记录文件无法安全追加，已切换到恢复文件。");
       }
       this.checkedPaths.add(path);
     }

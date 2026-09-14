@@ -421,7 +421,7 @@ embedding_rebuild_cancelled
 embedding_generation_activated
 ```
 
-检索事件的 observer 由调用方提供：回合内的检索（自动召回、`manage_memory` 的 `search`、`session_search`）必须使用 Agent Loop 传给工具的回合观察者，事件才会带上 `runId` 与 `sessionId` 并写入该会话的 trace 文件。只有确实不属于任何回合的操作（如 Embedding 索引重建）才回落到检索配置上的全局 observer。
+检索事件的 observer 由调用方提供：回合内的检索（自动召回、`manage_memory` 的 `search`、`session_search`）必须使用 Agent Loop 传给工具的回合观察者，事件才会带上 `runId` 与 `sessionId` 并写入该 run 的独立 trace 文件。只有确实不属于任何回合的操作（如 Embedding 索引重建）才回落到检索配置上的全局 observer。
 
 事件需要关联 run、corpus、generation 和有序时间信息。重建事件关联 `rebuildId`。不同模式只发出真正执行过的阶段：lexical-only 不伪造 Dense/RRF/MMR，dense-only 不伪造 Lexical/RRF。
 
