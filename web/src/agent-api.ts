@@ -218,9 +218,29 @@ export interface AgentRunResult {
   iterations: number;
   stopReason: "completed" | "max_iterations";
   toolCallCount: number;
+  failedToolCallCount: number;
+  derivedTaskIds: string[];
   model: string;
   provider: AgentProvider;
   ms: number;
+  retrievalMs: number;
+  modelMs: number;
+  toolMs: number;
+  contextWindow: number;
+  maxTokens: number;
+  contextSafetyTokens: number;
+  availableInputTokens: number;
+  peakEstimatedInputTokens: number | null;
+  peakInputTokens: number | null;
+}
+
+/** 下一轮起步就会占用的上下文；不含本轮检索注入的记忆，因此是下限。 */
+export interface ContextUsage {
+  contextWindow: number;
+  maxTokens: number;
+  contextSafetyTokens: number;
+  availableInputTokens: number;
+  estimatedInputTokens: number;
 }
 
 const endpoint = "/api/local-agent";
@@ -358,6 +378,11 @@ export async function memoryAction<T = unknown>(value: Record<string, unknown>):
     body: JSON.stringify(value),
   });
   return response.result;
+}
+
+/** 读取某个 Session 的上下文水位；与 Loop 的硬限制同口径。 */
+export function loadContextUsage(sessionId: string): Promise<ContextUsage> {
+  return memoryAction<ContextUsage>({ action: "context_usage", sessionId });
 }
 
 export function loadTraces(): Promise<TraceDashboard> {

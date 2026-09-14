@@ -67,13 +67,15 @@ console.log(result.reply);
 
 ## 结束条件与事件
 
+返回结果除 `reply`、`toolCalls`、`iterations` 和 `stopReason` 外，还带回本轮的执行统计：`modelMs` 与 `toolMs` 分别累计模型调用和工具调用的耗时（两者顺序执行，之和不超过整轮耗时），`failedToolCallCount` 是返回错误结果的工具调用数量，`peakEstimatedInputTokens` 是各次迭代请求估算输入 token 的最大值（未注入 `tokenEstimator` 时为 `null`），`peakInputTokens` 是供应商返回的真实输入 token 峰值（没有任何一次调用报告 usage 时为 `null`）。估算峰值与 Context Window 硬限制同口径，超限的那次请求同样计入峰值。
+
 - 模型不再请求工具时，`stopReason` 为 `completed`。
 - 达到 `maxIterations` 时，`stopReason` 为 `max_iterations`。
 - 取消或超时时分别抛出 `AgentLoopAbortError` 和 `AgentLoopTimeoutError`。
 - 工具异常会转换成带 `is_error` 的 `tool_result` 交回模型。
 - 模型、observer 或响应结构错误会在发送 `loop_error` 后继续向调用方抛出。
 
-observer 会收到 `context_assembled`、`loop_start`、`model_request`、`model_response`、`model_failed`、`text`、`stream_fallback`、`tool_started`、`tool_completed`、`tool_failed`、`reply`、`loop_end` 和 `loop_error` 等事件。`model_request` 保存该迭代实际使用的 System Prompt、messages、工具 schema 和生成参数快照；`model_response` 保存完整的标准化响应，并通过 `tokenUsage` 记录供应商返回的真实输入、输出与总 token 数。供应商缺失或返回不完整 usage 时该字段为 `null`，不会用估算值补齐。所有事件带同一 `runId`，迭代相关事件带 `iteration`，模型与工具事件分别通过 `modelCallId` 与 `toolCallId` 关联。调用方可传入 `runId` 与持久 Session 对齐；省略时由 Loop 生成 UUID。
+observer 会收到 `context_assembled`、`loop_start`、`model_request`、`model_response`、`model_failed`、`text`、`stream_fallback`、`tool_started`、`tool_completed`、`tool_failed`、`reply`、`loop_end` 和 `loop_error` 等事件。`model_request` 保存该迭代实际使用的 System Prompt、messages、工具 schema 和生成参数快照；`model_response` 保存完整的标准化响应，并通过 `tokenUsage` 记录供应商返回的真实输入、输出与总 token 数。供应商缺失或返回不完整 usage 时该字段为 `null`，不会用估算值补齐。`loop_end` 除结束原因外同时带上述执行统计，调用方无需自行聚合逐次事件。所有事件带同一 `runId`，迭代相关事件带 `iteration`，模型与工具事件分别通过 `modelCallId` 与 `toolCallId` 关联。调用方可传入 `runId` 与持久 Session 对齐；省略时由 Loop 生成 UUID。
 
 工具事件默认包含完整参数和输出；涉及凭证的调用方必须通过 `serializeToolEvent` 移除 API Key、令牌、Cookie 等字段。启用 `stream: true` 且客户端实现 `messages.stream()` 时，流式调用失败会降级到普通调用；取消和超时不会触发降级。
 

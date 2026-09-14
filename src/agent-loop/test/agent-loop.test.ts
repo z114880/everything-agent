@@ -73,6 +73,11 @@ describe("runAgentLoop", () => {
       toolCalls: [],
       iterations: 1,
       stopReason: "completed",
+      modelMs: expect.any(Number),
+      toolMs: 0,
+      failedToolCallCount: 0,
+      peakEstimatedInputTokens: null,
+      peakInputTokens: 3,
     });
     expect(messages.at(-1)).toEqual({
       role: "assistant",
@@ -378,6 +383,80 @@ describe("runAgentLoop", () => {
       tools: fakeTools(),
       timeoutMs: 5,
     })).rejects.toBeInstanceOf(AgentLoopTimeoutError);
+  });
+
+  it("分别累计模型与工具耗时，并记录工具失败数", async () => {
+    const client = scriptedClient([toolResponse("lookup", {}), textResponse("完成")]);
+    const tools = fakeTools(vi.fn(() => { throw new Error("外部服务不可用") }));
+
+    const result = await runAgentLoop({
+      client,
+      model: "test-model",
+      messages: [{ role: "user", content: "查一下" }],
+      tools,
+    });
+
+    expect(result.failedToolCallCount).toBe(1);
+    expect(result.toolCalls).toHaveLength(1);
+    // 两次模型调用与一次工具调用都被计量；耗时可能取整为 0，只要求不为负且各自独立存在。
+    expect(result.modelMs).toBeGreaterThanOrEqual(0);
+    expect(result.toolMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("记录估算与真实输入 token 的峰值，取最大值而非最后一次", async () => {
+    const client = scriptedClient([
+      toolResponse("lookup", {}),
+      textResponse("完成", { tokenUsage: { inputTokens: 2, outputTokens: 1, totalTokens: 3 } }),
+    ]);
+    const estimates = [120, 40];
+    const events: ObservedEvent[] = [];
+
+    const result = await runAgentLoop({
+      client,
+      model: "test-model",
+      messages: [{ role: "user", content: "查一下" }],
+      tools: fakeTools(vi.fn(() => "结果")),
+      modelContextWindow: 8_000,
+      tokenEstimator: { estimateRequest: () => estimates.shift() ?? 0, estimateText: () => 0 },
+      observer(kind, event) { events.push({ kind, event }) },
+    });
+
+    // 第一次请求估算 120、真实 4，第二次分别是 40 与 2，峰值都必须来自第一次。
+    expect(result.peakEstimatedInputTokens).toBe(120);
+    expect(result.peakInputTokens).toBe(4);
+    expect(events.find(({ kind }) => kind === "loop_end")?.event).toMatchObject({
+      peakEstimatedInputTokens: 120,
+      peakInputTokens: 4,
+      failedToolCallCount: 0,
+      toolCallCount: 1,
+    });
+  });
+
+  it("超出 Context Window 时先记录已达到的水位再中止", async () => {
+    const events: ObservedEvent[] = [];
+    await expect(runAgentLoop({
+      client: scriptedClient([textResponse("不会用到")]),
+      model: "test-model",
+      messages: [{ role: "user", content: "很长的输入" }],
+      tools: fakeTools(),
+      maxTokens: 100,
+      modelContextWindow: 1_000,
+      tokenEstimator: { estimateRequest: () => 900, estimateText: () => 0 },
+      observer(kind, event) { events.push({ kind, event }) },
+    })).rejects.toThrow("超过 Context Window");
+    expect(events.some(({ kind }) => kind === "model_request")).toBe(false);
+  });
+
+  it("未注入估算器时峰值估算为 null，不用真实 usage 冒充", async () => {
+    const result = await runAgentLoop({
+      client: scriptedClient([textResponse("你好")]),
+      model: "test-model",
+      messages: [{ role: "user", content: "打招呼" }],
+      tools: fakeTools(),
+    });
+
+    expect(result.peakEstimatedInputTokens).toBeNull();
+    expect(result.peakInputTokens).toBe(3);
   });
 
   it.each([

@@ -94,6 +94,7 @@ export async function handleMemoryAction(body: Record<string, unknown>): Promise
     const session = memory.ensureSession();
     return { session, sessions: memory.listSessions() };
   }
+  if (action === "context_usage") return runtime.contextUsage(requiredText(body.sessionId, "Session ID", 200));
   if (action === "select_session") {
     const sessionId = requiredText(body.sessionId, "Session ID", 200);
     return { messages: memory.getChatLog(sessionId), sessions: memory.listSessions() };

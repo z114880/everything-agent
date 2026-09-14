@@ -18,6 +18,7 @@ import {
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   loadAgent,
+  loadContextUsage,
   memoryAction,
   runAgent,
   subscribeBackgroundEvents,
@@ -25,6 +26,7 @@ import {
   type AgentEvent,
   type AgentRunResult,
   type ChatLogEntry,
+  type ContextUsage,
   type SessionSummary,
 } from "../../agent-api";
 import { shouldSubmitAgentComposer } from "../../agent-composer";
@@ -33,6 +35,7 @@ import { withMinimumDuration } from "../../lib/minimum-duration";
 import type { VisualNodeState } from "../../visual-node-state";
 import { AgentHarnessCanvas } from "./AgentHarnessCanvas";
 import { ChatMarkdown } from "../../components/ChatMarkdown";
+import { ContextGauge } from "../../components/ContextGauge";
 import { PageHeading } from "../../components/PageHeading";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -107,6 +110,8 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
   const [consolidationStatus, setConsolidationStatus] = useState("");
   const [consolidating, setConsolidating] = useState(false);
   const [semanticCount, setSemanticCount] = useState(0);
+  const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null);
+  const [contextUsageRevision, setContextUsageRevision] = useState(0);
   const [tick, setTick] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const sessionMenuRef = useRef<HTMLDivElement | null>(null);
@@ -171,6 +176,18 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
     return () => window.clearInterval(timer);
   }, [running]);
   useEffect(() => () => edgePlayback.cancel(), [edgePlayback]);
+  // 切换会话或刚完成一轮时重新估算水位；旧请求的迟到结果不得覆盖新会话。
+  useEffect(() => {
+    if (!activeSessionId) {
+      setContextUsage(null);
+      return;
+    }
+    let cancelled = false;
+    void loadContextUsage(activeSessionId)
+      .then((usage) => { if (!cancelled) setContextUsage(usage); })
+      .catch(() => { if (!cancelled) setContextUsage(null); });
+    return () => { cancelled = true; };
+  }, [activeSessionId, contextUsageRevision]);
 
   useEffect(() => {
     let states: Record<string, VisualNodeState> = {};
@@ -537,6 +554,8 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
     } finally {
       abortRef.current = null;
       setRunning(false);
+      // 成功、失败和取消都会改变历史长度，一律重新估算水位。
+      setContextUsageRevision((value) => value + 1);
     }
   }
 
@@ -807,29 +826,32 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
                   <span className="composer-hint">
                     Enter 发送 · Shift + Enter 换行
                   </span>
-                  {running ? (
-                    <Button
-                      variant="destructive-outline"
-                      size="sm"
-                      className="stop-agent"
-                      onClick={() => abortRef.current?.abort()}
-                    >
-                      <CircleStop size={15} /> 停止
-                    </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      className="send-agent"
-                      onClick={() => void send()}
-                      disabled={
-                        !input.trim() ||
-                        !bootstrap.settings.agentModel.keyConfigured ||
-                        !bootstrap.settings.smallModel.keyConfigured
-                      }
-                    >
-                      <Send size={15} /> 发送
-                    </Button>
-                  )}
+                  <div className="composer-controls">
+                    <ContextGauge usage={contextUsage} />
+                    {running ? (
+                      <Button
+                        variant="destructive-outline"
+                        size="sm"
+                        className="stop-agent"
+                        onClick={() => abortRef.current?.abort()}
+                      >
+                        <CircleStop size={15} /> 停止
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        className="send-agent"
+                        onClick={() => void send()}
+                        disabled={
+                          !input.trim() ||
+                          !bootstrap.settings.agentModel.keyConfigured ||
+                          !bootstrap.settings.smallModel.keyConfigured
+                        }
+                      >
+                        <Send size={15} /> 发送
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

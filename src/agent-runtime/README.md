@@ -54,6 +54,7 @@ try {
 路径由宿主提供。实例独立持有 Memory、Tracer、工具和会话锁；不同实例应使用不同数据目录。同一目录的多实例并发协调尚未实现。
 
 - `run(input, options)`：检索记忆、组装上下文、调用 Loop、保存完整回合及 trace，返回类型化结果。
+- `contextUsage(sessionId)`：估算下一轮回合起步就会占用的上下文，用于在超限之前展示水位。与 Loop 的硬限制共用估算器和额度公式（`availableInputTokens = modelContextWindow - maxTokens - 512`），统计系统提示、Skill 目录、工具 schema 与该会话全部工作记忆；不含本轮检索注入的记忆，因此是下限。
 - `await createSession(previousSessionId?)`：复用空会话或创建新会话，不触发整理。
 - `await consolidate("daily" | "manual")`：每日首次进入 Agent 页面自动检查或手动全量事实整理；Semantic Memory 为空时返回 skipped 且不创建任务，未配置模型时自动返回 null、手动报错。
 - `memory`：现有 MemoryRuntime 的公开操作；`prepareMemory()` 根据当前配置准备检索，并返回 Session Recall 预算。Web 用这些接口组装列表、检索结果等页面响应。
@@ -71,7 +72,7 @@ try {
 
 同一会话的回合串行执行，后续回合读取前一回合保存的工作记忆。不同会话可以并行。Loop 限制 10 次迭代和 5 分钟（300000ms）超时，并接收宿主取消信号；检索与排队阶段不在 Loop 超时范围内。
 
-沿用现有 AgentObserver 事件名称和含义，为转发事件关联 `runId`、`sessionId`，补充上下文来源元数据。每轮以 `skills_discovered` 记录可用目录，`read_skill` 成功后产生不含正文的 `skill_loaded`；对应工具完成事件也只公开名称、描述和正文长度。工具事件在共享执行层进行凭证移除，Session Recall 工具只公开检索元数据。JSONL Tracer 保留既有回合开始、完成、失败及模型/工具追踪语义。静态 Harness 拓扑仍由 `agentHarnessGraph.describe()` 提供，Web 负责转换为画布格式；Runtime 不伪造 Graph 执行事件。
+沿用现有 AgentObserver 事件名称和含义，为转发事件关联 `runId`、`sessionId`，补充上下文来源元数据。每轮以 `skills_discovered` 记录可用目录，`read_skill` 成功后产生不含正文的 `skill_loaded`；对应工具完成事件也只公开名称、描述和正文长度。工具事件在共享执行层进行凭证移除，Session Recall 工具只公开检索元数据。JSONL Tracer 保留既有回合开始、完成、失败及模型/工具追踪语义。`run_completed` 与 `run_failed` 补充回合级事实：供应商与模型、`ms` 的三段拆分（`retrievalMs` 含 gate 小模型调用、`modelMs`、`toolMs`）、`failedToolCallCount`、`derivedTaskIds`（本回合入队的后台记忆写入任务，用于关联独立的任务 trace 文件）以及上下文水位字段；`run_failed` 另有 `cancelled` 与 `timedOut`，把用户主动停止和整轮超时同模型或工具故障区分开。静态 Harness 拓扑仍由 `agentHarnessGraph.describe()` 提供，Web 负责转换为画布格式；Runtime 不伪造 Graph 执行事件。
 
 ## 本地配置
 

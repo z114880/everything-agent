@@ -31,7 +31,7 @@ pnpm run mock-data
 
 仓库已包含一个 React + Tailwind CSS v4 + shadcn/ui 的本地控制台。页面共用本地设计令牌和可复用基础组件，Graph 与 Agent Harness 画布仍以真实拓扑和 observer 事件为唯一事实来源：
 
-- **Agent**：运行真实 `runAgentLoop`，从 SQLite 恢复多轮 Session，展示输入、记忆需求判断、事实与历史召回、上下文组装、推理、工具和回复；独立后台区域展示记忆写入与跨会话整理关系。工具调用过程完整保存在本地 Chat Log，活动边和回复由真实 observer 事件驱动。
+- **Agent**：运行真实 `runAgentLoop`，从 SQLite 恢复多轮 Session，展示输入、记忆需求判断、事实与历史召回、上下文组装、推理、工具和回复；独立后台区域展示记忆写入与跨会话整理关系。工具调用过程完整保存在本地 Chat Log，活动边和回复由真实 observer 事件驱动。输入框发送按钮左侧的圆环显示当前 Session 的上下文水位，分子分母与 Agent Loop 的 Context Window 硬限制同口径（已用估算 ÷ 扣除输出预留与安全余量后的可用额度），因此不会出现「圆环未满却报超限」；该估算不含本轮检索注入的记忆，是下限。
 - **Workflow**：枚举 `src/workflows/` 下的 TypeScript 文件，可编辑和执行任一工作流。拓扑来自真实 `Graph.describe()`，执行由本地 Node.js 进程调用 `runGraph()`。
 - **Memory**：通过 Overview、Semantic、Session Recall、Procedural、Chat Log 和 Consolidation 查看本地记忆与真实历史检索窗口。Session Recall 结果按消息分段展示，结构化内容保留缩进、正文换行；查询留空可查看最近活跃会话。
 - **Skills**：新建、编辑、重命名和删除 `.everything/skills/<skill-name>/SKILL.md`。每轮 Agent 只注入 Skill 名称与描述，需要使用时通过受控 `read_skill` 工具加载正文；目录发现、加载和工具调用均进入 observer 与 JSONL trace。
@@ -261,7 +261,7 @@ pnpm run build
 - 当前 Session 和 Memory 是单用户、本地实现，不包含多租户或云同步。
 - 当前 Session 的全部完整回合进入 Working Memory，并完全排除在 Session Recall 之外。完整模型输入使用统一启发式规则估算，并统一预留输出与 512-token 安全余量；估算值只用于请求前预算，不作为真实消耗统计。
 - Semantic Memory 与 Session Recall 已支持 Dense、FTS5 + BM25 和 Hybrid 三种模式。Dense 仅调用 OpenAI-compatible Embedding API，固定 1024 维；Hybrid 以 RRF 融合并以 MMR 多样化。失败 run 不进入任何检索索引；工具结果不参与索引，但成功 run 的命中窗口会恢复完整工具过程。
-- JSONL trace 只覆盖 classic loop 与 memory；Workflow 继续使用实时 observer，不写入该目录。记录按 `.everything/traces/YYYY-MM-DD/<序号>-<sessionId>.jsonl` 存放，序号按当日文件创建顺序递增；无 Session、独立任务归属的系统事件写入 `<序号>-system-<UUID>.jsonl`，UUID 在记录器创建时随机生成，同一记录器在同一日期持续追加，重启后使用新的 UUID，不读取旧版根目录 JSONL。V2 记录为每个事件生成 `eventId` 和 run 内递增的 `sequence`；`model_request` 保存每次调用实际使用的 System Prompt、messages、工具 schema 和生成参数，`model_response` 与 `embedding_completed` 以 `tokenUsage` 记录供应商返回的真实输入、输出和总 token 数，缺失真实 usage 时为 `null`，不记录估算消耗。工具事件保存结构化参数与结果；记忆管理工具仅保存操作和 ID 摘要，新增 `memory_*` 事件记录决策、版本冲突与变更结果，不记录事实正文或自由文本理由。常见凭证字段与 Bearer token 仍会在写入前移除。`context_assembled` 只记录上下文的组装数量与记忆来源，模型请求才是 eval 的权威输入快照。
+- JSONL trace 只覆盖 classic loop 与 memory；Workflow 继续使用实时 observer，不写入该目录。记录按 `.everything/traces/YYYY-MM-DD/<序号>-<sessionId>.jsonl` 存放，序号按当日文件创建顺序递增；无 Session、独立任务归属的系统事件写入 `<序号>-system-<UUID>.jsonl`，UUID 在记录器创建时随机生成，同一记录器在同一日期持续追加，重启后使用新的 UUID，不读取旧版根目录 JSONL。V2 记录为每个事件生成 `eventId` 和 run 内递增的 `sequence`；`model_request` 保存每次调用实际使用的 System Prompt、messages、工具 schema 和生成参数，`model_response` 与 `embedding_completed` 以 `tokenUsage` 记录供应商返回的真实输入、输出和总 token 数，缺失真实 usage 时为 `null`，不记录估算消耗。工具事件保存结构化参数与结果；记忆管理工具仅保存操作和 ID 摘要，新增 `memory_*` 事件记录决策、版本冲突与变更结果，不记录事实正文或自由文本理由。常见凭证字段与 Bearer token 仍会在写入前移除。`context_assembled` 只记录上下文的组装数量与记忆来源，模型请求才是 eval 的权威输入快照。`run_completed` 与 `run_failed` 记录回合级事实：供应商与模型、`ms` 及其拆分（`retrievalMs` 含 gate 小模型调用、`modelMs`、`toolMs`，三者之外的差额是编排开销）、`failedToolCallCount`、本回合入队的后台记忆写入任务 `derivedTaskIds`（用于关联 `<序号>-memory_write-<taskId>.jsonl`），以及上下文水位 `contextWindow`、`maxTokens`、`contextSafetyTokens`、`availableInputTokens`、`peakEstimatedInputTokens` 和 `peakInputTokens`。`run_failed` 另有 `cancelled` 与 `timedOut`，用户主动停止和整轮超时都不算模型或工具故障。
 - `State.snapshot()` 是顶层复制；节点应把收到的状态视为只读对象。
 - 当前没有内置鉴权、密钥管理或个人数据加密能力。
 

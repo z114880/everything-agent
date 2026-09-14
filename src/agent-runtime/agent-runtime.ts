@@ -3,7 +3,7 @@ import { LocalToolRegistry } from "../tools/tool-registry.ts";
 import { ManageMemoryTool } from "../tools/manage-memory.ts";
 import { MemoryRuntime } from "../memory/index.ts";
 import { JsonlTracer, readTraceFiles } from "../tracing/jsonl-tracer.ts";
-import { runAgentLoop } from "../agent-loop/agent-loop.ts";
+import { AgentLoopAbortError, AgentLoopTimeoutError, runAgentLoop } from "../agent-loop/agent-loop.ts";
 import type { AgentMessage, AgentObserver } from "../agent-loop/agent-loop.ts";
 import { createLocalConfig } from "./local-config.ts";
 import type { LocalConfigPaths } from "./local-config.ts";
@@ -11,6 +11,8 @@ import { clearEverythingData } from "./local-data.ts";
 import { AgentConfigError, requiredText } from "./configuration/schema.ts";
 import type { AgentSettingsInput, ModelConnectionTarget, PublicAgentSettings, RuntimeSettings } from "./configuration/schema.ts";
 import { createRuntimeSettings, publicSettings } from "./configuration/settings.ts";
+import { availableInputTokens, contextWaterline, CONTEXT_SAFETY_TOKENS } from "./context-window.ts";
+import type { ContextUsage } from "./context-window.ts";
 import { createRuntimeClient } from "./integrations/model.ts";
 import { configureMemoryRuntime, recallSettings } from "./integrations/memory.ts";
 import { publicToolEvent } from "./events/tool-events.ts";
@@ -159,9 +161,15 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
         runtime: { nodeVersion: process.version, traceSchemaVersion: 2 },
       });
       let contextMetadata: Record<string, unknown> = {};
+      // 检索在 try 之外声明，失败回合也能报告已经花掉的检索时间。
+      let retrievalMs = 0;
+      // 记忆写入是异步队列，回合结束时任务往往还没执行；记下 taskId 才能把回合 trace
+      // 与 <序号>-memory_write-<taskId>.jsonl 对上。
+      const derivedTaskIds = new Set<string>();
       // 在执行边界统一关联回合与会话；observer 保持完整事件流，trace 只保存选定事件。
       const emit: AgentObserver = async (kind, event) => {
         const enriched = { ...event, ...(kind === "context_assembled" ? contextMetadata : {}), runId, sessionId };
+        collectDerivedTaskId(derivedTaskIds, kind, enriched);
         await observer(kind, enriched);
         if ([
           "context_assembled", "gate_start", "gate_end", "retrieval_start", "retrieval_completed",
@@ -177,6 +185,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
       try {
         const history = memory.getWorkingMemory(sessionId);
         const gateHistory = memory.getWorkingMemory(sessionId, 3);
+        const retrievalStartedAt = performance.now();
         const retrieval = await memory.retrieve(prompt, gateHistory, {
           client: smallClient,
           model: settings.smallModel.model,
@@ -185,6 +194,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
           observer: emit,
           runId,
         });
+        retrievalMs = Math.round(performance.now() - retrievalStartedAt);
         const messages: AgentMessage[] = [...history, { role: "user", content: prompt }];
         const appendedFrom = messages.length;
         const baseSystem = await readSystemPrompt();
@@ -240,36 +250,99 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
         }
         await memory.completeRun(sessionId, runId, appended);
         const ms = Math.round(performance.now() - startedAt);
+        const context = contextWaterline(
+          settings.modelContextWindow,
+          settings.maxTokens,
+          result.peakEstimatedInputTokens,
+          result.peakInputTokens,
+        );
         await trace.record("run_completed", {
           runId,
           sessionId,
+          provider: settings.agentModel.provider,
+          model: settings.agentModel.model,
           reply: result.reply,
           iterations: result.iterations,
           stopReason: result.stopReason,
           toolCallCount: result.toolCalls.length,
+          failedToolCallCount: result.failedToolCallCount,
+          derivedTaskIds: [...derivedTaskIds],
           ms,
+          retrievalMs,
+          modelMs: result.modelMs,
+          toolMs: result.toolMs,
+          ...context,
         });
         return {
           reply: result.reply,
           iterations: result.iterations,
           stopReason: result.stopReason,
           toolCallCount: result.toolCalls.length,
+          failedToolCallCount: result.failedToolCallCount,
+          derivedTaskIds: [...derivedTaskIds],
           model: settings.agentModel.model,
           provider: settings.agentModel.provider,
           ms,
+          retrievalMs,
+          modelMs: result.modelMs,
+          toolMs: result.toolMs,
+          ...context,
           runId,
         };
       } catch (error) {
         await trace.record("run_failed", {
           runId,
           sessionId,
+          provider: settings.agentModel.provider,
+          model: settings.agentModel.model,
           errorType: error instanceof Error ? error.name : "UnknownError",
           errorMessage: error instanceof Error ? error.message : String(error),
+          // 用户主动停止与整轮超时都不是模型或工具故障，统计错误率时必须能摘出去。
+          cancelled: error instanceof AgentLoopAbortError,
+          timedOut: error instanceof AgentLoopTimeoutError,
+          derivedTaskIds: [...derivedTaskIds],
           ms: Math.round(performance.now() - startedAt),
+          retrievalMs,
         });
         throw error;
       }
     });
+  }
+
+  /**
+   * 估算下一轮回合起步就会占用的上下文，用于在超限之前展示水位。
+   * 与 Loop 的硬限制共用估算器和额度公式；不含本轮检索注入的记忆。
+   */
+  async function contextUsage(sessionId: string): Promise<ContextUsage> {
+    assertOpen();
+    const settings = await loadRuntimeSettings();
+    const toolSettings = await toolSettingsStore.load();
+    const memory = getMemoryRuntime();
+    const availableSkills = await skills.list();
+    const system = [RUNTIME_SYSTEM_PROMPT, await readSystemPrompt(), formatSkillCatalog(availableSkills)]
+      .filter(Boolean).join("\n\n");
+    const tools = new LocalToolRegistry(memory, new ManageMemoryTool(memory), {
+      currentSessionId: sessionId,
+      settings: recallSettings(settings, tokenEstimator),
+    }, skills, {
+      getCurrentTimeEnabled: toolSettings.getCurrentTimeEnabled,
+      searchWebEnabled: toolSettings.searchWebEnabled,
+      tavilyApiKey: toolSettings.tavilyApiKey,
+    });
+    return {
+      contextWindow: settings.modelContextWindow,
+      maxTokens: settings.maxTokens,
+      contextSafetyTokens: CONTEXT_SAFETY_TOKENS,
+      availableInputTokens: availableInputTokens(settings.modelContextWindow, settings.maxTokens),
+      estimatedInputTokens: tokenEstimator.estimateRequest({
+        model: settings.agentModel.model,
+        system,
+        messages: memory.getWorkingMemory(sessionId),
+        tools: tools.schemas(),
+        max_tokens: settings.maxTokens,
+        signal: undefined,
+      }),
+    };
   }
 
   /** 读取本地追踪文件，展示结构由宿主组装。 */
@@ -434,7 +507,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
     saveAgentSettings, clearModelApiKey, clearEmbeddingApiKey, resetRuntimeSettings,
     rebuildEmbeddingIndex, cancelEmbeddingIndexRebuild, saveSystemPrompt,
     saveToolSettings,
-    clearLocalAgentData, readTraces,
+    clearLocalAgentData, readTraces, contextUsage,
     readSystemPrompt,
     listSkills, saveSkill, deleteSkill,
     getTools() { assertOpen(); return toolSettingsStore.publicCatalog(); },
@@ -462,6 +535,18 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
       return memory.createConversation(previousSessionId);
     },
   };
+}
+
+/**
+ * 从工具事件中挑出记忆写入队列返回的 taskId。
+ * `publicToolEvent` 已把 manage_memory 的结果收敛成元数据，这里只读其中的 taskId。
+ */
+function collectDerivedTaskId(taskIds: Set<string>, kind: string, event: Record<string, unknown>): void {
+  if (kind !== "tool_completed" || event.tool !== "manage_memory") return;
+  const result = event.result;
+  if (!result || typeof result !== "object" || Array.isArray(result)) return;
+  const taskId = (result as Record<string, unknown>).taskId;
+  if (typeof taskId === "string" && taskId) taskIds.add(taskId);
 }
 
 function isModelConnectionConfigured(connection: RuntimeSettings["agentModel"]): boolean {

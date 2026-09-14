@@ -211,8 +211,16 @@ function traceEventFields(type: string, event: Record<string, unknown>): Record<
     tool_started: ["tool"],
     tool_completed: ["tool", "arguments", "result", "summary", "isError", "ms", "outputLength"],
     tool_failed: ["tool", "arguments", "result", "summary", "isError", "ms", "outputLength"],
-    run_completed: ["reply", "iterations", "stopReason", "toolCallCount", "ms"],
-    run_failed: ["errorType", "errorMessage", "iterations", "ms"],
+    run_completed: [
+      "provider", "model", "reply", "iterations", "stopReason", "toolCallCount", "failedToolCallCount",
+      "derivedTaskIds", "ms", "retrievalMs", "modelMs", "toolMs",
+      "contextWindow", "maxTokens", "contextSafetyTokens", "availableInputTokens",
+      "peakEstimatedInputTokens", "peakInputTokens",
+    ],
+    run_failed: [
+      "provider", "model", "errorType", "errorMessage", "iterations", "cancelled", "timedOut",
+      "derivedTaskIds", "ms", "retrievalMs",
+    ],
     consolidation_started: ["trigger", "attempt", "createdAt"],
     consolidation_snapshot: ["batchIndex", "totalBatches", "factCount"],
     consolidation_batch_started: ["batchIndex", "totalBatches", "factCount"],

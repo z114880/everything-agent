@@ -68,6 +68,8 @@
   --accent-soft: var(--accent-surface);
   --good: #1f9d72;
   --good-soft: #e9fbf4;
+  --warn: #b45309;
+  --warn-soft: #fff4e5;
   --page-padding-inline: clamp(20px, 3vw, 46px);
   --page-padding-top: 28px;
   --page-padding-bottom: 56px;
@@ -643,6 +645,16 @@ button:disabled { cursor: not-allowed; }
 .agent-composer textarea { border: 0; border-radius: 13px; font-size: 14px; line-height: 1.6; }
 .agent-composer textarea:focus { box-shadow: none; }
 .composer-hint { color: var(--muted); font-size: 10px; line-height: 1.5; }
+.composer-controls { display: flex; align-items: center; gap: 10px; }
+/* 圆环只用颜色区分档位，中心数字恒用前景色，保证小字号下的对比度。 */
+.context-gauge { position: relative; display: inline-grid; width: 28px; height: 28px; flex: 0 0 auto; place-items: center; cursor: default; }
+.context-gauge svg { position: absolute; inset: 0; transform: rotate(-90deg); }
+.context-gauge circle { fill: none; }
+.context-gauge-track { stroke: var(--line); }
+.context-gauge-arc { stroke: var(--muted); stroke-linecap: round; transition: stroke-dashoffset .3s ease, stroke .3s ease; }
+.context-gauge.level-warn .context-gauge-arc { stroke: var(--warn); }
+.context-gauge.level-critical .context-gauge-arc { stroke: var(--destructive); }
+.context-gauge-value { position: relative; color: var(--ink); font-size: 9px; font-variant-numeric: tabular-nums; line-height: 1; }
 .agent-composer-actions button { min-height: 32px; font-size: 12px; }
 .agent-chat-dock button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .agent-chat-dock button:disabled { cursor: not-allowed; }

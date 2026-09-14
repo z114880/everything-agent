@@ -8,6 +8,8 @@ export type {
   PublicAgentSettings, PublicModelConnection,
 } from "./configuration/schema.ts";
 export type { AgentRunInput, AgentRunOptions, AgentRunResult } from "./types.ts";
+export { availableInputTokens, contextWaterline, CONTEXT_SAFETY_TOKENS } from "./context-window.ts";
+export type { ContextUsage, ContextWaterline } from "./context-window.ts";
 export { createLocalConfig, parseEnv, updateEnvText } from "./local-config.ts";
 export type { LocalConfigPaths } from "./local-config.ts";
 export type { AgentSkill, SaveSkillInput } from "../skills/index.ts";

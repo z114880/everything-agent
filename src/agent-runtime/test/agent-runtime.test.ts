@@ -474,3 +474,134 @@ it("聊天记忆使用 Agent Model 与当前证据，只有 gate 使用 Small Mo
   expect(traces.find((record) => record.type === "memory_change_completed")?.payload).toMatchObject({ action: "create", reasonCode: "new_fact", targetId: expect.any(Number) });
   expect(JSON.stringify(traces)).not.toContain("红茶");
 });
+
+it("run_completed 记录供应商、三段耗时、工具失败数与上下文水位", async () => {
+  const runtime = await setup();
+  const session = await runtime.createSession();
+  let mainCalls = 0;
+  create.mockImplementation(async (request) => {
+    if (!Array.isArray(request.tools) || request.tools.length === 0) return response('{"intent":"none"}');
+    if (++mainCalls === 1) {
+      return {
+        content: [
+          { type: "tool_use", id: "time-call", name: "get_current_time", input: {} },
+          { type: "tool_use", id: "missing-call", name: "不存在的工具", input: {} },
+        ],
+        stop_reason: "tool_use",
+      };
+    }
+    return { ...response("已完成"), tokenUsage: { inputTokens: 1_234, outputTokens: 20, totalTokens: 1_254 } };
+  });
+
+  const result = await runtime.run({ sessionId: session.id, prompt: "现在几点" }, options());
+
+  expect(result).toMatchObject({
+    provider: "openai-compatible",
+    model: "test",
+    toolCallCount: 2,
+    failedToolCallCount: 1,
+    contextWindow: 262_144,
+    contextSafetyTokens: 512,
+    peakInputTokens: 1_234,
+  });
+  expect(result.availableInputTokens).toBe(result.contextWindow - result.maxTokens - result.contextSafetyTokens);
+  expect(result.peakEstimatedInputTokens).toBeGreaterThan(0);
+  // 三段耗时都被单独计量，且不会超过整轮墙钟时间。
+  expect(result.retrievalMs + result.modelMs + result.toolMs).toBeLessThanOrEqual(result.ms);
+  const completed = (await runtime.readTraces()).flatMap((file) => file.records)
+    .find((record) => record.type === "run_completed");
+  expect(completed?.payload).toMatchObject({
+    provider: "openai-compatible",
+    model: "test",
+    failedToolCallCount: 1,
+    peakInputTokens: 1_234,
+    availableInputTokens: result.availableInputTokens,
+    retrievalMs: expect.any(Number),
+    modelMs: expect.any(Number),
+    toolMs: expect.any(Number),
+  });
+});
+
+it("记忆写入的 taskId 进入 derivedTaskIds，关联独立的后台任务 trace", async () => {
+  const runtime = await setup();
+  const session = await runtime.createSession();
+  runtime.memory.stopBackgroundTasks();
+  let mainCalls = 0;
+  create.mockImplementation(async (request) => {
+    if (!Array.isArray(request.tools) || request.tools.length === 0) return response('{"intent":"none"}');
+    if (++mainCalls === 1) {
+      return {
+        content: [{ type: "tool_use", id: "memory-call", name: "manage_memory", input: { action: "submit", intent: "remember", subject: "用户", attribute: "饮品偏好", content: "喜欢红茶" } }],
+        stop_reason: "tool_use",
+      };
+    }
+    return response("已记下");
+  });
+
+  const result = await runtime.run({ sessionId: session.id, prompt: "请记住我喜欢红茶" }, options());
+
+  expect(result.derivedTaskIds).toHaveLength(1);
+  expect(runtime.memory.listBackgroundTasks().map((task) => task.id)).toContain(result.derivedTaskIds[0]);
+  const completed = (await runtime.readTraces()).flatMap((file) => file.records)
+    .find((record) => record.type === "run_completed");
+  expect(completed?.payload).toMatchObject({ derivedTaskIds: result.derivedTaskIds });
+});
+
+it("用户停止与整轮超时在 run_failed 中分别标记，不计入模型故障", async () => {
+  const runtime = await setup();
+  const session = await runtime.createSession();
+  const controller = new AbortController();
+  create.mockImplementation(async (request) => {
+    if (!Array.isArray(request.tools) || request.tools.length === 0) return response('{"intent":"none"}');
+    controller.abort();
+    return response("不会用到");
+  });
+
+  await expect(runtime.run({ sessionId: session.id, prompt: "先停下" }, { observer: () => {}, signal: controller.signal }))
+    .rejects.toThrow();
+
+  const failed = (await runtime.readTraces()).flatMap((file) => file.records)
+    .find((record) => record.type === "run_failed");
+  expect(failed?.payload).toMatchObject({
+    cancelled: true,
+    timedOut: false,
+    provider: "openai-compatible",
+    model: "test",
+    retrievalMs: expect.any(Number),
+  });
+});
+
+it("整轮超时标记 timedOut 而不是 cancelled", async () => {
+  const runtime = await setup();
+  const session = await runtime.createSession();
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  create.mockImplementation(async (request) => {
+    if (!Array.isArray(request.tools) || request.tools.length === 0) return response('{"intent":"none"}');
+    await vi.advanceTimersByTimeAsync(300_001);
+    return response("太慢了");
+  });
+  try {
+    await expect(runtime.run({ sessionId: session.id, prompt: "执行超长任务" }, options())).rejects.toThrow();
+    const failed = (await runtime.readTraces()).flatMap((file) => file.records)
+      .find((record) => record.type === "run_failed");
+    expect(failed?.payload).toMatchObject({ cancelled: false, timedOut: true });
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("上下文水位与 Loop 硬限制同口径，并随会话历史增长", async () => {
+  model();
+  const runtime = await setup();
+  const session = await runtime.createSession();
+
+  const empty = await runtime.contextUsage(session.id);
+  expect(empty.availableInputTokens).toBe(empty.contextWindow - empty.maxTokens - empty.contextSafetyTokens);
+  // 空会话也有系统提示与工具 schema 的固定开销，不应显示为零占用。
+  expect(empty.estimatedInputTokens).toBeGreaterThan(0);
+
+  await runtime.run({ sessionId: session.id, prompt: "你好".repeat(500) }, options());
+
+  const afterRun = await runtime.contextUsage(session.id);
+  expect(afterRun.estimatedInputTokens).toBeGreaterThan(empty.estimatedInputTokens);
+});

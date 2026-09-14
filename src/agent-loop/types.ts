@@ -128,4 +128,14 @@ export interface AgentLoopResult {
   toolCalls: ToolCallRecord[];
   iterations: number;
   stopReason: "completed" | "max_iterations";
+  /** 本轮全部模型调用的耗时之和；调用顺序执行，因此不超过整轮耗时。 */
+  modelMs: number;
+  /** 本轮全部工具调用的耗时之和。 */
+  toolMs: number;
+  /** 返回错误结果的工具调用数量，用于区分「调用很多」和「调用都失败」。 */
+  failedToolCallCount: number;
+  /** 各次迭代请求估算输入 token 的最大值；与 Context Window 硬限制同口径。未注入估算器时为 null。 */
+  peakEstimatedInputTokens: number | null;
+  /** 供应商返回的真实输入 token 峰值；没有任何一次调用报告 usage 时为 null。 */
+  peakInputTokens: number | null;
 }

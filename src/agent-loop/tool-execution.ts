@@ -25,6 +25,8 @@ interface ExecuteToolCallsOptions {
 export interface ExecutedToolCalls {
   records: ToolCallRecord[];
   results: EventData[];
+  /** 本轮工具执行耗时之和；工具顺序执行，因此等于这段的墙钟时间。 */
+  ms: number;
 }
 
 /** 顺序执行同一轮模型请求的工具，并生成下一轮可观察的工具结果。 */
@@ -40,6 +42,7 @@ export async function executeToolCalls({
 }: ExecuteToolCallsOptions): Promise<ExecutedToolCalls> {
   const records: ToolCallRecord[] = [];
   const results: EventData[] = [];
+  let totalMs = 0;
 
   for (const call of calls) {
     const toolName = call.name!;
@@ -79,11 +82,10 @@ export async function executeToolCalls({
     };
     records.push(record);
 
+    const ms = Math.round(performance.now() - startedAt);
+    totalMs += ms;
     const publicToolEvent = serializeToolEvent(record);
-    await notify(isError ? "tool_failed" : "tool_completed", {
-      ...publicToolEvent,
-      ms: Math.round(performance.now() - startedAt),
-    });
+    await notify(isError ? "tool_failed" : "tool_completed", { ...publicToolEvent, ms });
     await notify("tool", publicToolEvent);
     results.push({
       type: "tool_result",
@@ -93,5 +95,5 @@ export async function executeToolCalls({
     });
   }
 
-  return { records, results };
+  return { records, results, ms: totalMs };
 }

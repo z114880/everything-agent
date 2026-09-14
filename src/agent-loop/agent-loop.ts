@@ -42,7 +42,8 @@ export type {
 
 const DEFAULT_MAX_ITERATIONS = 10;
 const DEFAULT_MAX_TOKENS = 2048;
-const CONTEXT_SAFETY_TOKENS = 512;
+/** Context Window 之外必须留出的固定安全余量；水位展示与硬限制共用同一口径。 */
+export const CONTEXT_SAFETY_TOKENS = 512;
 const ITERATION_LIMIT_REPLY = "已达到本轮最大迭代次数，请把任务拆小后重试。";
 
 function assertPositiveInteger(value: number, name: string): void {
@@ -126,6 +127,12 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
   const toolCalls: ToolCallRecord[] = [];
   const notify: AgentObserver = async (kind, event = {}) => observer(kind, { ...event, runId });
   let iterations = 0;
+  const metrics: LoopMetrics = {
+    modelMs: 0,
+    toolMs: 0,
+    peakEstimatedInputTokens: null,
+    peakInputTokens: null,
+  };
 
   await notify("context_assembled", {
     messageCount: messages.length,
@@ -145,9 +152,11 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
         max_tokens: maxTokens,
         signal,
       };
-      if (modelContextWindow !== undefined && tokenEstimator) {
+      if (tokenEstimator) {
+        // 先记录再判定，超限的那次请求同样是本轮真实达到过的水位。
         const estimatedInputTokens = tokenEstimator.estimateRequest(request);
-        if (estimatedInputTokens + maxTokens + CONTEXT_SAFETY_TOKENS > modelContextWindow) {
+        metrics.peakEstimatedInputTokens = Math.max(metrics.peakEstimatedInputTokens ?? 0, estimatedInputTokens);
+        if (modelContextWindow !== undefined && estimatedInputTokens + maxTokens + CONTEXT_SAFETY_TOKENS > modelContextWindow) {
           throw new Error(`模型输入估算、输出预留与安全余量共 ${estimatedInputTokens + maxTokens + CONTEXT_SAFETY_TOKENS} tokens，超过 Context Window ${modelContextWindow}；请新建 Session 或调高 Context Window`);
         }
       }
@@ -177,16 +186,21 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
           iteration,
         );
       } catch (error) {
+        const failedMs = Math.round(performance.now() - llmStartedAt);
+        metrics.modelMs += failedMs;
         await notify("model_failed", {
           iteration,
           modelCallId,
           errorType: error instanceof Error ? error.name : "UnknownError",
           errorMessage: error instanceof Error ? error.message : String(error),
-          ms: Math.round(performance.now() - llmStartedAt),
+          ms: failedMs,
         });
         throw error;
       }
+      const modelMs = Math.round(performance.now() - llmStartedAt);
+      metrics.modelMs += modelMs;
       const tokenUsage = tokenUsageFrom(response);
+      if (tokenUsage) metrics.peakInputTokens = Math.max(metrics.peakInputTokens ?? 0, tokenUsage.inputTokens);
       const stopReason = response.stop_reason ?? response.stopReason ?? null;
       await notify("model_response", {
         iteration,
@@ -194,7 +208,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
         response: structuredClone(response),
         stopReason,
         tokenUsage,
-        ms: Math.round(performance.now() - llmStartedAt),
+        ms: modelMs,
       });
       await notify("llm", { iteration, stopReason, tokenUsage });
       messages.push({ role: "assistant", content: response.content });
@@ -205,6 +219,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
           textFrom(response.content),
           toolCalls,
           iterations,
+          metrics,
           startedAt,
           notify,
         );
@@ -220,6 +235,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
         iteration,
         serializeToolEvent,
       });
+      metrics.toolMs += executed.ms;
       toolCalls.push(...executed.records);
       messages.push({ role: "user", content: executed.results });
     }
@@ -229,6 +245,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
       toolCalls,
       iterations,
       stopReason: "max_iterations",
+      ...loopStatistics(toolCalls, metrics),
     };
     await notifyLoopEnd(result, startedAt, notify);
     return result;
@@ -242,14 +259,40 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
   }
 }
 
+/** Loop 执行过程中持续累加的统计量。 */
+interface LoopMetrics {
+  modelMs: number;
+  toolMs: number;
+  peakEstimatedInputTokens: number | null;
+  peakInputTokens: number | null;
+}
+
+/** 把过程累加量整理成结果字段；工具失败数由已执行记录得出。 */
+function loopStatistics(toolCalls: ToolCallRecord[], metrics: LoopMetrics) {
+  return {
+    modelMs: metrics.modelMs,
+    toolMs: metrics.toolMs,
+    failedToolCallCount: toolCalls.filter((call) => call.isError).length,
+    peakEstimatedInputTokens: metrics.peakEstimatedInputTokens,
+    peakInputTokens: metrics.peakInputTokens,
+  };
+}
+
 async function finishCompletedLoop(
   reply: string,
   toolCalls: ToolCallRecord[],
   iterations: number,
+  metrics: LoopMetrics,
   startedAt: number,
   notify: AgentObserver,
 ): Promise<AgentLoopResult> {
-  const result: AgentLoopResult = { reply, toolCalls, iterations, stopReason: "completed" };
+  const result: AgentLoopResult = {
+    reply,
+    toolCalls,
+    iterations,
+    stopReason: "completed",
+    ...loopStatistics(toolCalls, metrics),
+  };
   await notify("reply", { iteration: iterations, textLength: reply.length });
   await notifyLoopEnd(result, startedAt, notify);
   return result;
@@ -264,6 +307,11 @@ async function notifyLoopEnd(
     iterations: result.iterations,
     stopReason: result.stopReason,
     toolCallCount: result.toolCalls.length,
+    failedToolCallCount: result.failedToolCallCount,
+    modelMs: result.modelMs,
+    toolMs: result.toolMs,
+    peakEstimatedInputTokens: result.peakEstimatedInputTokens,
+    peakInputTokens: result.peakInputTokens,
     ms: Math.round(performance.now() - startedAt),
   });
 }
