@@ -82,7 +82,7 @@ export class JsonlTracer {
     }
     const dateDirectory = join(this.traceDirectory, (this.consolidationDates.get(record.runId) ?? (typeof record.taskCreatedAt === "string" ? record.taskCreatedAt : record.timestamp)).slice(0, 10));
     await mkdir(dateDirectory, { recursive: true });
-    const sessionFile = traceFileName(consolidation ? `consolidation-${record.runId}` : typeof record.taskId === "string" ? `${record.taskKind}-${record.taskId}` : record.sessionId || `system-${this.systemId}`);
+    const sessionFile = traceFileName(consolidation ? `consolidation-${record.runId}` : typeof record.taskId === "string" ? `${record.taskKind}-${record.taskId}` : record.sessionId ? `run-${record.sessionId}` : `system-${this.systemId}`);
     const primaryPath = await numberedTracePath(dateDirectory, sessionFile);
     let path = this.recoveryPaths.get(primaryPath) ?? primaryPath;
     if (!this.checkedPaths.has(path)) {

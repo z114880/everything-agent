@@ -71,7 +71,7 @@ describe("JSONL 运行记录", () => {
     expect(records[2]?.payload?.response).toMatchObject({ tokenUsage: { inputTokens: 12, outputTokens: 3, totalTokens: 15 } });
     expect(records[2]?.payload?.tokenUsage).toEqual({ inputTokens: 12, outputTokens: 3, totalTokens: 15 });
     expect(JSON.stringify(records)).not.toContain('"authorization":"secret"');
-    expect(await readFile(join(home, "traces", "2026-09-03", "001-s1.jsonl"), "utf8"))
+    expect(await readFile(join(home, "traces", "2026-09-03", "001-run-s1.jsonl"), "utf8"))
       .toContain('"type":"run_started"');
   });
 
@@ -83,10 +83,10 @@ describe("JSONL 运行记录", () => {
     await tracer.record("trace_read_error", { runId: "r3" });
 
     const dateDirectory = join(home, "traces", "2026-09-03");
-    expect((await readdir(dateDirectory)).sort()).toEqual(["001-s1.jsonl", "002-s2.jsonl", expect.stringMatching(/^003-system-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.jsonl$/)]);
+    expect((await readdir(dateDirectory)).sort()).toEqual(["001-run-s1.jsonl", "002-run-s2.jsonl", expect.stringMatching(/^003-system-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.jsonl$/)]);
     expect((await readTraceFiles(home)).map((file) => file.path)).toEqual([
-      "2026-09-03/001-s1.jsonl",
-      "2026-09-03/002-s2.jsonl",
+      "2026-09-03/001-run-s1.jsonl",
+      "2026-09-03/002-run-s2.jsonl",
       expect.stringMatching(/^2026-09-03\/003-system-[0-9a-f-]{36}\.jsonl$/),
     ]);
   });
@@ -120,10 +120,10 @@ describe("JSONL 运行记录", () => {
     await restartedTracer.record("run_started", { runId: "r2", sessionId: "s2" });
 
     const directory = join(home, "traces", "2026-09-03");
-    expect((await readdir(directory)).sort()).toEqual(["001-s1.jsonl", "002-s2.jsonl"]);
+    expect((await readdir(directory)).sort()).toEqual(["001-run-s1.jsonl", "002-run-s2.jsonl"]);
     expect(await readTraceFiles(home, 1)).toEqual([
       expect.objectContaining({
-        path: "2026-09-03/002-s2.jsonl",
+        path: "2026-09-03/002-run-s2.jsonl",
         records: [expect.objectContaining({ runId: "r2" })],
       }),
     ]);
@@ -133,13 +133,13 @@ describe("JSONL 运行记录", () => {
     const home = await mkdtemp(join(tmpdir(), "everything-trace-"));
     const directory = join(home, "traces", "2026-09-03");
     await mkdir(directory, { recursive: true });
-    await writeFile(join(directory, "001-s1.jsonl"), "broken\n", "utf8");
+    await writeFile(join(directory, "001-run-s1.jsonl"), "broken\n", "utf8");
     const warning = vi.fn();
     const tracer = new JsonlTracer(home, { onWarning: warning, now: () => new Date("2026-09-03T08:09:10Z") });
     await tracer.record("run_completed", { runId: "r1", sessionId: "s1", iterations: 1 });
 
     expect(warning).toHaveBeenCalled();
-    const recovered = (await readdir(directory)).find((file) => file.startsWith("001-s1.recovered-"));
+    const recovered = (await readdir(directory)).find((file) => file.startsWith("001-run-s1.recovered-"));
     expect(recovered).toBeTruthy();
     expect(await readFile(join(directory, recovered!), "utf8")).toContain('"type":"run_completed"');
   });
@@ -150,10 +150,10 @@ describe("JSONL 运行记录", () => {
 
     const directory = join(home, "traces", "2026-09-03");
     await mkdir(directory, { recursive: true });
-    await writeFile(join(directory, "001-s1.jsonl"), '{"version":1,"type":"turn_end","timestamp":"2026-09-03T08:00:00Z","runId":"r1"}\n损坏\n', "utf8");
+    await writeFile(join(directory, "001-run-s1.jsonl"), '{"version":1,"type":"turn_end","timestamp":"2026-09-03T08:00:00Z","runId":"r1"}\n损坏\n', "utf8");
     expect(await readTraceRecords(home, 100)).toEqual([
       expect.objectContaining({ type: "turn_end", runId: "r1" }),
-      expect.objectContaining({ type: "trace_read_error", payload: { file: "2026-09-03/001-s1.jsonl" } }),
+      expect.objectContaining({ type: "trace_read_error", payload: { file: "2026-09-03/001-run-s1.jsonl" } }),
     ]);
   });
 
