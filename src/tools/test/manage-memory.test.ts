@@ -7,6 +7,7 @@ import { ManageMemoryTool } from "../manage-memory.ts";
 import { LocalToolRegistry } from "../tool-registry.ts";
 
 const memories: MemoryRuntime[] = [];
+const noop = () => {};
 const recall: SessionRecallSettings = {
   searchWindow: 5, entryTokenLimit: 4_000, tokenLimit: 50_000,
   tokenEstimator: { estimateText(text: string) { return text.length } },
@@ -21,8 +22,8 @@ describe("本地记忆工具", () => {
       currentSessionId: session.id, runId: "r1", evidenceMessageId: evidence.id, model: "small",
       client: { messages: { create: () => { throw new Error("无效提交不得调用模型"); } } },
     });
-    expect(() => tool.execute({ action: "submit", content: "用户喜欢布偶猫" })).toThrow("submit 缺少必填字段：intent、subject、attribute");
-    expect(() => tool.execute({ action: "submit", content: "用户喜欢布偶猫", intent: "remember", subject: "宠物偏好" })).toThrow("submit 缺少必填字段：attribute");
+    expect(() => tool.execute({ action: "submit", content: "用户喜欢布偶猫" }, noop)).toThrow("submit 缺少必填字段：intent、subject、attribute");
+    expect(() => tool.execute({ action: "submit", content: "用户喜欢布偶猫", intent: "remember", subject: "宠物偏好" }, noop)).toThrow("submit 缺少必填字段：attribute");
     const schemas = new LocalToolRegistry(runtime, tool).schemas() as Array<{ name: string; input_schema: unknown }>;
     expect(schemas.find((schema) => schema.name === "manage_memory")?.input_schema).toMatchObject({
       anyOf: [
@@ -42,7 +43,7 @@ describe("本地记忆工具", () => {
     const registry = new LocalToolRegistry(runtime, tool);
     await expect(registry.execute("manage_memory", { action: "submit", intent: "remember", subject: "用户", attribute: "饮品偏好", content: "喜欢红茶" }, () => {}, { signal: new AbortController().signal, deadline: null, iteration: 1, toolUseId: "t1" })).toMatchObject({ status: "queued" });
     await runtime.waitForBackgroundTasks();
-    await expect(tool.execute({ action: "search", query: "红茶" })).resolves.toHaveLength(1);
+    await expect(tool.execute({ action: "search", query: "红茶" }, noop)).resolves.toHaveLength(1);
     expect(runtime.listSemantic()[0]?.sources).toEqual([{ sessionId: session.id, messageId: evidence.id, createdAt: evidence.createdAt }]);
   });
 
@@ -52,19 +53,19 @@ describe("本地记忆工具", () => {
     const tool = new ManageMemoryTool(runtime, { currentSessionId: session.id, runId: "r1", evidenceMessageId: evidence.id, model: "small",
       client: { messages: { create: () => ({ content: [{ type: "text", text: JSON.stringify({ action: "delete", targetId: item.id, reason: "用户明确要求忘记", evidenceMessageIds: [evidence.id] }) }], stop_reason: "end_turn" }) } },
     });
-    expect(tool.execute({ action: "submit", intent: "forget", subject: "用户", attribute: "饮品偏好", content: "忘记饮品偏好" })).toMatchObject({ status: "queued" });
+    expect(tool.execute({ action: "submit", intent: "forget", subject: "用户", attribute: "饮品偏好", content: "忘记饮品偏好" }, noop)).toMatchObject({ status: "queued" });
     await runtime.waitForBackgroundTasks();
     expect(runtime.listSemantic()).toEqual([]);
   });
 
   it("拒绝绕过检索的旧操作、伪造证据及未绑定模型的提交", async () => {
     const tool = new ManageMemoryTool(await memory());
-    expect(() => tool.execute(null)).toThrow("参数必须是对象");
-    expect(() => tool.execute({ action: "create" })).toThrow("未知");
-    expect(() => tool.execute({ action: "request_delete" })).toThrow("未知");
-    expect(() => tool.execute({ action: "submit", evidenceMessageIds: [1] })).toThrow("不支持");
-    expect(() => tool.execute({ action: "submit" })).toThrow("模型与证据");
-    expect(() => tool.execute({ action: "search", query: " " })).toThrow("query");
+    expect(() => tool.execute(null, noop)).toThrow("参数必须是对象");
+    expect(() => tool.execute({ action: "create" }, noop)).toThrow("未知");
+    expect(() => tool.execute({ action: "request_delete" }, noop)).toThrow("未知");
+    expect(() => tool.execute({ action: "submit", evidenceMessageIds: [1] }, noop)).toThrow("不支持");
+    expect(() => tool.execute({ action: "submit" }, noop)).toThrow("模型与证据");
+    expect(() => tool.execute({ action: "search", query: " " }, noop)).toThrow("query");
   });
 
   it("注册 Session Search 与 Session Read，并绑定当前 Session 排除规则", async () => {
@@ -83,6 +84,23 @@ describe("本地记忆工具", () => {
     expect(read.entries).not.toHaveLength(0);
     await expect(registry.execute("session_read", { sessionId: current.id }, async () => {}, context)).rejects.toThrow("当前 Session");
     expect(() => registry.execute("session_search", null, async () => {}, context)).toThrow("参数必须是对象");
+  });
+
+  it("工具内检索经回合观察者上报，事件不会脱离当前会话", async () => {
+    const runtime = await memory();
+    const current = runtime.createSession("当前"); const historical = runtime.createSession("历史");
+    await addRun(runtime, historical.id, "r2", "发布方案", "历史方案");
+    await runtime.createSemantic("饮品偏好", "喜欢红茶");
+    const registry = new LocalToolRegistry(runtime, undefined, { currentSessionId: current.id, settings: recall });
+    const context = { signal: undefined, deadline: null, iteration: 1, toolUseId: "t1" };
+    const events: Array<{ kind: string; corpus: unknown }> = [];
+    const notify = (kind: string, event: Record<string, unknown>) => { events.push({ kind, corpus: event.corpus }); };
+    await registry.execute("manage_memory", { action: "search", query: "红茶" }, notify, context);
+    await registry.execute("session_search", { query: "发布方案" }, notify, context);
+    expect(events).toEqual([
+      { kind: "lexical_retrieval_completed", corpus: "semantic" },
+      { kind: "lexical_retrieval_completed", corpus: "session" },
+    ]);
   });
 
   it("无 Memory 时只开放时间工具，并统一校验取消和未知工具", async () => {

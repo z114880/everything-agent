@@ -73,15 +73,15 @@ export class LocalToolRegistry implements ToolRegistry {
   execute(
     name: string,
     args: unknown,
-    _notify: AgentObserver,
+    notify: AgentObserver,
     context: ToolExecutionContext,
   ): unknown {
     if (context.signal?.aborted) throw context.signal.reason;
-    if (name === MANAGE_MEMORY_TOOL && this.manageMemory) return this.manageMemory.execute(args, context);
+    if (name === MANAGE_MEMORY_TOOL && this.manageMemory) return this.manageMemory.execute(args, notify, context);
     if ((name === SESSION_SEARCH_TOOL || name === SESSION_READ_TOOL) && this.sessionRecall) {
-      return this.sessionRecall.execute(name, args);
+      return this.sessionRecall.execute(name, args, notify);
     }
-    if (name === READ_SKILL_TOOL && this.readSkill) return this.readSkill.execute(args, _notify, context);
+    if (name === READ_SKILL_TOOL && this.readSkill) return this.readSkill.execute(args, notify, context);
     if (name === SEARCH_WEB_TOOL && this.tavilySearch) return this.tavilySearch.execute(args, context);
     if (name !== TIME_TOOL || !this.options.getCurrentTimeEnabled) throw new Error(`工具未注册：${name}`);
     if (!isEmptyObject(args)) throw new TypeError(`${TIME_TOOL} 不接受参数`);

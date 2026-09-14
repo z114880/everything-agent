@@ -1,3 +1,4 @@
+import type { AgentObserver } from "../agent-loop/agent-loop.ts";
 import type { MemoryRuntime, SessionRecallSettings } from "../memory/index.ts";
 
 export const SESSION_SEARCH_TOOL = "session_search";
@@ -42,7 +43,8 @@ export class SessionRecallTools {
     this.settings = settings;
   }
 
-  execute(name: string, value: unknown): unknown {
+  /** notify 是 Loop 的回合观察者，会话检索事件必须经它上报才能归到当前会话。 */
+  execute(name: string, value: unknown, notify: AgentObserver): unknown {
     const args = record(value);
     if (name === SESSION_SEARCH_TOOL) {
       const query = optionalText(args.query);
@@ -52,7 +54,7 @@ export class SessionRecallTools {
         ...(args.recent === true ? { recent: true } : {}),
         ...(limit === undefined ? {} : { limit }),
         currentSessionId: this.currentSessionId,
-      }, this.settings);
+      }, this.settings, undefined, undefined, notify);
     }
     if (name === SESSION_READ_TOOL) {
       const sessionId = optionalText(args.sessionId);

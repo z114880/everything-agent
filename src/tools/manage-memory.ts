@@ -1,6 +1,6 @@
 import type { MemoryManagementOptions, MemoryRuntime } from "../memory/index.ts";
 import { readMemoryCandidate } from "../memory/index.ts";
-import type { ToolExecutionContext } from "../agent-loop/agent-loop.ts";
+import type { AgentObserver, ToolExecutionContext } from "../agent-loop/agent-loop.ts";
 
 export const MANAGE_MEMORY_TOOL = "manage_memory";
 export const manageMemorySchema = {
@@ -31,14 +31,17 @@ export class ManageMemoryTool {
     this.memory = memory; this.options = options;
   }
 
-  /** 提交落库后立即返回 queued；未绑定当前用户证据时仅允许搜索。 */
-  execute(value: unknown, context?: ToolExecutionContext): unknown {
+  /**
+   * 提交落库后立即返回 queued；未绑定当前用户证据时仅允许搜索。
+   * notify 是 Loop 的回合观察者，检索事件必须经它上报才能归到当前会话。
+   */
+  execute(value: unknown, notify: AgentObserver, context?: ToolExecutionContext): unknown {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("参数必须是对象");
     const args = value as Record<string, unknown>;
     if (Object.keys(args).some((key) => !["action", "query", "intent", "subject", "attribute", "content"].includes(key))) throw new TypeError("不支持的记忆参数");
     if (args.action === "search") {
       if (typeof args.query !== "string" || !args.query.trim()) throw new TypeError("query 不能为空");
-      return this.memory.searchSemantic(args.query, 20);
+      return this.memory.searchSemantic(args.query, 20, undefined, this.options?.runId, notify);
     }
     if (args.action !== "submit") throw new TypeError("未知的 memory action");
     if (!this.options) throw new Error("记忆提交缺少当前回合的模型与证据");
