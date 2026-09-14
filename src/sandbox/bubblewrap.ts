@@ -6,15 +6,21 @@ import type { Sandbox, SandboxCommand, SandboxEnforcement, SandboxKind, SandboxP
 /** Linux 与 WSL2 使用的沙箱包装器，按 PATH 解析。 */
 export const BUBBLEWRAP_COMMAND = "bwrap";
 
+/** 拒读路径在文件系统中的形态，决定用哪种挂载遮挡。 */
+export type PathKind = "directory" | "file" | "missing";
+
 /**
  * 组装 bubblewrap 参数。
  *
  * 与 Seatbelt 的规则模型不同，bubblewrap 靠挂载命名空间表达边界：后出现的挂载
  * 覆盖先出现的，因此顺序是「全盘只读 → 可写区改为读写 → 拒写区改回只读」。
+ *
+ * 拒读路径的形态必须在每次执行前重新判定：用文件的方式遮挡一个目录会让 bwrap
+ * 直接启动失败，进而让所有命令一起失败，而不是只丢掉这一条规则。
  */
 export function buildBubblewrapArgs(
   policy: SandboxPolicy,
-  isDirectory: (path: string) => boolean = defaultIsDirectory,
+  pathKind: (path: string) => PathKind = defaultPathKind,
 ): string[] {
   const args = ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--unshare-pid", "--new-session", "--die-with-parent"];
   for (const path of [policy.workspaceRoot, ...policy.writableRoots]) {
@@ -27,9 +33,10 @@ export function buildBubblewrapArgs(
   }
   for (const path of policy.denyRead) {
     const absolute = resolve(path);
-    // 目录盖成空 tmpfs，文件盖成 /dev/null；两者都让内容不可读又不影响路径存在。
-    if (isDirectory(absolute)) args.push("--tmpfs", absolute);
-    else args.push("--ro-bind", "/dev/null", absolute);
+    // 目录盖成空 tmpfs，文件盖成 /dev/null；不存在的路径无需遮挡，挂载它反而会让 bwrap 起不来。
+    const kind = pathKind(absolute);
+    if (kind === "directory") args.push("--tmpfs", absolute);
+    else if (kind === "file") args.push("--ro-bind", "/dev/null", absolute);
   }
   if (!policy.allowNetwork) args.push("--unshare-net");
   return args;
@@ -39,22 +46,23 @@ export function buildBubblewrapArgs(
 export class BubblewrapSandbox implements Sandbox {
   readonly kind: SandboxKind = "bubblewrap";
   readonly enforces: SandboxEnforcement = { filesystem: true, network: true };
-  private readonly args: string[];
+  private readonly policy: SandboxPolicy;
 
   constructor(policy: SandboxPolicy) {
-    this.args = buildBubblewrapArgs(policy);
+    this.policy = policy;
   }
 
   run(command: SandboxCommand): Promise<SandboxResult> {
-    const args = [...this.args, "--", "/bin/sh", "-c", command.command];
+    // 每次执行都重新组装：拒读路径可能在两次执行之间被创建、删除或改变形态。
+    const args = [...buildBubblewrapArgs(this.policy), "--", "/bin/sh", "-c", command.command];
     return executeSandboxed(BUBBLEWRAP_COMMAND, args, command, this.enforces);
   }
 }
 
-function defaultIsDirectory(path: string): boolean {
+function defaultPathKind(path: string): PathKind {
   try {
-    return statSync(path).isDirectory();
+    return statSync(path).isDirectory() ? "directory" : "file";
   } catch {
-    return false;
+    return "missing";
   }
 }

@@ -34,14 +34,15 @@ export function buildSeatbeltProfile(policy: SandboxPolicy): string {
 export class SeatbeltSandbox implements Sandbox {
   readonly kind: SandboxKind = "seatbelt";
   readonly enforces: SandboxEnforcement = { filesystem: true, network: true };
-  private readonly profile: string;
+  private readonly policy: SandboxPolicy;
 
   constructor(policy: SandboxPolicy) {
-    this.profile = buildSeatbeltProfile(policy);
+    this.policy = policy;
   }
 
   run(command: SandboxCommand): Promise<SandboxResult> {
-    const args = ["-p", this.profile, "/bin/sh", "-c", command.command];
+    // 每次执行都重新生成：路径在两次执行之间被创建后，realpath 的结果会变。
+    const args = ["-p", buildSeatbeltProfile(this.policy), "/bin/sh", "-c", command.command];
     return executeSandboxed(SANDBOX_EXEC_PATH, args, command, this.enforces);
   }
 }
