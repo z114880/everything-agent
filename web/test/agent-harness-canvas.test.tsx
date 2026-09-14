@@ -64,10 +64,10 @@ describe("Agent 业务画布", () => {
     expect(html).toContain('agent-node running');
     expect(html).toContain('agent-edge active');
     expect(html.match(/<rect x="1"[^>]*width="1108"[^>]*class="agent-loop-box"/g)).toHaveLength(3);
-    expect(html).toContain('viewBox="0 19 1110 882"');
-    expect(html).toContain('<rect x="1" y="570" width="1108" height="180"');
-    expect(html).toContain('<rect x="1" y="770" width="1108" height="130"');
-    expect(harnessPresentation.consolidate_trigger!.y).toBe(815);
+    expect(html).toContain('viewBox="0 19 1110 872"');
+    expect(html).toContain('<rect x="1" y="570" width="1108" height="170"');
+    expect(html).toContain('<rect x="1" y="760" width="1108" height="130"');
+    expect(harnessPresentation.consolidate_trigger!.y).toBe(805);
   });
   it("服务端移除节点时不在前端恢复固定节点", () => {
     const graph = workflow();

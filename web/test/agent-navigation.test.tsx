@@ -4,9 +4,14 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import App from "../src/App";
 
-const api = vi.hoisted(() => ({ loadAgent: vi.fn(), memoryAction: vi.fn(), runAgent: vi.fn(), subscribeBackgroundEvents: vi.fn() }));
+const api = vi.hoisted(() => ({ loadAgent: vi.fn(), loadContextUsage: vi.fn(), memoryAction: vi.fn(), runAgent: vi.fn(), subscribeBackgroundEvents: vi.fn() }));
 vi.mock("../src/agent-api", () => api);
-vi.mock("../src/pages/agent/AgentHarnessCanvas", () => ({ AgentHarnessCanvas: ({ nodeStates }: { nodeStates: Record<string, string> }) => <output data-testid="graph-states">{JSON.stringify(nodeStates)}</output> }));
+vi.mock("../src/pages/agent/AgentHarnessCanvas", () => ({ AgentHarnessCanvas: ({ nodeStates, activeEdges }: { nodeStates: Record<string, string>; activeEdges: Set<string> }) => (
+  <>
+    <output data-testid="graph-states">{JSON.stringify(nodeStates)}</output>
+    <output data-testid="graph-edges">{JSON.stringify([...activeEdges])}</output>
+  </>
+) }));
 vi.mock("../src/pages/config/ConfigPage", () => ({ ConfigPage: () => <div>配置页面</div> }));
 
 let container: HTMLDivElement;
@@ -17,6 +22,7 @@ beforeEach(async () => {
   const sessions = [{ id: "session-1", title: "当前会话", messageCount: 0 }];
   api.loadAgent.mockResolvedValue({ workflow: { nodes: [], edges: [] }, settings: { agentModel: { keyConfigured: true }, smallModel: { keyConfigured: true } }, sessions, semanticCount: 0 });
   api.memoryAction.mockImplementation(async ({ action }) => action === "select_session" ? { messages: [], sessions } : null);
+  api.loadContextUsage.mockResolvedValue(null);
   api.subscribeBackgroundEvents.mockReturnValue(vi.fn());
   container = document.createElement("div");
   document.body.append(container);
@@ -139,4 +145,23 @@ it("新一轮对话清空上一轮记忆写入状态，后续事件不会恢复�
   expect(states().memory_queue ?? "idle").toBe("idle");
   await act(async () => onBackground("memory_task_started", {}));
   expect(states().memory_review).toBe("running");
+});
+
+it("整理进行中发起新对话，只清空记忆写入连线，保留整理连线", async () => {
+  const onBackground = api.subscribeBackgroundEvents.mock.calls[0]![0];
+  await act(async () => {
+    onBackground("memory_task_started", {});
+    onBackground("consolidation_started", {});
+  });
+  const edges = () => JSON.parse(container.querySelector('[data-testid="graph-edges"]')!.textContent!) as string[];
+  const states = () => JSON.parse(container.querySelector('[data-testid="graph-states"]')!.textContent!);
+  expect(edges()).toContain("memory_queue->memory_review");
+  expect(edges()).toContain("consolidate_trigger->consolidate_snapshot");
+  api.runAgent.mockImplementation(() => new Promise(() => {}));
+  await enterMessage("新的对话");
+  await click("发送");
+  expect(edges()).not.toContain("memory_queue->memory_review");
+  // 整理是与回合无关的后台流程，模型调用期间没有新事件，连线一旦被清就再也不会亮起。
+  expect(edges()).toContain("consolidate_trigger->consolidate_snapshot");
+  expect(states().consolidate_snapshot).toBe("running");
 });

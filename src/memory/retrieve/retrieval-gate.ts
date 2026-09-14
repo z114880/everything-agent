@@ -1,5 +1,6 @@
 import type { AgentMessage, AgentModelClient, AgentObserver } from "../../agent-loop/agent-loop.ts";
 import type { RetrievalIntent } from "../types.ts";
+import { parseModelJsonObject } from "../model-json.ts";
 
 const GATE_SYSTEM = `你是个人助理记忆检索判定器。Semantic Memory 保存稳定、跨会话有用的用户事实；Session Recall 用于寻找过去对话中的具体事件和过程。
 只输出 JSON：{"intent":"none|past_episode|fact_with_evidence","denseQuery":"Semantic 自然语言查询","lexicalQuery":"Semantic 关键词","sessionRecall":{"mode":"search|recent","query":"search 时的检索词"},"reason":"简短原因"}。
@@ -43,7 +44,7 @@ export async function decideRetrieval(
       tools: [], max_tokens: 800, signal: undefined,
     });
     const text = response.content.filter((block) => block.type === "text").map((block) => block.text ?? "").join("");
-    const json = extractJson(text);
+    const json = parseModelJsonObject(text);
     const decision = parseDecision(json, message);
     await observer("gate_end", gateEvent(decision));
     return decision;
@@ -81,13 +82,6 @@ function gateEvent(decision: GateDecision): Record<string, unknown> {
     ? decision.sessionRecall.mode
     : "none";
   return { intent: decision.intent, semantic, sessionRecallMode, reason: decision.reason, fallback: decision.fallback };
-}
-function extractJson(text: string): Record<string, unknown> {
-  const start = text.indexOf("{"); const end = text.lastIndexOf("}");
-  if (start < 0 || end < start) throw new TypeError("小模型未返回 JSON");
-  const value: unknown = JSON.parse(text.slice(start, end + 1));
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("检索判定结构无效");
-  return value as Record<string, unknown>;
 }
 function objectValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};

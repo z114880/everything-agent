@@ -237,3 +237,14 @@ it("OpenAI length 截断即使产生可解析 JSON 也不能提交", async () =>
   await expect(memory.manageMemory(candidate, { ...options, client: { messages: { create: () => ({ content: [{ type: "text", text: JSON.stringify(write("create", evidence.id)) }], stop_reason: "length" }) } } })).rejects.toThrow("截断");
   expect(memory.listSemantic()).toEqual([]);
 });
+
+it("记忆模型在 JSON 外多写围栏时仍按决策写入", async () => {
+  const { memory, candidate, options, evidence } = await setup();
+  const decision = write("create", evidence.id);
+  const client: AgentModelClient = { messages: { async create() {
+    return { content: [{ type: "text", text: `\`\`\`json\n${JSON.stringify(decision)}\n\`\`\`\n` }], stop_reason: "end_turn" };
+  } } };
+  const result = await memory.manageMemory(candidate, { ...options, client });
+  expect(result.action).toBe("create");
+  expect(memory.listSemantic()).toHaveLength(1);
+});

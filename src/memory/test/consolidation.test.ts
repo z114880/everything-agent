@@ -304,3 +304,18 @@ it("模型失败先关闭批次再重试，尝试和调用关联明确且最终�
     expect(current[5]?.event).toMatchObject({ batchIndex: 0, totalBatches: 1, errorType: "TypeError" });
   }
 });
+
+it("模型在 JSON 外多写围栏和说明时仍完成整理，不触发重试", async () => {
+  const memory = await setup();
+  await memory.createSemantic("饮品", "喜欢红茶");
+  const plan = { decisions: [], unresolvedConflicts: [], outcome: { action: "noop", reasonCode: "no_change" } };
+  const client: AgentModelClient = { messages: { async create() {
+    return { content: [{ type: "text", text: `整理结果如下：\n\`\`\`json\n${JSON.stringify(plan)}\n\`\`\`` }], stop_reason: "end_turn" };
+  } } };
+  const events: string[] = [];
+  memory.startBackgroundTasks(async () => ({ client, model: "small", currentSessionId: "", observer: (kind) => { events.push(kind); } }));
+  memory.consolidate(); await memory.waitForBackgroundTasks();
+  expect(events).not.toContain("consolidation_model_failed");
+  expect(memory.listConsolidations()[0]).toMatchObject({ status: "completed", completedBatches: 1, factsSkipped: 1 });
+  expect(memory.listBackgroundTasks().at(-1)).toMatchObject({ status: "completed", attempts: 1 });
+});

@@ -5,6 +5,7 @@ import type { SemanticStore } from "./storage/semantic-store.ts";
 import type { MemorySearch } from "./retrieve/memory-search.ts";
 import { parseJson, plainText } from "./storage/records.ts";
 import type { Row } from "./storage/records.ts";
+import { parseModelJsonObject } from "./model-json.ts";
 
 type Evidence = MemorySource & { text: string };
 const MAX_ATTEMPTS = 3;
@@ -92,7 +93,7 @@ export class MemoryManagement {
       })), signal);
       if ([response.stop_reason, response.stopReason].some((reason) => reason === "max_tokens" || reason === "length")) throw new TypeError("记忆模型输出被截断");
       const text = response.content.filter((item) => item.type === "text").map((item) => item.text ?? "").join("");
-      const result = record(JSON.parse(text));
+      const result = record(parseModelJsonObject(text));
       await options.observer?.("memory_model_completed", { ...fields, durationMs: Math.round(performance.now() - startedAt) });
       return result;
     } catch (error) {

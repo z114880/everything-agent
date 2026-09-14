@@ -72,6 +72,23 @@ interface AssistantChatMessage {
 }
 type ChatMessage = UserChatMessage | AssistantChatMessage;
 
+const ACTIVE_SESSION_KEY = "everything.activeSessionId";
+/** 记住上次会话只是便利功能；浏览器禁用本地存储时不能让整页加载失败。 */
+function rememberedSessionId(): string | null {
+  try {
+    return window.localStorage?.getItem(ACTIVE_SESSION_KEY) ?? null;
+  } catch {
+    return null;
+  }
+}
+function rememberSessionId(sessionId: string): void {
+  try {
+    window.localStorage?.setItem(ACTIVE_SESSION_KEY, sessionId);
+  } catch {
+    // 存储不可用时继续使用内存中的会话，不打断当前操作。
+  }
+}
+
 const idleStates: Record<string, VisualNodeState> = {
   user_prompt: "idle",
   session_chat_history: "idle",
@@ -103,7 +120,10 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
   const [backgroundStates, setBackgroundStates] = useState<
     Record<string, VisualNodeState>
   >({});
-  const [backgroundEdges, setBackgroundEdges] = useState<Set<string>>(
+  // 记忆写入与整理是两条独立的后台流程，连线播放必须分开，
+  // 否则新回合重置记忆写入动画会一并清掉正在进行的整理连线。
+  const [memoryEdges, setMemoryEdges] = useState<Set<string>>(new Set());
+  const [consolidationEdges, setConsolidationEdges] = useState<Set<string>>(
     new Set(),
   );
   const resetMemoryPlaybackRef = useRef<(() => void) | null>(null);
@@ -191,14 +211,15 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
 
   useEffect(() => {
     let states: Record<string, VisualNodeState> = {};
-    const playback = createEdgePlayback(setBackgroundEdges);
+    const memoryPlayback = createEdgePlayback(setMemoryEdges);
+    const consolidationPlayback = createEdgePlayback(setConsolidationEdges);
     resetMemoryPlaybackRef.current = () => {
       // 同时清除订阅闭包中的旧值，避免后续无关事件恢复上一轮结果。
       states = { ...states };
       for (const id of ["memory_queue", "memory_review", "memory_commit", "semantic_store"])
         delete states[id];
       setBackgroundStates(states);
-      playback.reset();
+      memoryPlayback.reset();
     };
     const unsubscribe = subscribeBackgroundEvents((kind, event) => {
       if (kind.startsWith("consolidation_")) {
@@ -227,6 +248,9 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
       const next = advanceHarnessMemory(kind, event, states);
       states = next.states;
       setBackgroundStates(states);
+      const playback = kind.startsWith("consolidation_")
+        ? consolidationPlayback
+        : memoryPlayback;
       if (next.edges.length) playback.show(next.edges);
       if (
         [
@@ -249,7 +273,8 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
     return () => {
       unsubscribe();
       resetMemoryPlaybackRef.current = null;
-      playback.cancel();
+      memoryPlayback.cancel();
+      consolidationPlayback.cancel();
     };
   }, []);
 
@@ -267,9 +292,7 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
           }>({ action: "ensure_session" })
         ).sessions;
       setSessions(available);
-      const remembered = window.localStorage.getItem(
-        "everything.activeSessionId",
-      );
+      const remembered = rememberedSessionId();
       const selected =
         available.find((item) => item.id === remembered)?.id ??
         available[0]!.id;
@@ -372,7 +395,7 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
     setSessionRailCollapsed(true);
     setSessions(result.sessions.length ? result.sessions : knownSessions);
     setMessages(toChatMessages(result.messages));
-    window.localStorage.setItem("everything.activeSessionId", sessionId);
+    rememberSessionId(sessionId);
   }
 
   async function createSession() {
@@ -392,10 +415,7 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
       setSessions(result.sessions);
       setActiveSessionId(result.session.id);
       setMessages([]);
-      window.localStorage.setItem(
-        "everything.activeSessionId",
-        result.session.id,
-      );
+      rememberSessionId(result.session.id);
     } catch (error) {
       window.alert(error instanceof Error ? error.message : String(error));
     } finally {
@@ -617,7 +637,9 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
         <AgentHarnessCanvas
           workflow={bootstrap.workflow}
           nodeStates={{ ...nodeStates, ...backgroundStates }}
-          activeEdges={new Set([...activeEdges, ...backgroundEdges])}
+          activeEdges={
+            new Set([...activeEdges, ...memoryEdges, ...consolidationEdges])
+          }
         />
       </div>
       <aside className="agent-chat-dock">

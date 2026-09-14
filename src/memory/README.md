@@ -19,6 +19,7 @@ Memory 模块为 classic Agent Loop 提供单用户、本地优先的持久记�
 | `management.ts` | 逐条检索、Agent Model 五类决策、证据校验与版本冲突重试 |
 | `background-tasks.ts` | 后台串行队列、每日去重、持久任务恢复 |
 | `consolidation.ts` | 全量事实审查、预算分批、版本校验与提交检查点 |
+| `model-json.ts` | 模型 JSON 输出解析，容忍围栏与说明文字 |
 | `storage/records.ts` | 数据库记录转换、消息分类与凭证字段移除 |
 
 根目录保留公开入口 `index.ts`、公共类型 `types.ts`、运行时编排 `memory-runtime.ts` 、统一变更流程 `management.ts` 和后台整理 `background-tasks.ts`。`storage/` 集中管理持久化与记录转换；`retrieve/` 集中管理检索策略、索引和召回，并按 `lexical/`、`dense/`、`fusion/` 划分底层算法。测试保留在 `test/` 和 `retrieve/test/`，通过公开入口验证行为。
@@ -158,7 +159,7 @@ Agent 页面每日首次进入时调用 `runtime.consolidate("daily")`，按服�
 
 `memory_tasks` 保留父任务与子任务检查点。只持久保存事实 ID 和待提交的新建议，不保存旧事实快照。每次修改与检查点在同一事务提交；恢复不重放已提交操作。事实版本变化使未提交建议失效，重新读取当前批次审查。失败最多执行三次，间隔 1 秒、2 秒；单次整理尝试最多 5 分钟，不继承聊天取消信号。服务启动只恢复已有任务，新建 Session 不触发整理。
 
-每个父任务独立一个 `consolidation-<taskId>.jsonl`，所有子任务与重试共用文件，整理过程不额外产生 `system.jsonl`；记录触发来源、模型调用、批次进度、变更类型和错误，不记录事实正文。画布 consolidation 独立成区，与其他流程无连线。完整机制与限制见 [Consolidation](./CONSOLIDATION.md)。
+每个父任务独立一个 `consolidation-<taskId>.jsonl`，所有子任务与重试共用文件，整理过程不额外产生 `system.jsonl`；记录触发来源、模型调用、批次进度、变更类型和错误，不记录事实正文。画布 consolidation 独立成区，与其他流程无连线；整理连线与记忆写入连线分别播放，新回合只重置记忆写入动画。完整机制与限制见 [Consolidation](./CONSOLIDATION.md)。
 
 整理 trace 层级统一为 `consolidation → batch → model / reviewed / change`，不再包装 `memory_task`。根生命周期为 `consolidation_started`（trigger、attempt、createdAt）与 `consolidation_completed`（completedBatches）；失败后发出 `consolidation_retry`（等待重试）或 `consolidation_failed`（最终失败），包含 errorType、nextAttemptAt。所有整理事件关联 runId 和 attempt，不携带 taskId、taskKind、taskCreatedAt；创建时间仅保存在根开始事件。
 

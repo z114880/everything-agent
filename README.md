@@ -273,7 +273,7 @@ pnpm run build
 
 Session 历史只维护 FTS，不生成或检索向量，回合归档不再等待远程 embedding。只有 Semantic Memory 使用配置的向量检索。
 
-Agent 页面每天首次进入时检查 consolidation（服务端本地自然日），仅在 Semantic Memory 非空时后台创建任务；空库不创建任务或占用每日配额。**Consolidate** 按钮可额外手动触发；同一时刻只允许一个整理任务。仅将全量 semantic facts 及已有元数据交给模型，进行去重、合并、冲突检测、直接替换旧事实和低质量清理，不读取聊天。超出上下文时分组并进行有界组间审查；画布独立成区，与其他流程无连线。详见 [Consolidation 机制](./src/memory/CONSOLIDATION.md)。
+Agent 页面每天首次进入时检查 consolidation（服务端本地自然日），仅在 Semantic Memory 非空时后台创建任务；空库不创建任务或占用每日配额。**Consolidate** 按钮可额外手动触发；同一时刻只允许一个整理任务。仅将全量 semantic facts 及已有元数据交给模型，进行去重、合并、冲突检测、直接替换旧事实和低质量清理，不读取聊天。超出上下文时分组并进行有界组间审查；画布独立成区，与其他流程无连线，整理连线与记忆写入连线分别播放，新回合只重置记忆写入动画，不会打断正在进行的整理。详见 [Consolidation 机制](./src/memory/CONSOLIDATION.md)。
 
 记忆写入与 consolidation 持久化到 `memory_tasks`，共用串行后台队列；失败最多执行三次，重试与恢复使用事务内操作凭据避免重复提交。一次写入独立一个 trace JSONL，一次 consolidation 的所有子任务共用一个 JSONL，文件名分别为 `<序号>-memory_write-<taskId>.jsonl` 和 `<序号>-consolidation-<runId>.jsonl`。整理 trace 直接以 consolidation 为根，批次下记录模型审查与变更，不包含 memory_task 包装层。
 
