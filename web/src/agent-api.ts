@@ -152,6 +152,8 @@ export interface AgentTool {
 export interface ToolsCatalog {
   tools: AgentTool[];
   tavily: { keyConfigured: boolean; keyLast4: string };
+  /** 终端工具的沙箱状态；`unavailableReason` 非空时该工具不会注册。 */
+  terminal: { sandboxKind: string | null; unavailableReason: string | null; workspaceRoot: string };
 }
 
 export interface DatabaseColumn {
@@ -367,6 +369,8 @@ export function saveTools(value: {
   searchWebEnabled: boolean;
   tavilyApiKey: string;
   clearTavilyApiKey: boolean;
+  terminalEnabled?: boolean | undefined;
+  terminalWorkspaceRoot?: string | undefined;
 }): Promise<{ ok: true } & ToolsCatalog> {
   return requestJson(`${endpoint}/tools`, {
     method: "PUT",

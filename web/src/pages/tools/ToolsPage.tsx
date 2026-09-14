@@ -1,4 +1,4 @@
-import { CheckCircle2, Clock3, KeyRound, LockKeyhole, Search, Wrench } from "lucide-react";
+import { CheckCircle2, Clock3, FolderTree, KeyRound, LockKeyhole, Search, Terminal, Wrench } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { loadTools, saveTools, type AgentTool, type ToolsCatalog } from "../../agent-api";
 import { withMinimumDuration } from "../../lib/minimum-duration";
@@ -19,6 +19,9 @@ export function ToolsPage() {
   const [searchWebEnabled, setSearchWebEnabled] = useState(false);
   const [tavilyApiKey, setTavilyApiKey] = useState("");
   const [tavilyDialogOpen, setTavilyDialogOpen] = useState(false);
+  const [terminalEnabled, setTerminalEnabled] = useState(false);
+  const [workspaceRoot, setWorkspaceRoot] = useState("");
+  const [terminalDialogOpen, setTerminalDialogOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [savingTools, setSavingTools] = useState<Set<string>>(new Set());
   const saving = savingTools.has("search_web");
@@ -60,20 +63,31 @@ export function ToolsPage() {
     setGetCurrentTimeEnabled(next.tools.find((tool) => tool.name === "get_current_time")?.enabled ?? true);
     setSearchWebEnabled(next.tools.find((tool) => tool.name === "search_web")?.enabled ?? false);
     setTavilyApiKey("");
+    setTerminalEnabled(next.tools.find((tool) => tool.name === "run_terminal")?.enabled ?? false);
+    setWorkspaceRoot(next.terminal.workspaceRoot);
   }
 
   async function persist({
     nextGetCurrentTimeEnabled,
     nextSearchWebEnabled,
+    nextTerminalEnabled,
+    nextWorkspaceRoot,
     clearTavilyApiKey = false,
     closeDialog = false,
+    closeTerminalDialog = false,
   }: {
     nextGetCurrentTimeEnabled?: boolean;
     nextSearchWebEnabled?: boolean;
+    nextTerminalEnabled?: boolean;
+    nextWorkspaceRoot?: string;
     clearTavilyApiKey?: boolean;
     closeDialog?: boolean;
+    closeTerminalDialog?: boolean;
   } = {}): Promise<boolean> {
-    const toolName = nextGetCurrentTimeEnabled !== undefined ? "get_current_time" : "search_web";
+    const terminalChange = nextTerminalEnabled !== undefined || nextWorkspaceRoot !== undefined || closeTerminalDialog;
+    const toolName = terminalChange
+      ? "run_terminal"
+      : nextGetCurrentTimeEnabled !== undefined ? "get_current_time" : "search_web";
     setSavingTools((current) => new Set(current).add(toolName));
     const previousSave = saveQueue.current;
     let release!: () => void;
@@ -90,12 +104,17 @@ export function ToolsPage() {
           searchWebEnabled: clearTavilyApiKey ? false : nextSearchWebEnabled ?? (closeDialog ? searchWebEnabled : current?.tools.find((tool) => tool.name === "search_web")?.enabled ?? false),
           tavilyApiKey: toolName === "search_web" ? tavilyApiKey : "",
           clearTavilyApiKey,
+          terminalEnabled: nextTerminalEnabled ?? (terminalChange ? terminalEnabled : undefined),
+          terminalWorkspaceRoot: nextWorkspaceRoot ?? (terminalChange ? workspaceRoot : undefined),
         }),
       );
       savedCatalog.current = next;
       setCatalog(next);
       // 仅同步本次操作的工具，保留另一个开关尚未完成的用户操作。
-      if (toolName === "get_current_time") {
+      if (toolName === "run_terminal") {
+        setTerminalEnabled(next.tools.find((tool) => tool.name === toolName)?.enabled ?? false);
+        setWorkspaceRoot(next.terminal.workspaceRoot);
+      } else if (toolName === "get_current_time") {
         setGetCurrentTimeEnabled(next.tools.find((tool) => tool.name === toolName)?.enabled ?? true);
       } else {
         setSearchWebEnabled(next.tools.find((tool) => tool.name === toolName)?.enabled ?? false);
@@ -103,6 +122,7 @@ export function ToolsPage() {
       }
       setMessage(clearTavilyApiKey ? "Tavily API Key 已清除，search_web 已停用。" : "工具配置已保存，下一回合立即生效。");
       if (closeDialog) setTavilyDialogOpen(false);
+      if (closeTerminalDialog) setTerminalDialogOpen(false);
       return true;
     } catch (reason) {
       setError(errorMessage(reason));
@@ -133,6 +153,25 @@ export function ToolsPage() {
     if (!await persist({ nextSearchWebEnabled: enabled })) setSearchWebEnabled(previous);
   }
 
+  async function handleTerminalToggle(enabled: boolean) {
+    const previous = terminalEnabled;
+    setTerminalEnabled(enabled);
+    // 沙箱不可用或尚未指定工作区时，先让用户看到原因和输入框，不直接失败。
+    if (enabled && (!workspaceRoot || catalog?.terminal.unavailableReason)) {
+      setTerminalDialogOpen(true);
+      return;
+    }
+    if (!await persist({ nextTerminalEnabled: enabled })) setTerminalEnabled(previous);
+  }
+
+  function handleTerminalDialogOpenChange(open: boolean) {
+    setTerminalDialogOpen(open);
+    if (!open) {
+      setTerminalEnabled(catalog?.tools.find((tool) => tool.name === "run_terminal")?.enabled ?? false);
+      setWorkspaceRoot(catalog?.terminal.workspaceRoot ?? "");
+    }
+  }
+
   function handleTavilyDialogOpenChange(open: boolean) {
     setTavilyDialogOpen(open);
     if (!open) {
@@ -146,6 +185,9 @@ export function ToolsPage() {
   function effectiveTool(tool: AgentTool): AgentTool {
     if (tool.name === "get_current_time") return { ...tool, enabled: getCurrentTimeEnabled };
     if (tool.name === "search_web") return { ...tool, enabled: searchWebEnabled, configured: Boolean(tavilyApiKey || catalog?.tavily.keyConfigured) };
+    if (tool.name === "run_terminal") {
+      return { ...tool, enabled: terminalEnabled, configured: Boolean(workspaceRoot) && !catalog?.terminal.unavailableReason };
+    }
     return tool;
   }
 
@@ -164,12 +206,59 @@ export function ToolsPage() {
               key={tool.name}
               tool={tool}
               disabled={savingTools.has(tool.name)}
-              onToggle={tool.name === "get_current_time" ? handleGetCurrentTimeToggle : tool.name === "search_web" ? handleSearchWebToggle : undefined}
-              onConfigure={tool.name === "search_web" ? () => setTavilyDialogOpen(true) : undefined}
+              onToggle={tool.name === "get_current_time"
+                ? handleGetCurrentTimeToggle
+                : tool.name === "search_web"
+                  ? handleSearchWebToggle
+                  : tool.name === "run_terminal" ? handleTerminalToggle : undefined}
+              onConfigure={tool.name === "search_web"
+                ? () => setTavilyDialogOpen(true)
+                : tool.name === "run_terminal" ? () => setTerminalDialogOpen(true) : undefined}
             />;
           })}
         </div>
       </section>)}
+      <AlertDialog open={terminalDialogOpen} onOpenChange={handleTerminalDialogOpenChange}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>终端执行配置</AlertDialogTitle>
+            <AlertDialogDescription>
+              <code>run_terminal</code> 只能在这个工作区内写入，命令由操作系统沙箱约束。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="tavily-config-body">
+            <label className="config-field">
+              <span className="config-field-label">工作区根目录</span>
+              <Input
+                value={workspaceRoot}
+                onChange={(event) => setWorkspaceRoot(event.target.value)}
+                placeholder="/Users/you/project"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <span className="field-help">
+                <FolderTree size={13} />必须是已存在目录的绝对路径；其中的 <code>.git</code> 与 <code>.everything</code> 不可写。
+              </span>
+            </label>
+            <p className="field-help">
+              {catalog?.terminal.unavailableReason
+                ? `当前环境无法建立沙箱：${catalog.terminal.unavailableReason}`
+                : `当前沙箱：${catalog?.terminal.sandboxKind ?? "未知"}。出站网络默认切断，放行需要逐次确认。`}
+            </p>
+            {error && <div className="error-message" role="alert">{error}</div>}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>取消</AlertDialogCancel>
+            <Button
+              loading={saving}
+              disabled={Boolean(catalog?.terminal.unavailableReason)}
+              onClick={() => void persist({ nextTerminalEnabled: true, nextWorkspaceRoot: workspaceRoot, closeTerminalDialog: true })}
+            >
+              保存并启用
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog open={tavilyDialogOpen} onOpenChange={handleTavilyDialogOpenChange}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -194,7 +283,7 @@ export function ToolsPage() {
 function ToolCard({ tool, disabled = false, onToggle, onConfigure }: { tool: AgentTool; disabled?: boolean; onToggle?: (enabled: boolean) => void; onConfigure?: () => void }) {
   return <Card className={`tool-card ${tool.enabled ? "enabled" : "disabled"}`}>
     <CardHeader className="tool-card-header">
-      <div className="tool-card-icon">{tool.name === "get_current_time" ? <Clock3 size={17} /> : tool.name === "search_web" ? <Search size={17} /> : <Wrench size={17} />}</div>
+      <div className="tool-card-icon">{tool.name === "get_current_time" ? <Clock3 size={17} /> : tool.name === "search_web" ? <Search size={17} /> : tool.name === "run_terminal" ? <Terminal size={17} /> : <Wrench size={17} />}</div>
       <div><CardTitle><code>{tool.name}</code></CardTitle><CardDescription>{tool.description}</CardDescription></div>
       {tool.configurable
         ? <button className="tool-switch" type="button" role="switch" aria-checked={tool.enabled} aria-label={`${tool.name} ${tool.enabled ? "已启用" : "已停用"}`} disabled={disabled} onClick={() => onToggle?.(!tool.enabled)}><span /></button>
