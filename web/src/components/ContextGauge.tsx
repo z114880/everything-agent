@@ -57,7 +57,7 @@ export function ContextGauge({ usage }: { usage: ContextUsage | null }) {
         </TooltipTrigger>
         <TooltipContent role="tooltip">
           已用 {reading.usedTokens.toLocaleString()} / 可用{" "}
-          {reading.availableTokens.toLocaleString()} tokens · 估算值，不含本轮检索注入的记忆
+          {reading.availableTokens.toLocaleString()} tokens
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

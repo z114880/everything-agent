@@ -75,7 +75,13 @@ mock-data/
 
 ## 生成内容
 
-单个数据集 20 个会话约 1 秒，产生约 70 个回合、200 余条 Chat Log、40 余次工具调用与十余条 Semantic Memory，记忆变更覆盖 `create`、`delete` 与两类 `noop`，trace 包含 `gate_*`、`lexical_retrieval_completed`、`tool_*`、`memory_*` 等事件。
+单个数据集 20 个会话约 1 秒，产生约 80 个回合、250 余条 Chat Log、40 余次工具调用与十余条 Semantic Memory，记忆变更覆盖 `create`、`delete` 与两类 `noop`，trace 包含 `gate_*`、`lexical_retrieval_completed`、`tool_*`、`memory_*` 等事件。
+
+回合级字段同样可观察：少量会话会让模型引用一个已经不存在的会话 ID，产生真实的 `tool_failed` 与非零 `failedToolCallCount`；提交记忆的回合在 `run_completed.derivedTaskIds` 中带上后台任务 ID，可与同目录下的 `<序号>-memory_write-<taskId>.jsonl` 对上；`ms` 的三段拆分和上下文水位随会话推进增长。
+
+模拟供应商按请求与回复的实际体量报告 usage，并对项目内的启发式估算加一个固定偏差，因此 `peakInputTokens` 略高于 `peakEstimatedInputTokens`，可用来观察估算器误差；两者若完全相等就失去了对比意义。
+
+模拟数据不包含 `run_failed`：用户主动停止与整轮超时无法在无人值守的写入流程中自然产生，`cancelled` 与 `timedOut` 需要在真实使用中验证。
 
 Session 召回不生成向量，这是产品既定设计（见 `src/memory/retrieve/README.md`），不是这里的限制。
 

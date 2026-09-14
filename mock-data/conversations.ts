@@ -59,6 +59,18 @@ export function buildSessions(dataset: Dataset, count: number, seed = 1): SeedSe
         },
       });
     }
+    // 少量失败的工具调用：模型引用了一个已经不存在的会话 ID。
+    // 真实使用中这类失败一定会出现，模拟数据里也需要有，否则 tool_failed 与
+    // run_completed.failedToolCallCount 永远为零，无法验证展示与统计。
+    if (index > 0 && random() > 0.88) {
+      turns.push({
+        prompt: "把我们最早那次讨论的原始记录调出来看看。",
+        script: {
+          toolCalls: [{ name: "session_read", input: { sessionId: `missing-${topic.subject}-${round}` } }],
+          reply: "那次的原始记录已经不在了，我按现在保留的结论继续：" + `${fact.fact}。`,
+        },
+      });
+    }
     // 少量明确的忘记请求，让 delete 与 explicit_forget 也出现在记忆变更记录里。
     if (round > 0 && random() > 0.82) {
       turns.push({

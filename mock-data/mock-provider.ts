@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { estimateTextTokens } from "../src/model/token-estimator.ts";
 
 /** 本回合模型应当产生的行为：先发起工具调用，再给出最终回复。 */
 export interface TurnScript {
@@ -30,6 +31,12 @@ export interface MockProvider {
 }
 
 const VECTOR_DIMENSIONS = 1024;
+/**
+ * 供应商真实分词与项目内启发式估算之间的固定偏差。
+ * 二者若完全一致，`peakInputTokens` 与 `peakEstimatedInputTokens` 会永远相等，
+ * 模拟数据也就无法用来观察估算器的误差。
+ */
+const TOKENIZER_SKEW = 1.08;
 const CATEGORIES = ["user_attribute", "preference", "ongoing_project", "constraint", "commitment"] as const;
 
 /**
@@ -69,9 +76,10 @@ async function handle(
   if (url.endsWith("/embeddings")) {
     stats.embedding += 1;
     const input = Array.isArray(body.input) ? body.input as string[] : [String(body.input ?? "")];
+    const promptTokens = input.reduce((sum, text) => sum + skewedTokens(text), 0);
     return respondJson(response, 200, {
       data: input.map((text, index) => ({ index, embedding: deterministicVector(text) })),
-      usage: { prompt_tokens: input.length * 8, total_tokens: input.length * 8 },
+      usage: { prompt_tokens: promptTokens, total_tokens: promptTokens },
     });
   }
   if (!url.endsWith("/chat/completions")) return respondJson(response, 404, { error: { message: `未知路径：${url}` } });
@@ -79,7 +87,8 @@ async function handle(
   const messages = (body.messages ?? []) as Array<Record<string, unknown>>;
   const system = String(messages.find((item) => item.role === "system")?.content ?? "");
   const reply = planReply(system, messages, options, stats);
-  if (body.stream === true) return respondStream(response, reply);
+  const usage = chatUsage(body, reply);
+  if (body.stream === true) return respondStream(response, reply, usage);
   return respondJson(response, 200, {
     choices: [{
       index: 0,
@@ -93,8 +102,28 @@ async function handle(
       },
       finish_reason: reply.toolCalls.length ? "tool_calls" : "stop",
     }],
-    usage: { prompt_tokens: 128, completion_tokens: 64, total_tokens: 192 },
+    usage,
   });
+}
+
+interface ChatUsage { prompt_tokens: number; completion_tokens: number; total_tokens: number }
+
+/**
+ * 按本次请求与回复的实际体量报告 usage，而不是固定常数。
+ * 回合越靠后、Working Memory 越长，`prompt_tokens` 越大，
+ * trace 中的 `peakInputTokens` 与上下文水位才具备可观察的变化。
+ */
+function chatUsage(body: Record<string, unknown>, reply: PlannedReply): ChatUsage {
+  const promptTokens = skewedTokens(JSON.stringify(body.messages ?? []))
+    + skewedTokens(JSON.stringify(body.tools ?? []));
+  const completionTokens = Math.max(1, skewedTokens(reply.text)
+    + reply.toolCalls.reduce((sum, call) => sum + skewedTokens(`${call.name}${call.arguments}`), 0));
+  return { prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: promptTokens + completionTokens };
+}
+
+/** 用项目内的启发式估算加固定偏差模拟供应商分词结果；同一输入始终得到同一结果。 */
+function skewedTokens(text: string): number {
+  return Math.ceil(estimateTextTokens(text) * TOKENIZER_SKEW);
 }
 
 interface PlannedReply { text: string; toolCalls: Array<{ id: string; name: string; arguments: string }> }
@@ -213,7 +242,7 @@ function lastUserIndexOf(messages: Array<Record<string, unknown>>): number {
   return -1;
 }
 
-function respondStream(response: ServerResponse, reply: PlannedReply): void {
+function respondStream(response: ServerResponse, reply: PlannedReply, usage: ChatUsage): void {
   response.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
   const send = (value: unknown) => response.write(`data: ${JSON.stringify(value)}\n\n`);
   for (const chunk of splitText(reply.text)) {
@@ -230,7 +259,7 @@ function respondStream(response: ServerResponse, reply: PlannedReply): void {
   });
   send({
     choices: [{ index: 0, delta: {}, finish_reason: reply.toolCalls.length ? "tool_calls" : "stop" }],
-    usage: { prompt_tokens: 128, completion_tokens: 64, total_tokens: 192 },
+    usage,
   });
   response.write("data: [DONE]\n\n");
   response.end();

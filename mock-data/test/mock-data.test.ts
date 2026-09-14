@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -122,6 +122,32 @@ describe("合并写入现有数据目录", () => {
     expect(third.sessionsCreated).toBe(2);
   }, 120_000);
 
+  it("生成的 trace 覆盖回合级字段：耗时拆分、工具失败、派生任务与上下文水位", async () => {
+    const home = await mkdtemp(join(tmpdir(), "mock-data-trace-"));
+    await seedMockData({ home, sessionCount: 20 });
+
+    const records = await readTraceRecords(home);
+    const runs = records.filter((record) => record.type === "run_completed").map((record) => record.payload);
+    expect(runs.length).toBeGreaterThan(0);
+
+    // 三段耗时都存在，且合计不超过整轮墙钟时间。
+    expect(runs.every((run) => run.retrievalMs + run.modelMs + run.toolMs <= run.ms)).toBe(true);
+    // 供应商 usage 随请求体量变化，而不是固定常数，否则水位在模拟数据上不可观察。
+    expect(new Set(runs.map((run) => run.peakInputTokens)).size).toBeGreaterThan(1);
+    // 估算与供应商分词之间保留固定偏差，可用来观察估算器误差。
+    expect(runs.every((run) => run.peakInputTokens > run.peakEstimatedInputTokens)).toBe(true);
+    expect(runs.every((run) => run.availableInputTokens === run.contextWindow - run.maxTokens - run.contextSafetyTokens)).toBe(true);
+
+    expect(runs.some((run) => run.failedToolCallCount > 0)).toBe(true);
+    expect(records.some((record) => record.type === "tool_failed")).toBe(true);
+
+    // 派生任务 ID 必须能对上独立的后台任务 trace 文件。
+    const derived = runs.flatMap((run) => run.derivedTaskIds);
+    expect(derived.length).toBeGreaterThan(0);
+    const files = await readdir(join(home, "traces"), { recursive: true });
+    expect(derived.every((taskId) => files.some((file) => String(file).includes(`memory_write-${taskId}.jsonl`)))).toBe(true);
+  }, 120_000);
+
   it("force 忽略已写入判断并在现有数据上追加", async () => {
     const home = await mkdtemp(join(tmpdir(), "mock-data-force-"));
     await seedMockData({ home, sessionCount: 2 });
@@ -130,6 +156,25 @@ describe("合并写入现有数据目录", () => {
     expect(forced.outcomes[0]).toMatchObject({ skipped: false });
   }, 120_000);
 });
+
+interface TraceRecord { type: string; payload: Record<string, any> }
+
+/** 读取写入目录下的全部 JSONL 事件；缺少 payload 的事件补空对象，便于统一断言。 */
+async function readTraceRecords(home: string): Promise<TraceRecord[]> {
+  const root = join(home, "traces");
+  const entries = await readdir(root, { recursive: true, withFileTypes: true });
+  const records: TraceRecord[] = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+    const text = await readFile(join(entry.parentPath, entry.name), "utf8");
+    for (const line of text.split("\n")) {
+      if (!line.trim()) continue;
+      const record = JSON.parse(line) as { type: string; payload?: Record<string, unknown> };
+      records.push({ type: record.type, payload: record.payload ?? {} });
+    }
+  }
+  return records;
+}
 
 async function postChat(baseUrl: string, system: string, prompt: string): Promise<Record<string, unknown>> {
   const response = await fetch(`${baseUrl}/chat/completions`, {
