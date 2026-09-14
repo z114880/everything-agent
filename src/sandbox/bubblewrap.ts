@@ -29,6 +29,9 @@ export function buildBubblewrapArgs(
   }
   for (const path of policy.denyWrite) {
     const absolute = resolve(path);
+    // 不存在的路径无法挂载。此处与 Seatbelt 有意不同：SBPL 可以为尚未存在的路径写规则，
+    // bubblewrap 只能等它出现，由下一次执行重新组装时覆盖。
+    if (pathKind(absolute) === "missing") continue;
     args.push("--ro-bind", absolute, absolute);
   }
   for (const path of policy.denyRead) {

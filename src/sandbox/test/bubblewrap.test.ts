@@ -63,6 +63,11 @@ describe("bubblewrap 参数组装", () => {
     expect(args.join(" ")).not.toContain("/nonexistent-path-for-test");
   });
 
+  it("不存在的拒写路径同样被跳过", () => {
+    const args = buildBubblewrapArgs({ ...policy, denyWrite: ["/srv/ws/.everything"] }, () => "missing");
+    expect(args.join(" ")).not.toContain(".everything");
+  });
+
   it("默认形态判定不依赖注入即可工作", () => {
     expect(buildBubblewrapArgs({ ...policy, denyRead: ["/nonexistent-path-for-test"] })).toContain("--unshare-net");
   });

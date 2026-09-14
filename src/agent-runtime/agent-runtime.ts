@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { RoughTokenEstimator } from "../model/token-estimator.ts";
 import { LocalToolRegistry } from "../tools/tool-registry.ts";
 import { ManageMemoryTool } from "../tools/manage-memory.ts";
@@ -34,6 +35,8 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
   const { readSystemPrompt } = config;
   const settingsStore = createRuntimeSettings(config);
   const toolSettingsStore = createToolSettings(config);
+  // 终端工具在工作区之外唯一可写的目录，同时作为子进程 TMPDIR。
+  const terminalTempDir = join(everythingHome, "terminal-tmp");
   const loadRuntimeSettings = settingsStore.load;
   let closed = false;
   let memoryRuntime: MemoryRuntime | null = null;
@@ -229,6 +232,9 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
             settings: recallSettings(settings, tokenEstimator),
           }, skills, {
             getCurrentTimeEnabled: toolSettings.getCurrentTimeEnabled,
+            terminalEnabled: toolSettings.terminalEnabled,
+            terminalWorkspaceRoot: toolSettings.terminalWorkspaceRoot,
+            terminalSessionTempDir: terminalTempDir,
             searchWebEnabled: toolSettings.searchWebEnabled,
             tavilyApiKey: toolSettings.tavilyApiKey,
           }),
@@ -326,6 +332,9 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
       settings: recallSettings(settings, tokenEstimator),
     }, skills, {
       getCurrentTimeEnabled: toolSettings.getCurrentTimeEnabled,
+      terminalEnabled: toolSettings.terminalEnabled,
+      terminalWorkspaceRoot: toolSettings.terminalWorkspaceRoot,
+      terminalSessionTempDir: terminalTempDir,
       searchWebEnabled: toolSettings.searchWebEnabled,
       tavilyApiKey: toolSettings.tavilyApiKey,
     });

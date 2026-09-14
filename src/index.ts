@@ -30,6 +30,13 @@ export {
   sessionReadSchema,
   sessionSearchSchema,
 } from "./tools/session-recall.ts";
+export {
+  DEFAULT_TERMINAL_TIMEOUT_MS,
+  RUN_TERMINAL_TOOL,
+  TerminalTool,
+  runTerminalSchema,
+} from "./tools/terminal.ts";
+export type { TerminalToolOptions, TerminalToolResult } from "./tools/terminal.ts";
 export { createModelClient } from "./model/model-client.ts";
 export { estimateRequestTokens, estimateTextTokens, RoughTokenEstimator } from "./model/token-estimator.ts";
 export type { AgentProvider, ModelClientConfig } from "./model/model-client.ts";

@@ -51,6 +51,12 @@ export function saveTools(body: Record<string, unknown>) {
     searchWebEnabled: requiredBoolean(body.searchWebEnabled, "search_web enabled"),
     tavilyApiKey: optionalText(body.tavilyApiKey, "Tavily API Key", 10_000),
     clearTavilyApiKey: body.clearTavilyApiKey === true,
+    terminalEnabled: body.terminalEnabled === undefined
+      ? undefined
+      : requiredBoolean(body.terminalEnabled, "run_terminal enabled"),
+    terminalWorkspaceRoot: body.terminalWorkspaceRoot === undefined
+      ? undefined
+      : optionalText(body.terminalWorkspaceRoot, "工作区根目录", 4_000),
   });
 }
 

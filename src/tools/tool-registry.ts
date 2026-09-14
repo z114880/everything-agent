@@ -14,6 +14,7 @@ import {
   sessionSearchSchema,
 } from "./session-recall.ts";
 import { SEARCH_WEB_TOOL, TavilySearchTool, searchWebSchema } from "./tavily-search.ts";
+import { RUN_TERMINAL_TOOL, TerminalTool, runTerminalSchema } from "./terminal.ts";
 
 export const TIME_TOOL = "get_current_time";
 export const timeToolSchema = {
@@ -30,6 +31,11 @@ export interface LocalToolOptions {
   getCurrentTimeEnabled?: boolean;
   searchWebEnabled?: boolean;
   tavilyApiKey?: string;
+  terminalEnabled?: boolean;
+  /** 终端工具的工作区根，启用时必填。 */
+  terminalWorkspaceRoot?: string;
+  /** 终端工具可写的临时目录，同时作为子进程 TMPDIR。 */
+  terminalSessionTempDir?: string;
 }
 
 /** 注册本地受控工具，并在执行前统一检查取消信号和参数。 */
@@ -39,6 +45,9 @@ export class LocalToolRegistry implements ToolRegistry {
   private readonly readSkill: ReadSkillTool | null;
   private readonly options: Required<LocalToolOptions>;
   private readonly tavilySearch: TavilySearchTool | null;
+  private readonly terminal: TerminalTool | null;
+  /** 终端工具未注册的原因，供上层解释为何模型看不到该能力。 */
+  readonly terminalUnavailableReason: string | null;
 
   constructor(
     memory?: MemoryRuntime,
@@ -54,10 +63,39 @@ export class LocalToolRegistry implements ToolRegistry {
       getCurrentTimeEnabled: options.getCurrentTimeEnabled ?? true,
       searchWebEnabled: options.searchWebEnabled ?? false,
       tavilyApiKey: options.tavilyApiKey ?? "",
+      terminalEnabled: options.terminalEnabled ?? false,
+      terminalWorkspaceRoot: options.terminalWorkspaceRoot ?? "",
+      terminalSessionTempDir: options.terminalSessionTempDir ?? "",
     };
     this.tavilySearch = this.options.searchWebEnabled && this.options.tavilyApiKey
       ? new TavilySearchTool(this.options.tavilyApiKey)
       : null;
+
+    const terminal = this.createTerminal();
+    this.terminal = terminal.tool;
+    this.terminalUnavailableReason = terminal.reason;
+  }
+
+  /**
+   * 构造终端工具。
+   *
+   * 沙箱不可用时返回原因而不是抛错，让其余工具照常工作；模型看不到这个工具，
+   * 界面据 `terminalUnavailableReason` 说明缺失原因，不会静默降级为无保护执行。
+   */
+  private createTerminal(): { tool: TerminalTool | null; reason: string | null } {
+    if (!this.options.terminalEnabled) return { tool: null, reason: null };
+    if (!this.options.terminalWorkspaceRoot) return { tool: null, reason: "尚未配置工作区根目录" };
+    try {
+      return {
+        tool: new TerminalTool({
+          workspaceRoot: this.options.terminalWorkspaceRoot,
+          sessionTempDir: this.options.terminalSessionTempDir || this.options.terminalWorkspaceRoot,
+        }),
+        reason: null,
+      };
+    } catch (error) {
+      return { tool: null, reason: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   schemas(): unknown {
@@ -67,6 +105,7 @@ export class LocalToolRegistry implements ToolRegistry {
     if (this.sessionRecall) schemas.push(sessionSearchSchema, sessionReadSchema);
     if (this.readSkill) schemas.push(readSkillSchema);
     if (this.tavilySearch) schemas.push(searchWebSchema);
+    if (this.terminal) schemas.push(runTerminalSchema);
     return schemas;
   }
 
@@ -83,6 +122,7 @@ export class LocalToolRegistry implements ToolRegistry {
     }
     if (name === READ_SKILL_TOOL && this.readSkill) return this.readSkill.execute(args, notify, context);
     if (name === SEARCH_WEB_TOOL && this.tavilySearch) return this.tavilySearch.execute(args, context);
+    if (name === RUN_TERMINAL_TOOL && this.terminal) return this.terminal.execute(args, context);
     if (name !== TIME_TOOL || !this.options.getCurrentTimeEnabled) throw new Error(`工具未注册：${name}`);
     if (!isEmptyObject(args)) throw new TypeError(`${TIME_TOOL} 不接受参数`);
 

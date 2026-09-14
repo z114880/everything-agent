@@ -339,7 +339,10 @@ describe("Runtime 配置与维护", () => {
     const env = await readFile(join(homes.at(-1)!, ".everything", ".env"), "utf8");
     expect(env).toContain('TAVILY_API_KEY="tvly-runtime-secret"');
     const config = JSON.parse(await readFile(join(homes.at(-1)!, ".everything", "config.json"), "utf8"));
-    expect(config.tools).toEqual({ getCurrentTimeEnabled: false, searchWebEnabled: true });
+    expect(config.tools).toEqual({
+      getCurrentTimeEnabled: false, searchWebEnabled: true,
+      runTerminalEnabled: false, runTerminalWorkspaceRoot: "",
+    });
 
     const cleared = await runtime.saveToolSettings({ getCurrentTimeEnabled: true, searchWebEnabled: false, clearTavilyApiKey: true });
     expect(cleared.tavily.keyConfigured).toBe(false);

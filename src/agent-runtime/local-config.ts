@@ -24,6 +24,8 @@ const CONFIG_PATHS = {
   EVERYTHING_EMBEDDING_MINIMUM_SIMILARITY: ["retrieval", "embedding", "minimumSimilarity"],
   EVERYTHING_TOOL_GET_CURRENT_TIME_ENABLED: ["tools", "getCurrentTimeEnabled"],
   EVERYTHING_TOOL_SEARCH_WEB_ENABLED: ["tools", "searchWebEnabled"],
+  EVERYTHING_TOOL_RUN_TERMINAL_ENABLED: ["tools", "runTerminalEnabled"],
+  EVERYTHING_TOOL_RUN_TERMINAL_WORKSPACE_ROOT: ["tools", "runTerminalWorkspaceRoot"],
 } as const;
 
 const SECRET_KEYS = [
@@ -44,6 +46,7 @@ const NUMBER_CONFIG_KEYS = new Set([
 const BOOLEAN_CONFIG_KEYS = new Set([
   "EVERYTHING_TOOL_GET_CURRENT_TIME_ENABLED",
   "EVERYTHING_TOOL_SEARCH_WEB_ENABLED",
+  "EVERYTHING_TOOL_RUN_TERMINAL_ENABLED",
 ]);
 
 type JsonPrimitive = string | number | boolean | null;
@@ -60,7 +63,12 @@ const DEFAULT_CONFIG: JsonObject = {
   maxIterations: RUNTIME_DEFAULTS.maxIterations,
   modelContextWindow: RUNTIME_DEFAULTS.modelContextWindow,
   retrieval: { mode: "lexical_only", embedding: {} },
-  tools: { getCurrentTimeEnabled: true, searchWebEnabled: false },
+  tools: {
+    getCurrentTimeEnabled: true,
+    searchWebEnabled: false,
+    runTerminalEnabled: false,
+    runTerminalWorkspaceRoot: "",
+  },
 };
 
 /** 本地文件位置；配置与密钥固定保存到 `home/config.json` 与 `home/.env`。 */
