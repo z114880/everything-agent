@@ -2,6 +2,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { readTraceFiles } from "../../src/tracing/jsonl-tracer.ts";
 import {
   buildSessions, decideApply, listDatasetIds, loadDataset, readManifest,
   seedMockData, startMockProvider, writeManifest,
@@ -124,7 +125,22 @@ describe("合并写入现有数据目录", () => {
 
   it("生成的 trace 覆盖回合级字段：耗时拆分、工具失败、派生任务与上下文水位", async () => {
     const home = await mkdtemp(join(tmpdir(), "mock-data-trace-"));
-    await seedMockData({ home, sessionCount: 20 });
+    const result = await seedMockData({ home, sessionCount: 20 });
+
+    // 验证真实生成产物：同一会话的多轮执行必须分文件，不能重新合并为 Session 文件。
+    const traceFiles = await readTraceFiles(home, Number.MAX_SAFE_INTEGER);
+    const runFiles = traceFiles.filter((file) => /\/\d+-run-/.test(file.path));
+    expect(runFiles).toHaveLength(result.runsExecuted);
+    expect(runFiles.length).toBeGreaterThan(result.sessionsCreated);
+    expect(traceFiles.some((file) => /\/\d+-session-/.test(file.path))).toBe(false);
+    for (const file of runFiles) {
+      const runId = file.records[0]!.runId;
+      expect(file.path.endsWith(`-run-${runId}.jsonl`)).toBe(true);
+      expect(new Set(file.records.map((record) => record.runId))).toEqual(new Set([runId]));
+      expect(new Set(file.records.map((record) => record.sessionId)).size).toBe(1);
+      expect(file.records[0]).toMatchObject({ type: "run_started", sessionId: expect.any(String) });
+      expect(file.records.filter((record) => record.type === "run_completed")).toHaveLength(1);
+    }
 
     const records = await readTraceRecords(home);
     const runs = records.filter((record) => record.type === "run_completed").map((record) => record.payload);

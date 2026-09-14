@@ -75,6 +75,8 @@ mock-data/
 
 ## 生成内容
 
+前台 trace 由真实 Runtime 按 run 写入 `traces/<开始日期>/<序号>-run-<runId>.jsonl`，同一 Session 的不同回合各自一个文件；事件保留 `sessionId`，跨午夜继续写入开始日期目录。后台记忆任务与 consolidation 仍各自独立存储。模拟脚本不另行拼接或按 Session 合并 trace。
+
 单个数据集 20 个会话约 1 秒，产生约 80 个回合、250 余条 Chat Log、40 余次工具调用与十余条 Semantic Memory，记忆变更覆盖 `create`、`delete` 与两类 `noop`，trace 包含 `gate_*`、`lexical_retrieval_completed`、`tool_*`、`memory_*` 等事件。
 
 回合级字段同样可观察：少量会话会让模型引用一个已经不存在的会话 ID，产生真实的 `tool_failed` 与非零 `failedToolCallCount`；提交记忆的回合在 `run_completed.derivedTaskIds` 中带上后台任务 ID，可与同目录下的 `<序号>-memory_write-<taskId>.jsonl` 对上；`ms` 的三段拆分和上下文水位随会话推进增长。
