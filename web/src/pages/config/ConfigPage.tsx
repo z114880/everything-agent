@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   BrainCircuit,
+  FolderTree,
   Gauge,
   Info,
   KeyRound,
@@ -63,7 +64,7 @@ import {
   TooltipTrigger,
 } from "../../components/ui/tooltip";
 
-type ConfigSection = "model" | "retrieval" | "runtime";
+type ConfigSection = "model" | "retrieval" | "runtime" | "sandbox";
 type NumericInputValue = number | "";
 
 export function ConfigPage() {
@@ -84,6 +85,7 @@ export function ConfigPage() {
     useState<NumericInputValue>(8_192);
   const [maxTokens, setMaxTokens] = useState<NumericInputValue>(32_768);
   const [maxIterations, setMaxIterations] = useState<NumericInputValue>(100);
+  const [sandboxWorkspaceRoot, setSandboxWorkspaceRoot] = useState("");
   const [modelContextWindow, setModelContextWindow] =
     useState<NumericInputValue>(262_144);
   const [retrievalMode, setRetrievalMode] =
@@ -194,6 +196,8 @@ export function ConfigPage() {
                 )
               : settings.embeddingMinimumSimilarity,
           embeddingApiKey: section === "retrieval" ? embeddingApiKey : "",
+          sandboxWorkspaceRoot:
+            section === "sandbox" ? sandboxWorkspaceRoot : settings.sandbox.workspaceRoot,
           clearEmbeddingApiKey: false,
         }),
       );
@@ -240,6 +244,7 @@ export function ConfigPage() {
     setModelContextWindow(value.modelContextWindow);
     setMaxTokens(value.maxTokens);
     setMaxIterations(value.maxIterations);
+    setSandboxWorkspaceRoot(value.sandbox.workspaceRoot);
   }
 
   function applyRetrievalInputs(value: AgentSettings) {
@@ -829,6 +834,57 @@ export function ConfigPage() {
               >
                 <RotateCcw size={14} />
                 恢复默认运行值
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="config-card-header">
+            <div className="config-card-icon">
+              <FolderTree size={18} />
+            </div>
+            <div>
+              <CardTitle>Sandbox</CardTitle>
+              <CardDescription>
+                终端命令的执行边界。命令只能写入这个工作区，由操作系统沙箱强制。
+              </CardDescription>
+            </div>
+            <Badge variant={settings?.sandbox.unavailableReason ? "destructive" : "outline"}>
+              {settings?.sandbox.unavailableReason ? "不可用" : settings?.sandbox.kind ?? "检测中"}
+            </Badge>
+          </CardHeader>
+          <CardContent className="config-card-body">
+            <div className="config-grid">
+              <ConfigField
+                label="工作区根目录"
+                help="已存在目录的绝对路径。其中的 .git 与 .everything 不可写，出站网络默认切断。留空则终端能力不可用。"
+              >
+                <Input
+                  value={sandboxWorkspaceRoot}
+                  onChange={(event) => setSandboxWorkspaceRoot(event.target.value)}
+                  placeholder="/Users/you/project"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </ConfigField>
+            </div>
+            {settings?.sandbox.unavailableReason && (
+              <Alert variant="warning">
+                <Info />
+                <AlertDescription>
+                  当前环境无法建立沙箱：{settings.sandbox.unavailableReason}
+                </AlertDescription>
+              </Alert>
+            )}
+            <div className="config-card-actions">
+              <Button
+                onClick={() => void saveSection("sandbox")}
+                loading={savingSection === "sandbox"}
+                disabled={savingSection !== null || !settings}
+              >
+                <Save size={14} />
+                保存 Sandbox 配置
               </Button>
             </div>
           </CardContent>

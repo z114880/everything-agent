@@ -1,5 +1,3 @@
-import { statSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
 import { detectSandbox } from "../sandbox/index.ts";
 import type { createLocalConfig } from "../agent-runtime/local-config.ts";
 import { readSkillSchema } from "../skills/index.ts";
@@ -14,6 +12,7 @@ export interface ToolSettings {
   searchWebEnabled: boolean;
   tavilyApiKey: string;
   terminalEnabled: boolean;
+  /** 只读：工作区根目录属于 Sandbox 配置，由配置页面维护。 */
   terminalWorkspaceRoot: string;
 }
 
@@ -23,7 +22,6 @@ export interface ToolSettingsInput {
   tavilyApiKey?: string;
   clearTavilyApiKey?: boolean;
   terminalEnabled?: boolean;
-  terminalWorkspaceRoot?: string;
 }
 
 export interface PublicToolDescriptor {
@@ -47,7 +45,7 @@ export function createToolSettings(config: ReturnType<typeof createLocalConfig>)
       searchWebEnabled: parseBoolean(values.EVERYTHING_TOOL_SEARCH_WEB_ENABLED, false),
       tavilyApiKey: values.TAVILY_API_KEY ?? "",
       terminalEnabled: parseBoolean(values.EVERYTHING_TOOL_RUN_TERMINAL_ENABLED, false),
-      terminalWorkspaceRoot: values.EVERYTHING_TOOL_RUN_TERMINAL_WORKSPACE_ROOT ?? "",
+      terminalWorkspaceRoot: values.EVERYTHING_SANDBOX_WORKSPACE_ROOT ?? "",
     };
   }
 
@@ -62,14 +60,12 @@ export function createToolSettings(config: ReturnType<typeof createLocalConfig>)
     if (input.searchWebEnabled && !candidateApiKey) throw new TypeError("启用 search_web 前必须配置 Tavily API Key");
 
     const terminalEnabled = input.terminalEnabled ?? before.terminalEnabled;
-    const terminalWorkspaceRoot = normalizeWorkspaceRoot(input.terminalWorkspaceRoot ?? before.terminalWorkspaceRoot);
-    if (terminalEnabled) assertTerminalUsable(terminalWorkspaceRoot);
+    if (terminalEnabled) assertTerminalUsable(before.terminalWorkspaceRoot);
 
     await config.updateConfigFile({
       EVERYTHING_TOOL_GET_CURRENT_TIME_ENABLED: String(input.getCurrentTimeEnabled),
       EVERYTHING_TOOL_SEARCH_WEB_ENABLED: String(input.searchWebEnabled && Boolean(candidateApiKey)),
       EVERYTHING_TOOL_RUN_TERMINAL_ENABLED: String(terminalEnabled),
-      EVERYTHING_TOOL_RUN_TERMINAL_WORKSPACE_ROOT: terminalWorkspaceRoot,
     });
     await config.updateSecretEnvFile(inputApiKey ? { TAVILY_API_KEY: inputApiKey } : {}, clearApiKey ? ["TAVILY_API_KEY"] : []);
     return load();
@@ -124,26 +120,14 @@ function fixedTool(schema: { name: string; description: string }): PublicToolDes
   return { name: schema.name, description: schema.description, origin: "内置", enabled: true, configurable: false, configured: true };
 }
 
-/** 工作区根必须是绝对路径；空值表示尚未配置。 */
-function normalizeWorkspaceRoot(value: unknown): string {
-  if (value === undefined || value === null || value === "") return "";
-  if (typeof value !== "string" || value.length > 4_000) throw new TypeError("工作区根目录必须是小于 4000 字符的字符串");
-  const trimmed = value.trim();
-  if (trimmed === "") return "";
-  if (!isAbsolute(trimmed)) throw new TypeError("工作区根目录必须是绝对路径");
-  return resolve(trimmed);
-}
-
-/** 启用终端工具前，工作区必须存在且当前平台确实能建立沙箱。 */
+/**
+ * 启用终端工具前，Sandbox 配置必须就绪。
+ *
+ * 工作区根目录属于配置页面的 Sandbox 区域，这里只检查是否已配置，不接受也不写入
+ * 路径：同一份配置有两个写入口时，两边迟早会不一致。
+ */
 function assertTerminalUsable(workspaceRoot: string): void {
-  if (!workspaceRoot) throw new TypeError("启用 run_terminal 前必须配置工作区根目录");
-  let isDirectory = false;
-  try {
-    isDirectory = statSync(workspaceRoot).isDirectory();
-  } catch {
-    throw new TypeError(`工作区根目录不存在：${workspaceRoot}`);
-  }
-  if (!isDirectory) throw new TypeError(`工作区根目录必须是目录：${workspaceRoot}`);
+  if (!workspaceRoot) throw new TypeError("启用 run_terminal 前，请先在配置页面的 Sandbox 区域设置工作区根目录");
   const availability = detectSandbox();
   if (!availability.available) throw new TypeError(`无法启用 run_terminal：${availability.reason}`);
 }

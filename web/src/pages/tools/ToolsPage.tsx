@@ -1,4 +1,5 @@
-import { CheckCircle2, Clock3, FolderTree, KeyRound, LockKeyhole, Search, Terminal, Wrench } from "lucide-react";
+import { CheckCircle2, Clock3, FolderTree, Info, KeyRound, LockKeyhole, Search, Terminal, Wrench } from "lucide-react";
+import { Alert, AlertDescription } from "../../components/ui/alert";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { loadTools, saveTools, type AgentTool, type ToolsCatalog } from "../../agent-api";
 import { withMinimumDuration } from "../../lib/minimum-duration";
@@ -20,7 +21,6 @@ export function ToolsPage() {
   const [tavilyApiKey, setTavilyApiKey] = useState("");
   const [tavilyDialogOpen, setTavilyDialogOpen] = useState(false);
   const [terminalEnabled, setTerminalEnabled] = useState(false);
-  const [workspaceRoot, setWorkspaceRoot] = useState("");
   const [terminalDialogOpen, setTerminalDialogOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [savingTools, setSavingTools] = useState<Set<string>>(new Set());
@@ -64,14 +64,12 @@ export function ToolsPage() {
     setSearchWebEnabled(next.tools.find((tool) => tool.name === "search_web")?.enabled ?? false);
     setTavilyApiKey("");
     setTerminalEnabled(next.tools.find((tool) => tool.name === "run_terminal")?.enabled ?? false);
-    setWorkspaceRoot(next.terminal.workspaceRoot);
   }
 
   async function persist({
     nextGetCurrentTimeEnabled,
     nextSearchWebEnabled,
     nextTerminalEnabled,
-    nextWorkspaceRoot,
     clearTavilyApiKey = false,
     closeDialog = false,
     closeTerminalDialog = false,
@@ -79,12 +77,11 @@ export function ToolsPage() {
     nextGetCurrentTimeEnabled?: boolean;
     nextSearchWebEnabled?: boolean;
     nextTerminalEnabled?: boolean;
-    nextWorkspaceRoot?: string;
     clearTavilyApiKey?: boolean;
     closeDialog?: boolean;
     closeTerminalDialog?: boolean;
   } = {}): Promise<boolean> {
-    const terminalChange = nextTerminalEnabled !== undefined || nextWorkspaceRoot !== undefined || closeTerminalDialog;
+    const terminalChange = nextTerminalEnabled !== undefined || closeTerminalDialog;
     const toolName = terminalChange
       ? "run_terminal"
       : nextGetCurrentTimeEnabled !== undefined ? "get_current_time" : "search_web";
@@ -105,7 +102,6 @@ export function ToolsPage() {
           tavilyApiKey: toolName === "search_web" ? tavilyApiKey : "",
           clearTavilyApiKey,
           terminalEnabled: nextTerminalEnabled ?? (terminalChange ? terminalEnabled : undefined),
-          terminalWorkspaceRoot: nextWorkspaceRoot ?? (terminalChange ? workspaceRoot : undefined),
         }),
       );
       savedCatalog.current = next;
@@ -113,7 +109,6 @@ export function ToolsPage() {
       // 仅同步本次操作的工具，保留另一个开关尚未完成的用户操作。
       if (toolName === "run_terminal") {
         setTerminalEnabled(next.tools.find((tool) => tool.name === toolName)?.enabled ?? false);
-        setWorkspaceRoot(next.terminal.workspaceRoot);
       } else if (toolName === "get_current_time") {
         setGetCurrentTimeEnabled(next.tools.find((tool) => tool.name === toolName)?.enabled ?? true);
       } else {
@@ -156,8 +151,8 @@ export function ToolsPage() {
   async function handleTerminalToggle(enabled: boolean) {
     const previous = terminalEnabled;
     setTerminalEnabled(enabled);
-    // 沙箱不可用或尚未指定工作区时，先让用户看到原因和输入框，不直接失败。
-    if (enabled && (!workspaceRoot || catalog?.terminal.unavailableReason)) {
+    // 沙箱不可用或工作区尚未配置时，先说明去哪里配置，不直接失败。
+    if (enabled && (!catalog?.terminal.workspaceRoot || catalog?.terminal.unavailableReason)) {
       setTerminalDialogOpen(true);
       return;
     }
@@ -168,7 +163,6 @@ export function ToolsPage() {
     setTerminalDialogOpen(open);
     if (!open) {
       setTerminalEnabled(catalog?.tools.find((tool) => tool.name === "run_terminal")?.enabled ?? false);
-      setWorkspaceRoot(catalog?.terminal.workspaceRoot ?? "");
     }
   }
 
@@ -186,7 +180,11 @@ export function ToolsPage() {
     if (tool.name === "get_current_time") return { ...tool, enabled: getCurrentTimeEnabled };
     if (tool.name === "search_web") return { ...tool, enabled: searchWebEnabled, configured: Boolean(tavilyApiKey || catalog?.tavily.keyConfigured) };
     if (tool.name === "run_terminal") {
-      return { ...tool, enabled: terminalEnabled, configured: Boolean(workspaceRoot) && !catalog?.terminal.unavailableReason };
+      return {
+        ...tool,
+        enabled: terminalEnabled,
+        configured: Boolean(catalog?.terminal.workspaceRoot) && !catalog?.terminal.unavailableReason,
+      };
     }
     return tool;
   }
@@ -221,40 +219,38 @@ export function ToolsPage() {
       <AlertDialog open={terminalDialogOpen} onOpenChange={handleTerminalDialogOpenChange}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>终端执行配置</AlertDialogTitle>
+            <AlertDialogTitle>终端执行</AlertDialogTitle>
             <AlertDialogDescription>
-              <code>run_terminal</code> 只能在这个工作区内写入，命令由操作系统沙箱约束。
+              <code>run_terminal</code> 的执行边界由 Sandbox 配置决定，需要先设置工作区根目录。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="tavily-config-body">
-            <label className="config-field">
-              <span className="config-field-label">工作区根目录</span>
-              <Input
-                value={workspaceRoot}
-                onChange={(event) => setWorkspaceRoot(event.target.value)}
-                placeholder="/Users/you/project"
-                autoComplete="off"
-                spellCheck={false}
-              />
-              <span className="field-help">
-                <FolderTree size={13} />必须是已存在目录的绝对路径；其中的 <code>.git</code> 与 <code>.everything</code> 不可写。
-              </span>
-            </label>
+            {catalog?.terminal.unavailableReason
+              ? <Alert variant="warning">
+                  <Info />
+                  <AlertDescription>
+                    当前环境无法建立沙箱：{catalog.terminal.unavailableReason}
+                  </AlertDescription>
+                </Alert>
+              : <p className="field-help">
+                  <FolderTree size={13} />
+                  请到<strong>配置页面的 Sandbox 区域</strong>填写工作区根目录，保存后回到这里启用。
+                  命令只能写入该工作区，其中的 <code>.git</code> 与 <code>.everything</code> 不可写，出站网络默认切断。
+                </p>}
             <p className="field-help">
-              {catalog?.terminal.unavailableReason
-                ? `当前环境无法建立沙箱：${catalog.terminal.unavailableReason}`
-                : `当前沙箱：${catalog?.terminal.sandboxKind ?? "未知"}。出站网络默认切断，放行需要逐次确认。`}
+              当前工作区：{catalog?.terminal.workspaceRoot || "未配置"}
+              {catalog?.terminal.sandboxKind ? `　沙箱：${catalog.terminal.sandboxKind}` : ""}
             </p>
             {error && <div className="error-message" role="alert">{error}</div>}
           </div>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={saving}>取消</AlertDialogCancel>
+            <AlertDialogCancel disabled={saving}>关闭</AlertDialogCancel>
             <Button
               loading={saving}
-              disabled={Boolean(catalog?.terminal.unavailableReason)}
-              onClick={() => void persist({ nextTerminalEnabled: true, nextWorkspaceRoot: workspaceRoot, closeTerminalDialog: true })}
+              disabled={!catalog?.terminal.workspaceRoot || Boolean(catalog?.terminal.unavailableReason)}
+              onClick={() => void persist({ nextTerminalEnabled: true, closeTerminalDialog: true })}
             >
-              保存并启用
+              启用
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

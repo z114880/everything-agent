@@ -59,12 +59,10 @@ export function saveTools(body: Record<string, unknown>) {
     searchWebEnabled: requiredBoolean(body.searchWebEnabled, "search_web enabled"),
     tavilyApiKey: optionalText(body.tavilyApiKey, "Tavily API Key", 10_000),
     clearTavilyApiKey: body.clearTavilyApiKey === true,
+    // 工作区根目录属于 Sandbox 配置，只能从配置页面保存。
     terminalEnabled: body.terminalEnabled === undefined
       ? undefined
       : requiredBoolean(body.terminalEnabled, "run_terminal enabled"),
-    terminalWorkspaceRoot: body.terminalWorkspaceRoot === undefined
-      ? undefined
-      : optionalText(body.terminalWorkspaceRoot, "工作区根目录", 4_000),
   });
 }
 
@@ -212,6 +210,9 @@ export function saveAgentSettings(body: Record<string, unknown>) {
   if (body.retrievalMode !== undefined) {
     if (!["lexical_only", "dense_only", "hybrid"].includes(String(body.retrievalMode))) throw new TypeError("Retrieval Mode 无效");
     input.retrievalMode = body.retrievalMode as RetrievalMode;
+  }
+  if (body.sandboxWorkspaceRoot !== undefined) {
+    input.sandboxWorkspaceRoot = optionalText(body.sandboxWorkspaceRoot, "工作区根目录", 4_000);
   }
   input.clearEmbeddingApiKey = body.clearEmbeddingApiKey === true;
   input.force = body.force === true;

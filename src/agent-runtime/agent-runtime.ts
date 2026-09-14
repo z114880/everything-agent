@@ -240,7 +240,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
           }, skills, {
             getCurrentTimeEnabled: toolSettings.getCurrentTimeEnabled,
             terminalEnabled: toolSettings.terminalEnabled,
-            terminalWorkspaceRoot: toolSettings.terminalWorkspaceRoot,
+            terminalWorkspaceRoot: settings.sandboxWorkspaceRoot,
             terminalSessionTempDir: terminalTempDir,
             approval: approvals,
             searchWebEnabled: toolSettings.searchWebEnabled,
@@ -355,7 +355,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
     }, skills, {
       getCurrentTimeEnabled: toolSettings.getCurrentTimeEnabled,
       terminalEnabled: toolSettings.terminalEnabled,
-      terminalWorkspaceRoot: toolSettings.terminalWorkspaceRoot,
+      terminalWorkspaceRoot: settings.sandboxWorkspaceRoot,
       terminalSessionTempDir: terminalTempDir,
       searchWebEnabled: toolSettings.searchWebEnabled,
       tavilyApiKey: toolSettings.tavilyApiKey,

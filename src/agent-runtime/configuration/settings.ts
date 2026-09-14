@@ -1,3 +1,4 @@
+import { detectSandbox } from "../../sandbox/index.ts";
 import type { AgentProvider } from "../../model/model-client.ts";
 import type { MemoryRuntime } from "../../memory/index.ts";
 import type { createLocalConfig } from "../local-config.ts";
@@ -105,6 +106,7 @@ export function createRuntimeSettings(config: ReturnType<typeof createLocalConfi
       embeddingDocumentTemplate: values.EVERYTHING_EMBEDDING_DOCUMENT_TEMPLATE ?? "{text}",
       embeddingMinimumSimilarity: parseSimilarity(values.EVERYTHING_EMBEDDING_MINIMUM_SIMILARITY ?? "0.30"),
       embeddingApiKey: values.EVERYTHING_EMBEDDING_API_KEY ?? "",
+      sandboxWorkspaceRoot: values.EVERYTHING_SANDBOX_WORKSPACE_ROOT ?? "",
     };
   }
 }
@@ -136,6 +138,7 @@ export function publicSettings(settings: RuntimeSettings, memory: MemoryRuntime)
     embeddingMinimumSimilarity: settings.embeddingMinimumSimilarity,
     embeddingKeyConfigured: Boolean(settings.embeddingApiKey),
     embeddingKeyLast4: settings.embeddingApiKey ? settings.embeddingApiKey.slice(-4) : "",
+    sandbox: sandboxStatus(settings.sandboxWorkspaceRoot),
     embeddingIndex: { ...embeddingIndex, ready: Boolean(embeddingProfile && memory.embeddingIndexMatches(embeddingProfile)) },
     limits: SETTING_LIMITS,
   };
@@ -233,4 +236,14 @@ function sanitizeError(error: unknown, secrets: string[]): string {
   let message = error instanceof Error ? error.message : String(error);
   for (const secret of secrets) if (secret) message = message.replaceAll(secret, "***");
   return message;
+}
+
+/** 报告工作区配置与当前平台的沙箱能力，供配置页直接展示。 */
+function sandboxStatus(workspaceRoot: string): PublicAgentSettings["sandbox"] {
+  const availability = detectSandbox();
+  return {
+    workspaceRoot,
+    kind: availability.available ? availability.kind : null,
+    unavailableReason: availability.available ? null : availability.reason,
+  };
 }

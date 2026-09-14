@@ -1,3 +1,5 @@
+import { statSync } from "node:fs";
+import { isAbsolute, resolve } from "node:path";
 import type { AgentProvider } from "../../model/model-client.ts";
 import type { MemoryRuntime, RetrievalMode } from "../../memory/index.ts";
 
@@ -53,6 +55,8 @@ export interface RuntimeSettings {
   embeddingDocumentTemplate: string;
   embeddingMinimumSimilarity: number;
   embeddingApiKey: string;
+  /** 终端命令的沙箱工作区根目录；为空表示尚未配置，终端能力不可用。 */
+  sandboxWorkspaceRoot: string;
 }
 
 /** 保存运行配置的输入；省略预算字段时使用默认值。 */
@@ -91,6 +95,8 @@ export interface PublicAgentSettings {
   embeddingKeyConfigured: boolean;
   embeddingKeyLast4: string;
   embeddingIndex: ReturnType<MemoryRuntime["embeddingIndexStatus"]>;
+  /** 沙箱工作区与当前平台能力；`unavailableReason` 非空时终端能力无法启用。 */
+  sandbox: { workspaceRoot: string; kind: string | null; unavailableReason: string | null };
   limits: typeof SETTING_LIMITS;
 }
 
@@ -127,7 +133,31 @@ export function parseRuntimeSettingBody(body: AgentSettingsInput) {
     embeddingQueryTemplate: embeddingTemplate(body.embeddingQueryTemplate, "Query Template"),
     embeddingDocumentTemplate: embeddingTemplate(body.embeddingDocumentTemplate, "Document Template"),
     embeddingMinimumSimilarity: parseSimilarity(body.embeddingMinimumSimilarity ?? 0.30),
+    sandboxWorkspaceRoot: parseWorkspaceRoot(body.sandboxWorkspaceRoot),
   };
+}
+
+/**
+ * 校验沙箱工作区根目录。
+ *
+ * 空值表示不启用终端能力；非空时必须是已存在目录的绝对路径，否则沙箱会在第一条
+ * 命令上失败，而那时的报错离配置现场已经很远。
+ */
+export function parseWorkspaceRoot(value: unknown): string {
+  if (value === undefined || value === null || value === "") return "";
+  if (typeof value !== "string" || value.length > 4_000) throw new AgentConfigError("工作区根目录必须是小于 4000 字符的字符串");
+  const trimmed = value.trim();
+  if (trimmed === "") return "";
+  if (!isAbsolute(trimmed)) throw new AgentConfigError("工作区根目录必须是绝对路径");
+  const absolute = resolve(trimmed);
+  let isDirectory = false;
+  try {
+    isDirectory = statSync(absolute).isDirectory();
+  } catch {
+    throw new AgentConfigError(`工作区根目录不存在：${absolute}`);
+  }
+  if (!isDirectory) throw new AgentConfigError(`工作区根目录必须是目录：${absolute}`);
+  return absolute;
 }
 
 /** 解析整数预算，拒绝超出配置边界的值。 */

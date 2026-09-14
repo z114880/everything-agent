@@ -30,6 +30,8 @@ export interface AgentSettings {
   embeddingKeyConfigured: boolean;
   embeddingKeyLast4: string;
   embeddingIndex: { ready: boolean; generationId: string | null; profileHash: string | null };
+  /** 终端命令的执行边界；`unavailableReason` 非空时当前平台无法建立沙箱。 */
+  sandbox: { workspaceRoot: string; kind: string | null; unavailableReason: string | null };
   limits: Record<string, { min: number; max: number }>;
 }
 
@@ -276,6 +278,7 @@ export function saveAgentConfig(value: {
   embeddingDocumentTemplate: string;
   embeddingMinimumSimilarity: number;
   embeddingApiKey: string;
+  sandboxWorkspaceRoot: string;
   clearEmbeddingApiKey: boolean;
   force?: boolean;
 }): Promise<{ ok: true; settings: AgentSettings; models: Record<"agentModel" | "smallModel", string[]> }> {
@@ -370,7 +373,6 @@ export function saveTools(value: {
   tavilyApiKey: string;
   clearTavilyApiKey: boolean;
   terminalEnabled?: boolean | undefined;
-  terminalWorkspaceRoot?: string | undefined;
 }): Promise<{ ok: true } & ToolsCatalog> {
   return requestJson(`${endpoint}/tools`, {
     method: "PUT",

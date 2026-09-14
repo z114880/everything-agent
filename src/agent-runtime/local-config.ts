@@ -25,7 +25,7 @@ const CONFIG_PATHS = {
   EVERYTHING_TOOL_GET_CURRENT_TIME_ENABLED: ["tools", "getCurrentTimeEnabled"],
   EVERYTHING_TOOL_SEARCH_WEB_ENABLED: ["tools", "searchWebEnabled"],
   EVERYTHING_TOOL_RUN_TERMINAL_ENABLED: ["tools", "runTerminalEnabled"],
-  EVERYTHING_TOOL_RUN_TERMINAL_WORKSPACE_ROOT: ["tools", "runTerminalWorkspaceRoot"],
+  EVERYTHING_SANDBOX_WORKSPACE_ROOT: ["sandbox", "workspaceRoot"],
 } as const;
 
 const SECRET_KEYS = [
@@ -67,8 +67,8 @@ const DEFAULT_CONFIG: JsonObject = {
     getCurrentTimeEnabled: true,
     searchWebEnabled: false,
     runTerminalEnabled: false,
-    runTerminalWorkspaceRoot: "",
   },
+  sandbox: { workspaceRoot: "" },
 };
 
 /** 本地文件位置；配置与密钥固定保存到 `home/config.json` 与 `home/.env`。 */
