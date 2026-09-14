@@ -33,6 +33,7 @@ export {
 export { createModelClient } from "./model/model-client.ts";
 export { estimateRequestTokens, estimateTextTokens, RoughTokenEstimator } from "./model/token-estimator.ts";
 export type { AgentProvider, ModelClientConfig } from "./model/model-client.ts";
+export * from "./sandbox/index.ts";
 export * from "./memory/index.ts";
 export * from "./skills/index.ts";
 export { JsonlTracer, readTraceFiles, readTraceRecords } from "./tracing/jsonl-tracer.ts";

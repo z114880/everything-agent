@@ -155,6 +155,7 @@ everything-agent/
 │   ├── agent-graph/    # Agent Harness 静态拓扑及文档
 │   │   └── test/      # Harness 与 Runtime 集成行为测试
 │   ├── memory/        # SQLite、FTS5、Session、检索和 consolidation
+│   ├── sandbox/       # 由内核强制的命令执行边界（Seatbelt / bubblewrap）
 │   ├── skills/        # Skill 文件存储、目录发现和按需读取工具
 │   ├── tracing/       # classic loop 与 memory 的 JSONL 运行记录
 │   ├── tools/         # 本地工具注册表、manage_memory 与 Session Recall
@@ -263,6 +264,7 @@ pnpm run build
 - Semantic Memory 与 Session Recall 已支持 Dense、FTS5 + BM25 和 Hybrid 三种模式。Dense 仅调用 OpenAI-compatible Embedding API，固定 1024 维；Hybrid 以 RRF 融合并以 MMR 多样化。失败 run 不进入任何检索索引；工具结果不参与索引，但成功 run 的命中窗口会恢复完整工具过程。
 - JSONL trace 只覆盖 classic loop 与 memory；Workflow 继续使用实时 observer，不写入该目录。记录按 `.everything/traces/YYYY-MM-DD/<序号>-session-<sessionId>.jsonl` 存放，序号按当日文件创建顺序递增；无 Session、独立任务归属的系统事件写入 `<序号>-system-<UUID>.jsonl`，UUID 在记录器创建时随机生成，同一记录器在同一日期持续追加，重启后使用新的 UUID，不读取旧版根目录 JSONL。回合内的检索一律经回合观察者上报并归入会话文件，包括 `manage_memory` 的 `search` 与 `session_search`；`system-` 文件只承载 Embedding 索引重建这类确实不属于任何会话的操作。V2 记录为每个事件生成 `eventId` 和 run 内递增的 `sequence`；`model_request` 保存每次调用实际使用的 System Prompt、messages、工具 schema 和生成参数，`model_response` 与 `embedding_completed` 以 `tokenUsage` 记录供应商返回的真实输入、输出和总 token 数，缺失真实 usage 时为 `null`，不记录估算消耗。工具事件保存结构化参数与结果；记忆管理工具仅保存操作和 ID 摘要，新增 `memory_*` 事件记录决策、版本冲突与变更结果，不记录事实正文或自由文本理由。常见凭证字段与 Bearer token 仍会在写入前移除。`context_assembled` 只记录上下文的组装数量与记忆来源，模型请求才是 eval 的权威输入快照。`run_completed` 与 `run_failed` 记录回合级事实：供应商与模型、`ms` 及其拆分（`retrievalMs` 含 gate 小模型调用、`modelMs`、`toolMs`，三者之外的差额是编排开销）、`failedToolCallCount`、本回合入队的后台记忆写入任务 `derivedTaskIds`（用于关联 `<序号>-memory_write-<taskId>.jsonl`），以及上下文水位 `contextWindow`、`maxTokens`、`contextSafetyTokens`、`availableInputTokens`、`peakEstimatedInputTokens` 和 `peakInputTokens`。`run_failed` 另有 `cancelled` 与 `timedOut`，用户主动停止和整轮超时都不算模型或工具故障。
 - `State.snapshot()` 是顶层复制；节点应把收到的状态视为只读对象。
+- `src/sandbox` 提供由内核强制的命令执行边界：macOS 使用 Seatbelt，Linux 与 WSL2 使用 bubblewrap，原生 Windows 不提供该能力且不降级为无保护执行。目前只有边界本身，尚未接入任何终端类工具，Agent 仍不能执行 shell 命令。详见 [Sandbox 文档](./src/sandbox/README.md)。
 - 当前没有内置鉴权、密钥管理或个人数据加密能力。
 
 ### 记忆变更流程

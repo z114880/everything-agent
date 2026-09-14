@@ -12,6 +12,7 @@ export default defineConfig({
         "src/agent-runtime/**/*.ts",
         "src/memory/**/*.ts",
         "src/skills/**/*.ts",
+        "src/sandbox/**/*.ts",
         "src/tools/manage-memory.ts",
         "src/tools/tool-registry.ts",
         "src/tools/tavily-search.ts",
