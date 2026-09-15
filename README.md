@@ -31,7 +31,7 @@ pnpm run mock-data
 
 仓库已包含一个 React + Tailwind CSS v4 + shadcn/ui 的本地控制台。页面共用本地设计令牌和可复用基础组件，Graph 与 Agent Harness 画布仍以真实拓扑和 observer 事件为唯一事实来源：
 
-- **Agent**：运行真实 `runAgentLoop`，从 SQLite 恢复多轮 Session，展示输入、记忆需求判断、事实与历史召回、上下文组装、推理、工具和回复；独立后台区域展示记忆写入与跨会话整理关系。工具调用过程完整保存在本地 Chat Log，活动边和回复由真实 observer 事件驱动。输入框发送按钮左侧的圆环显示当前 Session 的上下文水位，分子分母与 Agent Loop 的 Context Window 硬限制同口径（已用估算 ÷ 扣除输出预留与安全余量后的可用额度），因此不会出现「圆环未满却报超限」；该估算不含本轮检索注入的记忆，是下限。
+- **Agent**：运行真实 `runAgentLoop`，从 SQLite 恢复多轮 Session，展示输入、记忆需求判断、事实与历史召回、上下文组装、推理、工具和回复；独立后台区域展示记忆写入与跨会话整理关系。工具调用过程完整保存在本地 Chat Log，活动边和回复由真实 observer 事件驱动。输入框发送按钮左侧的圆环显示当前 Session 的上下文水位，分子分母与 Agent Loop 的 Context Window 硬限制同口径（已用估算 ÷ 扣除输出预留与安全余量后的可用额度），因此不会出现「圆环未满却报超限」；该估算不含本轮检索注入的记忆，是下限。圆环采用 18px 紧凑样式，悬浮或键盘聚焦可查看已用比例、剩余比例和标记数量；运行中通过与发送按钮同尺寸、带圆环内实心方块图标的停止按钮停止生成。
 - **Workflow**：枚举 `src/workflows/` 下的 TypeScript 文件，可编辑和执行任一工作流。拓扑来自真实 `Graph.describe()`，执行由本地 Node.js 进程调用 `runGraph()`。
 - **Memory**：通过 Overview、Semantic、Session Recall、Procedural、Chat Log 和 Consolidation 查看本地记忆与真实历史检索窗口。Session Recall 结果按消息分段展示，结构化内容保留缩进、正文换行；查询留空可查看最近活跃会话。
 - **Skills**：新建、编辑、重命名和删除 `.everything/skills/<skill-name>/SKILL.md`。每轮 Agent 只注入 Skill 名称与描述，需要使用时通过受控 `read_skill` 工具加载正文；目录发现、加载和工具调用均进入 observer 与 JSONL trace。
@@ -266,7 +266,7 @@ pnpm run build
 - `State.snapshot()` 是顶层复制；节点应把收到的状态视为只读对象。
 - `run_terminal` 让 Agent 在受内核约束的工作区内执行 shell 命令：macOS 使用 Seatbelt，Linux 与 WSL2 使用 bubblewrap，原生 Windows 不提供该能力且不降级为无保护执行。默认关闭，启用前必须配置一个已存在的工作区根目录，且当前平台确实能建立沙箱。命令只能写入工作区与会话临时目录，工作区内的 `.git` 与 `.everything` 不可写，默认切断出站网络，父进程凭证不进入子进程。**沙箱不保护工作区内部**：工作区必须可写，因此工作区内的破坏性操作由人工审批、`.git` 拒写和 Git 本身共同兜底。
 - 沙箱管不到的后果由人工审批把关：`git push`、发布软件包这类外部可见操作，以及 `git reset --hard`、`git clean -fd` 这类会丢弃工作成果的操作，都必须确认；指向根目录或主目录的递归删除、fork 炸弹等直接拒绝执行。判定只看命令文本，不额外执行 git 查询工作树状态。审批请求经 observer 事件推送到界面，用户的决定由独立请求送回，运行结束或连接断开时一并作废。命令文本匹配只防手滑、不防对抗，真正的边界始终是沙箱。
-- 工作区根目录属于配置页面的 **Sandbox** 区域（`.everything/config.json` 的 `sandbox.workspaceRoot`），是这项配置的唯一写入口；Tools 页面只负责启用开关，未配置工作区时提示先去 Sandbox 区域设置。两处都会显示当前沙箱类型，不可用时给出原因且无法启用。详见 [Sandbox 文档](./src/sandbox/README.md)。
+- 工作区根目录属于配置页面的 **Sandbox** 区域（`.everything/config.json` 的 `sandbox.workspaceRoot`），默认使用自动创建的 `.everything/sandbox`（保存为绝对路径，自定义数据目录时使用其下的 `sandbox`），是这项配置的唯一写入口；Tools 页面只负责启用开关，未配置工作区时提示先去 Sandbox 区域设置。两处都会显示当前沙箱类型，不可用时给出原因且无法启用。详见 [Sandbox 文档](./src/sandbox/README.md)。
 - 当前没有内置鉴权、密钥管理或个人数据加密能力。
 
 ### 记忆变更流程

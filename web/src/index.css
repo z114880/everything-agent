@@ -319,7 +319,7 @@ button:disabled { cursor: not-allowed; }
 .tool-summary.done .tool-status-dot { background: #45a878; }
 .tool-summary.error .tool-status-dot { background: #d4574c; }
 .stream-caret { display: inline-block; width: 5px; height: 13px; margin-left: 2px; vertical-align: -2px; background: var(--accent); animation: caretBlink .8s step-end infinite; }
-.agent-composer { flex-shrink: 0; border-top: 1px solid var(--line); padding: 10px 14px; background: #fbfbfc; }
+.agent-composer { flex-shrink: 0; border-top: 1px solid var(--line); padding: 12px 14px; background: #fbfbfc; }
 .agent-composer textarea { display: block; width: 100%; resize: none; border: 1px solid var(--line-strong); border-radius: 10px; outline: none; background: white; padding: 10px 11px; color: var(--ink); font-size: 12px; line-height: 1.5; }
 .agent-composer textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .agent-composer textarea:disabled { background: white; color: var(--muted); opacity: 1; }
@@ -337,6 +337,7 @@ button:disabled { cursor: not-allowed; }
 .config-model-card { grid-column: 1; }
 .config-retrieval-card { grid-column: 2; }
 .config-runtime-card { grid-column: 1 / -1; }
+.config-sandbox-card { grid-column: 1 / -1; }
 .config-card-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); padding: 18px 20px; }
 .config-card-header h3 { font-size: 14px; }
 .config-card-header p { margin: 5px 0 0; font-size: 11px; }
@@ -646,15 +647,15 @@ button:disabled { cursor: not-allowed; }
 .agent-composer textarea:focus { box-shadow: none; }
 .composer-hint { color: var(--muted); font-size: 10px; line-height: 1.5; }
 .composer-controls { display: flex; align-items: center; gap: 10px; }
-/* 圆环只用颜色区分档位，中心数字恒用前景色，保证小字号下的对比度。 */
-.context-gauge { position: relative; display: inline-grid; width: 28px; height: 28px; flex: 0 0 auto; place-items: center; cursor: default; }
-.context-gauge svg { position: absolute; inset: 0; transform: rotate(-90deg); }
+/* 小圆环保留更大的悬浮与键盘聚焦区域，详细读数放在提示卡片中。 */
+.context-gauge { position: relative; display: inline-grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; cursor: default; border-radius: 50%; }
+.context-gauge svg { transform: rotate(-90deg); }
+.context-gauge:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .context-gauge circle { fill: none; }
 .context-gauge-track { stroke: var(--line); }
 .context-gauge-arc { stroke: var(--muted); stroke-linecap: round; transition: stroke-dashoffset .3s ease, stroke .3s ease; }
 .context-gauge.level-warn .context-gauge-arc { stroke: var(--warn); }
 .context-gauge.level-critical .context-gauge-arc { stroke: var(--destructive); }
-.context-gauge-value { position: relative; color: var(--ink); font-size: 9px; font-variant-numeric: tabular-nums; line-height: 1; }
 .agent-composer-actions button { min-height: 32px; font-size: 12px; }
 .agent-chat-dock button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .agent-chat-dock button:disabled { cursor: not-allowed; }
@@ -704,3 +705,16 @@ button:disabled { cursor: not-allowed; }
 .recall-hint-heading p { margin: 0; }
 .recall-hint-stats { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 6px; margin-bottom: 2px; font-size: 10px; line-height: 1.5; }
 .recall-stat { padding: 2px 6px; border-radius: 4px; background: var(--line); font-variant-numeric: tabular-nums; }
+
+
+.terminal-config-dialog { gap: 20px; max-height: calc(100dvh - 32px); overflow-y: auto; }
+.terminal-config-dialog code { font-family: var(--font-mono); font-size: .92em; }
+.terminal-config-body { display: grid; min-width: 0; gap: 20px; font-size: 14px; line-height: 1.65; }
+.terminal-config-note { color: var(--muted); }
+.terminal-config-note p { margin: 0; }
+.terminal-config-note p + p { margin-top: 10px; }
+.terminal-config-note strong { color: var(--ink); font-weight: 500; }
+.terminal-config-details { display: grid; gap: 12px; margin: 0; border-top: 1px solid var(--line); padding-top: 16px; font-size: 13px; }
+.terminal-config-details > div { display: grid; grid-template-columns: 5em minmax(0, 1fr); align-items: baseline; gap: 16px; }
+.terminal-config-details dt { color: var(--muted); }
+.terminal-config-details dd { min-width: 0; margin: 0; color: var(--ink); overflow-wrap: anywhere; }

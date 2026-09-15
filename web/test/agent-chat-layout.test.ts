@@ -5,6 +5,15 @@ import { describe, expect, it } from "vitest";
 const stylePath = fileURLToPath(new URL("../src/index.css", import.meta.url));
 
 describe("Agent 会话窗口布局", () => {
+  it("停止按钮保持发送按钮尺寸和文字，图标使用圆环包围实心方块", async () => {
+    const source = await readFile(new URL("../src/pages/agent/AgentPage.tsx", import.meta.url), "utf8");
+    const css = await readFile(stylePath, "utf8");
+    expect(source).toContain('aria-label="停止生成"');
+    expect(source).toContain('<CircleStop size={15} className="[&_rect]:fill-current" aria-hidden="true" /> 停止');
+    expect(source).toMatch(/size="sm"\s+className="stop-agent"/);
+    expect(css).not.toContain(".agent-composer-actions .stop-agent");
+  });
+
   it("历史列表超出浮层高度时滚动，条目不收缩裁切标题和记录数", async () => {
     const css = await readFile(stylePath, "utf8");
     expect(ruleFor(css, ".session-list button")).toMatch(/flex-shrink:\s*0\s*;/);

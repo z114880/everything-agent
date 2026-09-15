@@ -99,3 +99,15 @@ describe("配置页布局", () => {
     expect(styles).toContain("animation: tools-toast-lifecycle 2.5s ease both;");
   });
 });
+
+it("Sandbox 在运行参数上方全宽显示，输入区不嵌套双列布局", async () => {
+  const page = await readFile(configPage, "utf8");
+  const styles = await readFile(styleSheet, "utf8");
+  const sandbox = page.indexOf('<Card className="config-card config-sandbox-card">');
+  expect(sandbox).toBeGreaterThan(-1);
+  expect(sandbox).toBeLessThan(page.indexOf('<Card className="config-card config-runtime-card">'));
+  const section = page.slice(sandbox, page.indexOf("</Card>", sandbox));
+  expect(section).toContain('className="config-card-content"');
+  expect(section).not.toContain('className="config-grid"');
+  expect(styles).toContain(".config-sandbox-card { grid-column: 1 / -1; }");
+});

@@ -56,14 +56,28 @@ describe("上下文水位圆环放置与配色", () => {
     expect(source).toContain("setContextUsageRevision((value) => value + 1)");
   });
 
-  it("颜色只作用于弧线，中心数字使用高对比前景色", async () => {
+  it("圆环紧凑展示，悬浮卡片提供使用比例与剩余额度", async () => {
+    const component = await readFile(new URL("../src/components/ContextGauge.tsx", import.meta.url), "utf8");
+    const css = await readFile(new URL("../src/index.css", import.meta.url), "utf8");
+    expect(component).toContain("const SIZE = 18;");
+    expect(component).toContain('tabIndex={0}');
+    expect(component).toContain('<TooltipContent className="grid gap-0.5 border border-border bg-popover text-popover-foreground"');
+    expect(css).not.toContain(".context-gauge-tooltip");
+    expect(component).toContain("上下文窗口");
+    expect(component).toContain("剩余");
+    expect(ruleFor(css, ".context-gauge")).toMatch(/width:\s*24px/);
+  });
+
+  it("颜色只作用于弧线，圆环中心不显示数字", async () => {
     const css = await readFile(new URL("../src/index.css", import.meta.url), "utf8");
 
     expect(css).toContain("--warn: #b45309;");
     expect(ruleFor(css, ".context-gauge.level-warn .context-gauge-arc")).toMatch(/stroke:\s*var\(--warn\)/);
     expect(ruleFor(css, ".context-gauge.level-critical .context-gauge-arc")).toMatch(/stroke:\s*var\(--destructive\)/);
-    expect(ruleFor(css, ".context-gauge-value")).toMatch(/color:\s*var\(--ink\)/);
-    expect(ruleFor(css, ".context-gauge-value")).toMatch(/tabular-nums/);
+    const component = await readFile(new URL("../src/components/ContextGauge.tsx", import.meta.url), "utf8");
+    expect(component).not.toContain("context-gauge-value");
+    expect(component).toContain("aria-valuenow={reading.percent}");
+
   });
 });
 

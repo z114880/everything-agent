@@ -7,8 +7,8 @@ import {
   TooltipTrigger,
 } from "./ui/tooltip";
 
-const SIZE = 28;
-const STROKE = 3;
+const SIZE = 18;
+const STROKE = 2;
 const RADIUS = (SIZE - STROKE) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
@@ -28,6 +28,7 @@ export function ContextGauge({ usage }: { usage: ContextUsage | null }) {
           <span
             className={`context-gauge level-${reading.level}`}
             role="progressbar"
+            tabIndex={0}
             aria-label={label}
             aria-valuenow={reading.percent}
             aria-valuemin={0}
@@ -52,12 +53,12 @@ export function ContextGauge({ usage }: { usage: ContextUsage | null }) {
                 strokeDashoffset={CIRCUMFERENCE * (1 - reading.arcRatio)}
               />
             </svg>
-            <span className="context-gauge-value">{reading.percent}</span>
           </span>
         </TooltipTrigger>
-        <TooltipContent role="tooltip">
-          已用 {reading.usedTokens.toLocaleString()} / 可用{" "}
-          {reading.availableTokens.toLocaleString()} tokens
+        <TooltipContent className="grid gap-0.5 border border-border bg-popover text-popover-foreground" side="top" align="center" role="tooltip">
+          <span className="font-semibold">上下文窗口：</span>
+          <span>{reading.percent}% 已用（剩余 {Math.max(0, 100 - reading.percent)}%）</span>
+          <span>已用 {new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(reading.usedTokens).toLowerCase()} 标记，共 {new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(reading.availableTokens).toLowerCase()}</span>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

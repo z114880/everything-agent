@@ -1,4 +1,4 @@
-import { CheckCircle2, Clock3, FolderTree, Info, KeyRound, LockKeyhole, Search, Terminal, Wrench } from "lucide-react";
+import { CheckCircle2, Clock3, Info, KeyRound, LockKeyhole, Search, Terminal, Wrench } from "lucide-react";
 import { Alert, AlertDescription } from "../../components/ui/alert";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { loadTools, saveTools, type AgentTool, type ToolsCatalog } from "../../agent-api";
@@ -217,14 +217,14 @@ export function ToolsPage() {
         </div>
       </section>)}
       <AlertDialog open={terminalDialogOpen} onOpenChange={handleTerminalDialogOpenChange}>
-        <AlertDialogContent>
+        <AlertDialogContent className="terminal-config-dialog">
           <AlertDialogHeader>
             <AlertDialogTitle>终端执行</AlertDialogTitle>
             <AlertDialogDescription>
               <code>run_terminal</code> 的执行边界由 Sandbox 配置决定，需要先设置工作区根目录。
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="tavily-config-body">
+          <div className="terminal-config-body">
             {catalog?.terminal.unavailableReason
               ? <Alert variant="warning">
                   <Info />
@@ -232,15 +232,20 @@ export function ToolsPage() {
                     当前环境无法建立沙箱：{catalog.terminal.unavailableReason}
                   </AlertDescription>
                 </Alert>
-              : <p className="field-help">
-                  <FolderTree size={13} />
-                  请到<strong>配置页面的 Sandbox 区域</strong>填写工作区根目录，保存后回到这里启用。
-                  命令只能写入该工作区，其中的 <code>.git</code> 与 <code>.everything</code> 不可写，出站网络默认切断。
-                </p>}
-            <p className="field-help">
-              当前工作区：{catalog?.terminal.workspaceRoot || "未配置"}
-              {catalog?.terminal.sandboxKind ? `　沙箱：${catalog.terminal.sandboxKind}` : ""}
-            </p>
+              : <div className="terminal-config-note">
+                  <p>请到<strong>配置页面的 Sandbox 区域</strong>填写工作区根目录，保存后回到这里启用。</p>
+                  <p>命令只能写入该工作区，其中的 <code>.git</code> 与 <code>.everything</code> 不可写，出站网络默认切断。</p>
+                </div>}
+            <dl className="terminal-config-details">
+              <div>
+                <dt>当前工作区</dt>
+                <dd><code>{catalog?.terminal.workspaceRoot || "未配置"}</code></dd>
+              </div>
+              <div>
+                <dt>沙箱</dt>
+                <dd>{catalog?.terminal.sandboxKind || "未配置"}</dd>
+              </div>
+            </dl>
             {error && <div className="error-message" role="alert">{error}</div>}
           </div>
           <AlertDialogFooter>

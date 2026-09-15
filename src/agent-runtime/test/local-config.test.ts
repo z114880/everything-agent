@@ -14,6 +14,7 @@ it("首次启动会创建完整的 .everything 基础目录", async () => {
     await runtime.start();
     expect(JSON.parse(await readFile(join(home, "config.json"), "utf8"))).toMatchObject({
       models: { agent: {}, small: {} },
+      sandbox: { workspaceRoot: join(home, "sandbox") },
       maxTokens: 32_768, maxIterations: 100,
       modelContextWindow: 262_144, sessionRecall: { searchWindow: 10, entryTokenLimit: 8_192 },
       retrieval: { mode: "lexical_only", embedding: {} },
@@ -21,7 +22,10 @@ it("首次启动会创建完整的 .everything 基础目录", async () => {
     });
     expect(await readFile(join(home, "EVERYTHING.md"), "utf8")).toContain("个人助理");
     expect((await stat(join(home, ".env"))).isFile()).toBe(true);
-    await expect(runtime.getSettings()).resolves.toBeTypeOf("object");
+    await expect(runtime.getSettings()).resolves.toMatchObject({
+      sandbox: { workspaceRoot: join(home, "sandbox") },
+    });
+    expect((await stat(join(home, "sandbox"))).isDirectory()).toBe(true);
     expect((await stat(join(home, "skills"))).isDirectory()).toBe(true);
     expect((await stat(join(home, "database", "state.db"))).isFile()).toBe(true);
   } finally {

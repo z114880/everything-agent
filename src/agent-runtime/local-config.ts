@@ -1,5 +1,5 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { RUNTIME_DEFAULTS } from "./configuration/schema.ts";
 
 const DEFAULT_SYSTEM_PROMPT = "你是用户的个人助理。使用中文清晰地回答，结合会话上下文和可用工具完成任务。不要编造事实或工具执行结果；缺少必要信息时向用户说明。\n";
@@ -68,7 +68,6 @@ const DEFAULT_CONFIG: JsonObject = {
     searchWebEnabled: false,
     runTerminalEnabled: false,
   },
-  sandbox: { workspaceRoot: "" },
 };
 
 /** 本地文件位置；配置与密钥固定保存到 `home/config.json` 与 `home/.env`。 */
@@ -79,6 +78,8 @@ export interface LocalConfigPaths {
 
 /** 创建本地配置实例，将普通设置与密钥分别持久化。 */
 export function createLocalConfig(paths: LocalConfigPaths) {
+  const workspaceRoot = resolve(paths.home, "sandbox");
+  const defaultConfig: JsonObject = { ...DEFAULT_CONFIG, sandbox: { workspaceRoot } };
   const configPath = join(paths.home, "config.json");
   const envPath = join(paths.home, ".env");
   const systemPromptPath = join(paths.home, "EVERYTHING.md");
@@ -95,7 +96,8 @@ export function createLocalConfig(paths: LocalConfigPaths) {
   async function initialize(): Promise<void> {
     await mkdir(paths.home, { recursive: true });
     await mkdir(join(paths.home, "skills"), { recursive: true });
-    await writeIfMissing(configPath, serializeConfig(DEFAULT_CONFIG), 0o600);
+    await mkdir(workspaceRoot, { recursive: true });
+    await writeIfMissing(configPath, serializeConfig(defaultConfig), 0o600);
     // 注释占位不覆盖进程环境中已配置的密钥。
     await writeIfMissing(envPath, `# API Key 可在 Web 配置页面保存；请勿提交此文件。\n${SECRET_KEYS.map((key) => `# ${key}=`).join("\n")}\n`, 0o600);
     await readSystemPrompt();
@@ -106,14 +108,14 @@ export function createLocalConfig(paths: LocalConfigPaths) {
     const inherited = Object.fromEntries(CONFIG_KEYS.flatMap((key) => process.env[key] === undefined
       ? []
       : [[key, process.env[key]!]]));
-    const config = await readConfigIfPresent(configPath);
+    const config = await readConfigIfPresent(configPath, defaultConfig);
     const secrets = await readSecretsIfPresent(envPath);
-    return { ...inherited, ...flattenConfig(config), ...secrets };
+    return { EVERYTHING_SANDBOX_WORKSPACE_ROOT: workspaceRoot, ...inherited, ...flattenConfig(config), ...secrets };
   }
 
   /** 原子更新 `.everything/config.json` 中的普通设置。 */
   async function updateConfigFile(updates: Record<string, string>): Promise<void> {
-    const document = await readConfigIfPresent(configPath);
+    const document = await readConfigIfPresent(configPath, defaultConfig);
     for (const [key, value] of Object.entries(updates)) {
       const path = CONFIG_PATHS[key as keyof typeof CONFIG_PATHS];
       if (!path) throw new TypeError(`不允许写入未知配置：${key}`);
@@ -193,13 +195,13 @@ function decodeConfigValue(key: string, value: string): string | number | boolea
   return value;
 }
 
-async function readConfigIfPresent(path: string): Promise<JsonObject> {
+async function readConfigIfPresent(path: string, defaults: JsonObject): Promise<JsonObject> {
   try {
     const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
     if (!isJsonObject(parsed)) throw new TypeError("本地配置必须是 JSON 对象");
     return parsed;
   } catch (error) {
-    if (isMissingFile(error)) return structuredClone(DEFAULT_CONFIG);
+    if (isMissingFile(error)) return structuredClone(defaults);
     if (error instanceof SyntaxError) throw new TypeError(`本地配置 JSON 无效：${error.message}`, { cause: error });
     throw error;
   }

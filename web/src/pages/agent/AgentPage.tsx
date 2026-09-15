@@ -893,9 +893,11 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
                         variant="destructive-outline"
                         size="sm"
                         className="stop-agent"
+                        aria-label="停止生成"
+                        title="停止生成"
                         onClick={() => abortRef.current?.abort()}
                       >
-                        <CircleStop size={15} /> 停止
+                        <CircleStop size={15} className="[&_rect]:fill-current" aria-hidden="true" /> 停止
                       </Button>
                     ) : (
                       <Button

@@ -45,3 +45,12 @@ describe("Tools 页面", () => {
     expect(source).toContain("@keyframes tools-toast-lifecycle");
   });
 });
+
+it("终端弹窗说明按段落排版，路径和沙箱信息分行且长路径可换行", async () => {
+  const source = await readFile(page, "utf8");
+  const css = await readFile(styles, "utf8");
+  expect(source).toContain('className="terminal-config-note"');
+  expect(source).toContain("<dt>当前工作区</dt>");
+  expect(source).toContain("<dt>沙箱</dt>");
+  expect(css).toContain("overflow-wrap: anywhere");
+});

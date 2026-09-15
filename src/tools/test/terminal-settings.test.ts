@@ -66,10 +66,11 @@ describe("终端工具设置", () => {
   it("默认关闭，且工作区读自 Sandbox 配置", async () => {
     const loaded = await settings.load();
     expect(loaded.terminalEnabled).toBe(false);
-    expect(loaded.terminalWorkspaceRoot).toBe("");
+    expect(loaded.terminalWorkspaceRoot).toBe(join(home, "sandbox"));
   });
 
-  it("Sandbox 未配置工作区时无法启用，并指向配置页面", async () => {
+  it("Sandbox 显式清空工作区时无法启用，并指向配置页面", async () => {
+    await configureWorkspace("");
     await expect(settings.save({ ...base, terminalEnabled: true })).rejects.toThrow(/配置页面/);
   });
 

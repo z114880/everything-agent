@@ -34,7 +34,7 @@ afterEach(async () => {
   container.remove();
 });
 async function click(label: string) {
-  const button = [...container.querySelectorAll("button")].find((item) => item.textContent?.trim() === label);
+  const button = [...container.querySelectorAll("button")].find((item) => (item.getAttribute("aria-label") ?? item.textContent?.trim()) === label);
   expect(button, label).toBeDefined();
   await act(async () => button!.click());
 }
@@ -64,7 +64,7 @@ it("运行时切换页面再返回，保留流式回复和停止控制", async (
   expect(container.querySelector("textarea")!.closest("main")!.hidden).toBe(false);
   expect(container.querySelector("textarea")!.disabled).toBe(true);
   expect(signal.aborted).toBe(false);
-  await click("停止");
+  await click("停止生成");
   expect(signal.aborted).toBe(true);
   expect(container.textContent).toContain("本轮运行已停止");
 });

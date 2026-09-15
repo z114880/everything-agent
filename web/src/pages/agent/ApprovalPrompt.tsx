@@ -17,7 +17,7 @@ interface ApprovalPromptProps {
 export function ApprovalPrompt({ approvals, busyId, onDecide }: ApprovalPromptProps) {
   if (approvals.length === 0) return null;
   return (
-    <div className="flex flex-col gap-2">
+    <div className="mb-3 flex flex-col gap-2">
       {approvals.map((approval) => (
         <div
           key={approval.id}
