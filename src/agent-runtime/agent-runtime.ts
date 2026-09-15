@@ -24,14 +24,14 @@ import type { DailyConsolidationCheck } from "./daily-consolidation.ts";
 import { formatSkillCatalog, SkillStore } from "../skills/index.ts";
 import { createToolSettings } from "../tools/tool-settings.ts";
 import type { ToolSettingsInput } from "../tools/tool-settings.ts";
-import type { AgentRunInput, AgentRunOptions, AgentRunResult } from "./types.ts";
+import type { AgentRunInput, AgentRunOptions, AgentRunResult, AgentRuntimeOptions } from "./types.ts";
 
 import { RUNTIME_SYSTEM_PROMPT } from "./system-prompt.ts";
 
 const DEFAULT_TIMEOUT_MS = 300_000;
 
 /** 创建本地个人助理 Runtime；资源与会话锁由实例独立持有。 */
-export function createAgentRuntime(paths: LocalConfigPaths) {
+export function createAgentRuntime(paths: LocalConfigPaths, options: AgentRuntimeOptions = {}) {
   const everythingHome = paths.home;
   const config = createLocalConfig(paths);
   const { readSystemPrompt } = config;
@@ -146,8 +146,8 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
       await configureMemoryRuntime(memory, settings, recordMemoryEvent);
       scheduleStartupRecovery(memory, settings);
       const trace = getTracer();
-      const agentClient = createRuntimeClient(settings.agentModel, settings.modelContextWindow, tokenEstimator);
-      const smallClient = createRuntimeClient(settings.smallModel, settings.modelContextWindow, tokenEstimator);
+      const agentClient = createRuntimeClient(settings.agentModel, settings.modelContextWindow, tokenEstimator, (tokenUsage) => options.onModelUsage?.({ model: settings.agentModel.model, purpose: "agent", tokenUsage }));
+      const smallClient = createRuntimeClient(settings.smallModel, settings.modelContextWindow, tokenEstimator, (tokenUsage) => options.onModelUsage?.({ model: settings.smallModel.model, purpose: "small", tokenUsage }));
       const runId = crypto.randomUUID();
       const startedAt = performance.now();
       const userEvidence = memory.startRun(sessionId, runId, prompt);
@@ -231,7 +231,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
           model: settings.agentModel.model,
           system: [RUNTIME_SYSTEM_PROMPT, baseSystem, skillCatalog, retrieval.context].filter(Boolean).join("\n\n"),
           messages,
-          tools: new LocalToolRegistry(memory, new ManageMemoryTool(memory, {
+          tools: configureTools(new LocalToolRegistry(memory, new ManageMemoryTool(memory, {
             client: agentClient, model: settings.agentModel.model, currentSessionId: sessionId,
             runId, evidenceMessageId: userEvidence.id, observer: emit,
           }), {
@@ -245,7 +245,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
             approval: approvals,
             searchWebEnabled: toolSettings.searchWebEnabled,
             tavilyApiKey: toolSettings.tavilyApiKey,
-          }),
+          })),
           maxIterations: settings.maxIterations,
           maxTokens: settings.maxTokens,
           timeoutMs: DEFAULT_TIMEOUT_MS,
@@ -378,7 +378,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
 
   /** 读取本地追踪文件，展示结构由宿主组装。 */
   async function readTraces() {
-    return readTraceFiles(everythingHome, 2_000);
+    return readTraceFiles(everythingHome);
   }
 
   /** 列出可用 Skills；损坏的 SKILL.md 会阻止返回不完整目录。 */
@@ -437,6 +437,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
 
   /** 用户进入 Agent 页面、点击 Consolidate 或每日兜底检查；未配置模型时不占每日配额。 */
   async function consolidate(trigger: "daily" | "manual") {
+    if (trigger === "daily" && options.automaticConsolidation === false) return null;
     const settings = await loadRuntimeSettings();
     const memory = getMemoryRuntime();
     if (!isModelConnectionConfigured(settings.agentModel)) {
@@ -465,7 +466,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
       const current = await loadRuntimeSettings();
       await configureMemoryRuntime(memory, current, recordMemoryEvent);
       return {
-        client: createRuntimeClient(current.agentModel, current.modelContextWindow, tokenEstimator), model: current.agentModel.model,
+        client: createRuntimeClient(current.agentModel, current.modelContextWindow, tokenEstimator, (tokenUsage) => options.onModelUsage?.({ model: current.agentModel.model, purpose: "memory", tokenUsage })), model: current.agentModel.model,
         modelContextWindow: current.modelContextWindow, tokenEstimator,
         currentSessionId: "", observer: async (kind, event) => {
           const enriched = kind.includes("_model_")
@@ -549,7 +550,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
       assertOpen();
       await config.initialize();
       scheduleStartupRecovery(getMemoryRuntime(), await loadRuntimeSettings());
-      scheduleDailyConsolidation();
+      if (options.automaticConsolidation !== false) scheduleDailyConsolidation();
     },
     get memory() { return getMemoryRuntime(); },
     async prepareMemory() {
@@ -568,6 +569,10 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
       return memory.createConversation(previousSessionId);
     },
   };
+
+  function configureTools(tools: import("../agent-loop/agent-loop.ts").ToolRegistry) {
+    return options.configureTools ? options.configureTools(tools) : tools;
+  }
 }
 
 /**

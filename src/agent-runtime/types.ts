@@ -1,6 +1,14 @@
 import type { AgentObserver } from "../agent-loop/agent-loop.ts";
 import type { AgentProvider } from "../model/model-client.ts";
 import type { ContextWaterline } from "./context-window.ts";
+import type { ToolRegistry } from "../agent-loop/agent-loop.ts";
+
+/** 宿主可替换工具环境；默认仍使用真实工具，不改变 Loop 执行和参数校验职责。 */
+export interface AgentRuntimeOptions {
+  automaticConsolidation?: boolean;
+  configureTools?: (tools: ToolRegistry) => ToolRegistry;
+  onModelUsage?: (event: { model: string; purpose: "agent" | "small" | "memory"; tokenUsage: import("../agent-loop/agent-loop.ts").TokenUsage | null }) => void;
+}
 
 /** 一次个人助理回合的输入。 */
 export interface AgentRunInput {

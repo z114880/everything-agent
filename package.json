@@ -46,10 +46,14 @@
     "./skills": {
       "types": "./src/skills/index.ts",
       "default": "./src/skills/index.ts"
+    },
+    "./evaluation": {
+      "types": "./src/evaluation/index.ts",
+      "default": "./src/evaluation/index.ts"
     }
   },
   "scripts": {
-    "start": "npm run dev:web",
+    "start": "pnpm run dev:web",
     "build": "pnpm run typecheck && pnpm run build:web",
     "dev:web": "vite --config web/vite.config.ts",
     "build:web": "tsc -p web/tsconfig.json && vite build --config web/vite.config.ts",
@@ -59,7 +63,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "example": "node src/engine/examples/basic.ts",
-    "mock-data": "node mock-data/cli.ts"
+    "mock-data": "node mock-data/cli.ts",
+    "evaluate": "node src/evaluation/cli.ts"
   },
   "engines": {
     "node": ">=24.12"
@@ -85,6 +90,7 @@
     "@radix-ui/react-tooltip": "^1.2.16",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "deepeval": "0.9.16",
     "lucide-react": "^1.34.0",
     "nodejieba": "^3.5.8",
     "react": "^19.2.8",

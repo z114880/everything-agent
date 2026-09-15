@@ -8,3 +8,6 @@ coverage/
 dist-web/
 *.tgz
 .everything/
+
+# 独立评估产物包含用例证据，不提交
+.evaluations/

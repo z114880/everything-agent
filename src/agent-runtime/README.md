@@ -107,3 +107,15 @@ Web 配置页的 Memory Retrieval 区域提供 Retrieval Mode 与 Minimum Simila
 图中的 System Prompt 是组装结果，并非一次额外模型调用；现有 `context_assembled` 事件标记其完成，不新增虚构执行事件。提示词指导提交与回复，参数、证据、事务和审计约束仍由工具与记忆模块执行。
 
 Memory 页在 Consolidation 后提供只读 System Prompt 标签页，直接展示 `system-prompt.ts` 导出的运行时提示词正文，不拼接用户规则、Skills 或召回内容，不提供修改和保存入口。
+
+## 受控宿主与 Evaluation
+
+`createAgentRuntime(paths, options?)` 支持三个宿主选项：
+
+- `automaticConsolidation: false`：关闭每日自动整理，手动整理和已经入队的记忆任务仍正常执行。
+- `configureTools(original)`：宿主返回本回合使用的工具注册表；默认不替换。评估用它注入固定外部环境，保留真实 Memory / Recall / Skill 工具。
+- `onModelUsage(event)`：接收主模型、Small Model 和后台记忆模型的真实 token usage 与用途；供应商不返回用量或调用失败时为 null，不以估算值冒充账单用量。
+
+公开入口导出 `AGENT_RUNTIME_HOST_PROTOCOL = 1`，评估运行器要求所选源码版本显式支持该协议。选项由宿主提供，不进入模型上下文，不新增模型可调用的管理工具。更多内容见 [Evaluation](../evaluation/README.md)。
+
+`readTraces()` 现在读取完整 JSONL 文件，不再截断到最近 2,000 条。Web 列表使用独立的 `listTraceRuns` 游标分页，详情使用 `readTraceRun` 完整读取。

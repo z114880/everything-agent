@@ -292,3 +292,11 @@ Agent 运行期间可通过侧栏切换到其他页面，运行与实时事件�
 也可在 `.everything/config.json` 顶层设置 `maxTokens` 与 `maxIterations`。运行记录 `run_started.settings` 保存实际预算，模型请求使用配置的 `max_tokens`。输入估算、输出预算及 512 tokens 安全余量仍须合计不超过 `modelContextWindow`；输出预算需符合模型服务自身的限制。Agent Loop 超时仍为 300 秒。提高预算不会自动续写被截断的回答。
 
 配套默认预算为 `modelContextWindow: 262144`（256K）与 `sessionRecall.entryTokenLimit: 8192`（Recall Entry Token Limit，session_search 的单条正文上限）。单次 session_search 的 token 总额不是独立配置，固定取 `modelContextWindow` 的 25%（默认 65,536），配置页只读展示。初始化、缺省配置、配置页和恢复默认保持一致。预留 32,768 输出 tokens 与 512 安全余量后，输入预算为 228,864 tokens；召回总额占上下文窗口的四分之一，为系统提示、当前会话和工具结果留出空间。100 轮是执行上限，不表示预留 100 份输出；每轮仍检查实际累计上下文。
+
+## Evaluation：离线回归实验
+
+已新增独立的 Node.js / TypeScript 评估模块与 **Evaluation** 页面：固定用例、初始记忆与工具环境，分别运行两个源码/配置版本，保存完整执行证据，使用确定性断言与 DeepEval G-Eval 评分，比较逐用例退化并输出发布门槛报告。支持重复运行、取消、人工复核、导出报告和失败用例回流。
+
+评估默认存储在 `.evaluations/`，与日常 `.everything/` 分离。CLI：`pnpm run evaluate <实验 JSON> [评估目录]`。Trace 页面按运行分页，详情保留完整前台与关联后台事件。
+
+详见 [Evaluation 使用、架构与边界](src/evaluation/README.md) 和 [Trace 分页协议](src/tracing/README.md)。当前是固定外部工具环境的离线评估；真实联网验收、自动部署及 DeepEval 原生轨迹指标尚未实现。

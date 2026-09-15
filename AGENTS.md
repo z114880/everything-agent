@@ -145,3 +145,10 @@ pnpm run example
 4. 示例仍可运行，包仍可被 Node.js 正常加载。
 5. 新的执行过程能够通过 describe 或 observer 被可视化层观察。
 6. 没有提交依赖目录、生成物、密钥或个人数据。
+
+## Evaluation 模块
+
+- `src/evaluation/`：独立离线回归评估；固定测试集、隔离运行、DeepEval TypeScript 评分、比较与发布门槛。行为测试位于 `src/evaluation/test/`，使用说明位于 `src/evaluation/README.md`。
+- `.evaluations/`：评估运行数据，不能提交；与 `.everything/` 分离。
+- `web/server/evaluation-service.ts`、`web/src/evaluation-api.ts`、`web/src/pages/evaluation/`：Evaluation 页面与服务接入。
+- 评估不得将未匹配的 fixture 回退成真实外部工具调用，不得因评分失败、缺失用量或未完成运行而自动判定发布通过。

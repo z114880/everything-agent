@@ -1,3 +1,4 @@
+import { evaluationService, evaluationProjectRoot } from "./evaluation-service.ts";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, URL } from "node:url";
@@ -158,6 +159,19 @@ async function handleAgentRequest(
   response: import("node:http").ServerResponse,
   pathname: string,
 ): Promise<void> {
+  const query = new URL(request.url ?? "/", "http://localhost").searchParams;
+  if (pathname === `${agentApiPrefix}/evaluation`) {
+    if (request.method === "GET") {
+      const id = query.get("id");
+      sendJson(response, 200, id ? await evaluationService.get(id) : { ...await evaluationService.list(Number(query.get("page") ?? 1)), sourceRoot: evaluationProjectRoot });
+    } else if (request.method === "POST") {
+      const body = await readJsonBody(request, 2_000_000);
+      if (body.action === "cancel") sendJson(response, 200, { cancelled: evaluationService.cancel(String(body.id)) });
+      else if (body.action === "review") sendJson(response, 200, await evaluationService.review(String(body.id), String(body.caseId), String(body.conclusion)));
+      else sendJson(response, 200, { id: await evaluationService.start(body.plan) });
+    } else sendJson(response, 405, { error: "不支持此请求方法" });
+    return;
+  }
   if (request.method === "GET" && pathname === `${agentApiPrefix}/background-events`) {
     response.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
     response.flushHeaders();
@@ -246,7 +260,7 @@ async function handleAgentRequest(
   }
 
   if (request.method === "GET" && pathname === `${agentApiPrefix}/traces`) {
-    sendJson(response, 200, await loadTraceDashboard());
+    sendJson(response, 200, await loadTraceDashboard({ ...(query.get("cursor") ? { cursor: query.get("cursor")! } : {}), ...(query.get("runId") ? { runId: query.get("runId")! } : {}) }));
     return;
   }
 
@@ -345,11 +359,11 @@ function toWorkflow(graph: Graph<StateRecord>) {
   };
 }
 
-async function readJsonBody(request: NodeJS.ReadableStream): Promise<Record<string, unknown>> {
+async function readJsonBody(request: NodeJS.ReadableStream, limit = 250_000): Promise<Record<string, unknown>> {
   let text = "";
   for await (const chunk of request) {
     text += String(chunk);
-    if (text.length > 250_000) throw new Error("请求内容过大");
+    if (text.length > limit) throw new Error("请求内容过大");
   }
   const value: unknown = text ? JSON.parse(text) : {};
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("请求体必须是对象");

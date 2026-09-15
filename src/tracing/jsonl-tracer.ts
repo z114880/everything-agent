@@ -105,13 +105,13 @@ export class JsonlTracer {
 }
 
 /** 读取 trace 目录中的事件；损坏行作为错误记录返回，不猜测修复。 */
-export async function readTraceRecords(home: string, limit = 1_000): Promise<TraceRecord[]> {
-  const files = await readTraceFiles(home, limit);
+export async function readTraceRecords(home: string): Promise<TraceRecord[]> {
+  const files = await readTraceFiles(home);
   return files.flatMap((file) => file.records).sort(compareTraceRecords);
 }
 
 /** 按日期和带序号的 JSONL 文件读取运行记录。 */
-export async function readTraceFiles(home: string, limit = 1_000): Promise<TraceFile[]> {
+export async function readTraceFiles(home: string): Promise<TraceFile[]> {
   const directory = join(home, "traces");
   let dateDirectories: string[];
   try {
@@ -151,15 +151,7 @@ export async function readTraceFiles(home: string, limit = 1_000): Promise<Trace
       traceFiles.push({ path: `${dateDirectory}/${file}`, records });
     }
   }
-  const boundedLimit = Math.max(1, Math.min(10_000, Math.trunc(limit)));
-  const selected = new Set(traceFiles.flatMap((file, fileIndex) => file.records.map((record, recordIndex) => ({
-    key: `${fileIndex}:${recordIndex}`,
-    record,
-  }))).sort((left, right) => compareTraceRecords(left.record, right.record)).slice(-boundedLimit).map((item) => item.key));
-  return traceFiles.flatMap((file, fileIndex) => {
-    const records = file.records.filter((_, recordIndex) => selected.has(`${fileIndex}:${recordIndex}`));
-    return records.length > 0 ? [{ ...file, records }] : [];
-  });
+  return traceFiles;
 }
 
 async function numberedTracePath(directory: string, sessionFile: string): Promise<string> {

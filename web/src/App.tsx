@@ -1,3 +1,4 @@
+import { EvaluationPage } from "./pages/evaluation/EvaluationPage";
 import { Activity, Bot, BookOpen, Brain, ChevronLeft, ChevronRight, Database, GitBranch, Settings, Sparkles, Wrench } from "lucide-react";
 import { useState } from "react";
 import { Button } from "./components/ui/button";
@@ -10,7 +11,7 @@ import { ToolsPage } from "./pages/tools/ToolsPage";
 import { TracePage } from "./pages/trace/TracePage";
 import { WorkflowPage } from "./pages/workflow/WorkflowPage";
 
-type Page = "agent" | "workflow" | "skills" | "tools" | "memory" | "database" | "traces" | "config";
+type Page = "evaluation" | "agent" | "workflow" | "skills" | "tools" | "memory" | "database" | "traces" | "config";
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -18,6 +19,7 @@ export default function App() {
 
   const pageContent = page === "agent"
     ? null
+    : page === "evaluation" ? <EvaluationPage />
     : page === "config"
       ? <ConfigPage />
       : page === "skills"
@@ -48,6 +50,7 @@ export default function App() {
         <Button variant="ghost" className={`nav-item mb-1 ${page === "memory" ? "active" : ""}`} onClick={() => setPage("memory")}><Brain size={15} /><span>Memory</span></Button>
         <Button variant="ghost" className={`nav-item mb-1 ${page === "database" ? "active" : ""}`} onClick={() => setPage("database")}><Database size={15} /><span>Database</span></Button>
         <Button variant="ghost" className={`nav-item mb-1 ${page === "traces" ? "active" : ""}`} onClick={() => setPage("traces")}><Activity size={15} /><span>Trace</span></Button>
+        <Button variant="ghost" className={`nav-item mb-1 ${page === "evaluation" ? "active" : ""}`} onClick={() => setPage("evaluation")}><Activity size={15} /><span>Evaluation</span></Button>
         <Button variant="ghost" className={`nav-item mb-1 ${page === "config" ? "active" : ""}`} onClick={() => setPage("config")}><Settings size={15} /><span>配置</span></Button>
         <div className="sidebar-note"><span className="signal bg-emerald-500" />本地 Engine 已连接</div>
       </aside>

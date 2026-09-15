@@ -20,8 +20,10 @@ export default defineConfig({
         "src/tools/terminal.ts",
         "src/tools/tool-settings.ts",
         "src/tracing/**/*.ts",
+        "src/evaluation/**/*.ts",
         "src/index.ts",
       ],
+      exclude: ["src/evaluation/cli.ts"],
       reporter: ["text", "html"],
       // 基础引擎代码量较小，较高门槛可防止新增分支却没有相应用例。
       thresholds: {

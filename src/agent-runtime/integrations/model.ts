@@ -3,16 +3,37 @@ import type { AgentModelClient, TokenEstimator } from "../../agent-loop/agent-lo
 import type { ModelConnectionSettings } from "../configuration/schema.ts";
 
 /** 创建真实模型客户端；非 Loop 调用也使用同一估算预算。 */
-export function createRuntimeClient(connection: ModelConnectionSettings, modelContextWindow: number, estimator?: TokenEstimator): AgentModelClient {
+export function createRuntimeClient(connection: ModelConnectionSettings, modelContextWindow: number, estimator?: TokenEstimator, onUsage?: (usage: import("../../agent-loop/agent-loop.ts").TokenUsage | null) => void): AgentModelClient {
   const client = createModelClient(connection);
-  if (!estimator) return client;
   return {
     messages: {
       async create(request) {
-        assertModelTokenLimit(request, modelContextWindow, estimator);
-        return client.messages.create(request);
+        if (estimator) assertModelTokenLimit(request, modelContextWindow, estimator);
+        try {
+          const result = await client.messages.create(request);
+          onUsage?.(result.tokenUsage ?? null);
+          return result;
+        } catch (error) { onUsage?.(null); throw error; }
       },
-      ...(client.messages.stream ? { stream: client.messages.stream.bind(client.messages) } : {}),
+      ...(client.messages.stream ? { async stream(request: import("../../agent-loop/agent-loop.ts").ModelRequest) {
+        let stream: import("../../agent-loop/agent-loop.ts").ModelStream;
+        try { stream = await client.messages.stream!(request); }
+        catch (error) { onUsage?.(null); throw error; }
+        let reported = false;
+        return {
+          textStream: (async function* () {
+            try { for await (const chunk of stream.textStream) yield chunk; }
+            catch (error) { if (!reported) { reported = true; onUsage?.(null); } throw error; }
+          })(),
+          async getFinalMessage() {
+            try {
+              const result = await stream.getFinalMessage();
+              if (!reported) { reported = true; onUsage?.(result.tokenUsage ?? null); }
+              return result;
+            } catch (error) { if (!reported) { reported = true; onUsage?.(null); } throw error; }
+          },
+        };
+      } } : {}),
     },
   };
 }

@@ -131,7 +131,8 @@ export interface TraceFile {
 }
 
 export interface TraceDashboard {
-  files: TraceFile[];
+  runs: { runId: string; startedAt: string; eventCount: number; status: string }[];
+  nextCursor: string | null;
 }
 
 export interface AgentSkill {
@@ -399,8 +400,12 @@ export function loadContextUsage(sessionId: string): Promise<ContextUsage> {
   return memoryAction<ContextUsage>({ action: "context_usage", sessionId });
 }
 
-export function loadTraces(): Promise<TraceDashboard> {
-  return requestJson(`${endpoint}/traces`);
+export function loadTraces(cursor?: string): Promise<TraceDashboard> {
+  return requestJson(`${endpoint}/traces${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
+}
+
+export function loadTraceRun(runId: string): Promise<{ files: TraceFile[] }> {
+  return requestJson(`${endpoint}/traces?runId=${encodeURIComponent(runId)}`);
 }
 
 /** 读取 state.db 中排除索引中间表后的普通表。 */
