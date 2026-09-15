@@ -227,7 +227,8 @@ button:disabled { cursor: not-allowed; }
 .agent-graph-note { border-top: 1px solid var(--line); padding: 10px 14px; color: var(--muted); font-size: 10px; }
 .agent-graph-note code, .config-page code { font-family: var(--font-mono); font-size: 10px; }
 
-.agent-chat-dock { display: grid; min-width: 0; min-height: 0; grid-template-columns: minmax(0, 1fr); overflow: hidden; border-left: 1px solid var(--line); background: #fbfdff; }
+/* 聊天区共用输入框的水平留白，让标题、消息和输入框边界一致。 */
+.agent-chat-dock { --chat-inline-padding: 14px; display: grid; min-width: 0; min-height: 0; grid-template-columns: minmax(0, 1fr); overflow: hidden; border-left: 1px solid var(--line); background: #fbfdff; }
 .session-rail[hidden] { display: none; }
 .session-rail { position: absolute; top: 100%; left: 18px; right: 18px; z-index: 30; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 16px 40px #252a3d26; display: flex; min-height: 0; max-height: 220px; flex: 0 1 auto; flex-direction: column; border-bottom: 1px solid var(--line); background: white; padding: 6px; }
 .session-toolbar-button { flex-shrink: 0; min-height: 34px; border: 1px solid var(--secondary); border-radius: 8px; background: var(--secondary); box-shadow: none; padding: 0 10px; color: var(--secondary-foreground); font-size: 12px; font-weight: 650; transition: border-color 140ms ease, background 140ms ease, color 140ms ease; }
@@ -251,14 +252,14 @@ button:disabled { cursor: not-allowed; }
 .agent-session-heading { flex: 0 1 auto; min-width: 0; margin-right: 5px; }
 .chat-collapse-toggle { margin-left: auto; }
 .agent-session-heading strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.agent-dock-header { display: flex; flex-shrink: 0; min-height: 60px; align-items: center; gap: 7px; margin: 0 18px; border-bottom: 1px solid var(--line); padding: 8px 0; }
+.agent-dock-header { display: flex; flex-shrink: 0; min-height: 60px; align-items: center; gap: 7px; margin: 0 var(--chat-inline-padding); border-bottom: 1px solid var(--line); padding: 8px 0; }
 .agent-avatar { display: grid; width: 31px; height: 31px; flex: 0 0 auto; place-items: center; border-radius: 9px; background: var(--accent-soft); color: var(--accent); }
 .agent-dock-header strong { display: block; font-size: 13px; }
 .agent-dock-header span { display: block; margin-top: 1px; color: var(--muted); font-size: 9px; }
 .model-chip { display: flex; min-width: 0; max-width: 150px; align-items: center; gap: 6px; overflow: hidden; margin-left: auto; border: 1px solid var(--secondary); border-radius: 999px; background: var(--secondary); padding: 5px 9px; color: var(--muted); font-family: var(--font-mono); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .model-dot { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 999px; background: #d0a13b; }
 .model-dot.ready { background: #45a878; }
-.agent-chat-log { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; gap: 20px; overflow-y: auto; overscroll-behavior: contain; padding: 24px 20px; }
+.agent-chat-log { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; gap: 20px; overflow-y: auto; overscroll-behavior: contain; padding: 24px var(--chat-inline-padding); }
 .agent-chat-empty { display: grid; flex: 1; place-content: center; justify-items: center; gap: 6px; color: var(--muted-light); text-align: center; }
 .agent-chat-empty strong { color: #69717f; font-size: 12px; }
 .agent-chat-empty span { font-size: 10px; }
@@ -319,7 +320,7 @@ button:disabled { cursor: not-allowed; }
 .tool-summary.done .tool-status-dot { background: #45a878; }
 .tool-summary.error .tool-status-dot { background: #d4574c; }
 .stream-caret { display: inline-block; width: 5px; height: 13px; margin-left: 2px; vertical-align: -2px; background: var(--accent); animation: caretBlink .8s step-end infinite; }
-.agent-composer { flex-shrink: 0; border-top: 1px solid var(--line); padding: 12px 14px; background: #fbfbfc; }
+.agent-composer { flex-shrink: 0; border-top: 1px solid var(--line); padding: 12px var(--chat-inline-padding); background: #fbfbfc; }
 .agent-composer textarea { display: block; width: 100%; resize: none; border: 1px solid var(--line-strong); border-radius: 10px; outline: none; background: white; padding: 10px 11px; color: var(--ink); font-size: 12px; line-height: 1.5; }
 .agent-composer textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .agent-composer textarea:disabled { background: white; color: var(--muted); opacity: 1; }
@@ -437,8 +438,9 @@ button:disabled { cursor: not-allowed; }
 .tools-section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 10px; }
 .tools-section-heading h2 { margin: 0; font-size: 15px; }
 .tools-section-heading p { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
-.tools-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.tool-card { min-width: 0; transition: border-color .15s ease, opacity .15s ease; }
+/* 卡片按原始顺序交替放入左右列，行占位由实际高度计算。 */
+.tools-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 1px; column-gap: 12px; align-items: start; }
+.tool-card { width: 100%; min-width: 0; transition: border-color .15s ease, opacity .15s ease; }
 .tool-card.disabled { opacity: .68; }
 .tool-card-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 12px; padding: 16px 17px 12px; }
 .tool-card-header h3 { font-size: 13px; }
@@ -503,7 +505,7 @@ button:disabled { cursor: not-allowed; }
 
 @media (max-width: 760px) {
   .skills-layout { grid-template-columns: 1fr; }
-  .tools-grid { grid-template-columns: 1fr; }
+  .tools-grid { grid-template-columns: minmax(0, 1fr); }
   .tavily-config-body { align-items: stretch; grid-template-columns: 1fr; }
   .skills-list-panel { max-height: 260px; }
   .skill-editor-actions { flex-wrap: wrap; }
@@ -626,7 +628,7 @@ button:disabled { cursor: not-allowed; }
 
 
 /* 会话操作、消息阅读和输入分别成区，长内容在各自容器内换行。 */
-.chat-toolbar { display: flex; flex-shrink: 0; align-items: center; gap: 8px; padding: 10px 18px; }
+.chat-toolbar { display: flex; flex-shrink: 0; align-items: center; gap: 8px; padding: 10px var(--chat-inline-padding); }
 .history-toggle:hover, .history-toggle[aria-expanded="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 .agent-dock-header .chat-heading-label { margin-bottom: 3px; font-size: 10px; }
 .agent-dock-header strong { font-size: 15px; }
@@ -662,10 +664,9 @@ button:disabled { cursor: not-allowed; }
 .assistant-meta { font-size: 10px; }
 .tool-summary { display: block; overflow-wrap: anywhere; }
 @media (max-width: 760px) {
-  .agent-dock-header { margin-inline: 16px; }
-  .chat-toolbar { padding-inline: 16px; }
-  .agent-chat-log { padding: 20px 16px; }
-  .agent-composer { padding: 8px 16px max(10px, env(safe-area-inset-bottom)); }
+  .agent-chat-dock { --chat-inline-padding: 16px; }
+  .agent-chat-log { padding-block: 20px; }
+  .agent-composer { padding-block: 8px max(10px, env(safe-area-inset-bottom)); }
 }
 
 @media (prefers-reduced-motion: reduce) {

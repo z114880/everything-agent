@@ -1,6 +1,6 @@
 import { CheckCircle2, Clock3, Info, KeyRound, LockKeyhole, Search, Terminal, Wrench } from "lucide-react";
 import { Alert, AlertDescription } from "../../components/ui/alert";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { loadTools, saveTools, type AgentTool, type ToolsCatalog } from "../../agent-api";
 import { withMinimumDuration } from "../../lib/minimum-duration";
 import { PageHeading } from "../../components/PageHeading";
@@ -197,7 +197,7 @@ export function ToolsPage() {
     {loading ? <div className="panel tools-loading">正在读取工具目录…</div> : <>
       {groups.map((group) => <section className="tools-section" key={group.name}>
         <div className="tools-section-heading"><div><h2>{group.name}</h2><p>{group.description}</p></div><Badge variant="outline">{group.tools.length} tools</Badge></div>
-        <div className="tools-grid">
+        <ToolsGrid>
           {group.tools.map((rawTool) => {
             const tool = effectiveTool(rawTool);
             return <ToolCard
@@ -214,7 +214,7 @@ export function ToolsPage() {
                 : tool.name === "run_terminal" ? () => setTerminalDialogOpen(true) : undefined}
             />;
           })}
-        </div>
+        </ToolsGrid>
       </section>)}
       <AlertDialog open={terminalDialogOpen} onOpenChange={handleTerminalDialogOpenChange}>
         <AlertDialogContent className="terminal-config-dialog">
@@ -296,4 +296,31 @@ function ToolCard({ tool, disabled = false, onToggle, onConfigure }: { tool: Age
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** 保持 DOM 从左到右的工具顺序，用实际高度计算网格占位。 */
+function ToolsGrid({ children }: { children: ReactNode }) {
+  const gridRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+    const cards = [...grid.children] as HTMLElement[];
+    const updateLayout = () => {
+      const columns = getComputedStyle(grid).gridTemplateColumns.split(" ").length;
+      const nextRows = Array<number>(columns).fill(1);
+      cards.forEach((card, index) => {
+        const column = index % columns;
+        const span = Math.ceil(card.getBoundingClientRect().height) + 12;
+        card.style.gridColumn = String(column + 1);
+        card.style.gridRow = `${nextRows[column]} / span ${span}`;
+        nextRows[column]! += span;
+      });
+    };
+    const observer = new ResizeObserver(updateLayout);
+    observer.observe(grid);
+    cards.forEach((card) => observer.observe(card));
+    updateLayout();
+    return () => observer.disconnect();
+  }, [children]);
+  return <div className="tools-grid" ref={gridRef}>{children}</div>;
 }
