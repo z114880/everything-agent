@@ -628,7 +628,7 @@ button:disabled { cursor: not-allowed; }
 
 
 /* 会话操作、消息阅读和输入分别成区，长内容在各自容器内换行。 */
-.chat-toolbar { display: flex; flex-shrink: 0; align-items: center; gap: 8px; padding: 10px var(--chat-inline-padding); }
+.chat-toolbar { position: relative; z-index: 1; display: flex; flex-shrink: 0; align-items: center; gap: 8px; padding: 10px var(--chat-inline-padding); box-shadow: 0 5px 10px -4px rgb(15 23 42 / 14%); }
 .history-toggle:hover, .history-toggle[aria-expanded="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 .agent-dock-header .chat-heading-label { margin-bottom: 3px; font-size: 10px; }
 .agent-dock-header strong { font-size: 15px; }
