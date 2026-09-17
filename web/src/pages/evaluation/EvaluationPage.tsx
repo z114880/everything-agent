@@ -1,108 +1,83 @@
-import { useEffect, useState } from "react";
-import { Button } from "../../components/ui/button";
-import { Textarea } from "../../components/ui/textarea";
+import { useEffect, useRef, useState } from "react";
+import { ArrowUpRight, Play, RefreshCw, Database, CheckCircle2, AlertCircle, Clock3 } from "lucide-react";
 import { PageHeading } from "../../components/PageHeading";
-import { cancelEvaluation, getEvaluation, listEvaluations, reviewEvaluation, startEvaluation, type EvaluationExperiment, type EvaluationList } from "../../evaluation-api";
-import { exampleEvaluationPlan } from "../../../../src/evaluation/example";
+import { Button } from "../../components/ui/button";
+import { Badge } from "../../components/ui/badge";
+import { DatasetEditor } from "./DatasetEditor";
+import { evaluationOverview, evaluationDataset, initializeEvaluationDatasets, saveEvaluationDataset, startEvaluation, getEvaluation, cancelEvaluation, refreshEvaluationScores, type EvaluationDataset, type EvaluationOverview, type EvaluationRun } from "../../evaluation-api";
 
-const labels: Record<string, string> = { passed: "通过", failed: "失败", insufficient: "证据不足", running: "执行中", queued: "排队中", completed: "已完成", cancelled: "已取消", interrupted: "已中断", improved: "改善", regressed: "退化", unchanged: "持平" };
-
-/** 本地实验中心：固定配置、配对比较、原始证据和独立人工复核。 */
+const labels: Record<string, string> = { queued: "排队中", running: "执行中", waiting_scores: "等待评分", completed: "已完成", cancelled: "已取消", failed: "未通过", passed: "通过", insufficient: "证据不足", pending: "待同步", synced: "已同步", timed_out: "超时", error: "评分错误" };
+/** 固定数据集回归总览：配置用例，运行当前 Agent，查看失败证据与平台评分。 */
 export function EvaluationPage() {
-  const [list, setList] = useState<EvaluationList | null>(null);
-  const [page, setPage] = useState(1);
-  const [draft, setDraft] = useState("");
-  const [experiment, setExperiment] = useState<EvaluationExperiment | null>(null);
-  const [selectedCase, setSelectedCase] = useState("");
+  const [overview, setOverview] = useState<EvaluationOverview | null>(null);
+  const [tab, setTab] = useState<"overview" | "datasets" | "runs">("overview");
+  const [draft, setDraft] = useState<EvaluationDataset | null>(null);
+  const [run, setRun] = useState<EvaluationRun | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [review, setReview] = useState("");
-  const [editing, setEditing] = useState(false);
-  const active = experiment?.status === "running" || experiment?.status === "queued";
+  const mounted = useRef(true);
+  const selectedRun = useRef<string | null>(null);
+  const [onlyFailures, setOnlyFailures] = useState(false);
+  async function reload() { const value = await evaluationOverview(); if (mounted.current) setOverview(value); }
   useEffect(() => {
-    let disposed = false;
-    void listEvaluations(page).then((value) => { if (!disposed) setList(value); }).catch((e) => { if (!disposed) setError(String(e)); });
-    return () => { disposed = true; };
-  }, [page, experiment?.status]);
+    mounted.current = true; let loading = false;
+    async function poll() { if (loading) return; loading = true; try { await reload(); } catch (e) { if (mounted.current) setError(String(e)); } finally { loading = false; } }
+    void poll(); const timer = setInterval(() => void poll(), 3000);
+    return () => { mounted.current = false; clearInterval(timer); };
+  }, []);
   useEffect(() => {
-    if (!active || !experiment) return;
-    let disposed = false;
-    const timer = setInterval(() => { void getEvaluation(experiment.id).then((value) => { if (!disposed) setExperiment(value); }).catch((e) => { if (!disposed) setError(String(e)); }); }, 1500);
+    if (!run || !["queued", "running", "waiting_scores"].includes(run.status)) return;
+    let disposed = false, loading = false;
+    const timer = setInterval(() => { if (loading) return; loading = true; void getEvaluation(run.id).then(value => { if (!disposed) setRun(value); }).catch(e => { if (!disposed) setError(String(e)); }).finally(() => { loading = false; }); }, 2000);
     return () => { disposed = true; clearInterval(timer); };
-  }, [active, experiment?.id]);
+  }, [run?.id, run?.status]);
   async function perform(action: () => Promise<void>) { setBusy(true); setError(""); try { await action(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); } }
-  function exportJson(name: string, value: unknown) {
-    const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: "application/json" }));
-    const a = document.createElement("a"); a.href = url; a.download = name; a.click(); URL.revokeObjectURL(url);
-  }
-  const testCase = experiment?.plan.dataset.cases.find((c) => c.id === selectedCase);
-  return <div className="content-wrap">
-    <PageHeading eyebrow="Regression evaluations" title="Evaluation" description="固定测试条件，比较 Agent 版本与执行证据。" />
+  async function openRun(id: string) { selectedRun.current = id; const value = await getEvaluation(id); if (selectedRun.current === id) { setRun(value); setDraft(null); setTab("runs"); } }
+  async function start(ids?: string[]) { const result = await startEvaluation(ids); await openRun(result.id); await reload(); }
+  const latest = overview?.runs[0];
+  const disabled = busy || Boolean(overview?.active) || !overview?.langfuse.configured;
+  return <div className="content-wrap space-y-5">
+    <PageHeading eyebrow="个人助理 / 回归评估" title="Evaluation" description="用固定场景检查当前 Agent，持续观察个人助理的任务完成质量。" actions={<Button disabled={disabled} onClick={() => void perform(() => start())}><Play size={14} /> Evaluate 默认数据集</Button>} />
     {error && <div role="alert" className="error-message">{error}</div>}
-    <div className="flex gap-2 my-4">
-      <Button onClick={() => { setDraft(JSON.stringify(exampleEvaluationPlan(list?.sourceRoot ?? ""), null, 2)); setEditing(true); }}>新建实验</Button>
-      <Button disabled={busy} onClick={() => void perform(async () => setList(await listEvaluations(page)))}>刷新列表</Button>
-    </div>
-    {editing && <section className="panel p-4 mb-4">
-      <h2>实验与测试集配置</h2>
-      <p>填写两个版本、固定用例和评分规则。密钥只填写服务端环境变量名称。创建后配置冻结，修改后需新建实验。</p>
-      <Textarea aria-label="实验 JSON" className="min-h-80 font-mono my-3" value={draft} onChange={(e) => setDraft(e.target.value)} />
-      <Button disabled={busy} onClick={() => void perform(async () => { const { id } = await startEvaluation(JSON.parse(draft)); setExperiment(await getEvaluation(id)); setSelectedCase(""); setEditing(false); })}>创建并运行</Button>
-    </section>}
-    <section className="panel p-4">
-      <h2>实验列表</h2>
-      {!list?.items.length && <p>暂无实验</p>}
-      {list?.items.map((item) => <div className="flex items-center justify-between gap-3 py-2" key={item.id}>
-        <Button variant="ghost" onClick={() => void perform(async () => { setExperiment(await getEvaluation(item.id)); setSelectedCase(""); })}>{item.name}</Button>
-        <span>{labels[item.status] ?? item.status} · {item.completed}/{item.total} · {item.decision ? labels[item.decision] : "待评分"}</span>
-      </div>)}
-      <div className="flex gap-3 mt-3"><Button disabled={page === 1} onClick={() => setPage(page - 1)}>上一页</Button><span>第 {page} 页</span><Button disabled={!list || page * 20 >= list.total} onClick={() => setPage(page + 1)}>下一页</Button></div>
-    </section>
-    {experiment && <section className="panel p-4 mt-4">
-      <h2>{experiment.plan.name} · {labels[experiment.status]}</h2>
-      <p>已完成 {experiment.executions.length}/{experiment.plan.dataset.cases.length * experiment.plan.repetitions * 2} 次执行</p>
-      {experiment.error && <p role="alert">{experiment.error}</p>}
-      <div className="flex gap-2 my-3">
-        {active && <Button disabled={busy} onClick={() => void perform(async () => { await cancelEvaluation(experiment.id); setExperiment(await getEvaluation(experiment.id)); })}>取消实验</Button>}
-        <Button onClick={() => exportJson(`evaluation-${experiment.id}.json`, experiment)}>导出报告与证据</Button>
-        <Button onClick={() => { setDraft(JSON.stringify(experiment.plan, null, 2)); setEditing(true); }}>复制配置重跑</Button>
+    <nav className="flex gap-2 border-b pb-3" aria-label="评估视图">{(["overview", "datasets", "runs"] as const).map(key => <Button key={key} variant={tab === key ? "secondary" : "ghost"} aria-pressed={tab === key} onClick={() => { setTab(key); setDraft(null); }}>{key === "overview" ? "Overview" : key === "datasets" ? "数据集" : "运行历史"}</Button>)}</nav>
+    {!overview && <p role="status">正在读取评估概览…</p>}
+    {overview && tab === "overview" && <>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric icon={<Database size={17} />} label="固定数据集" value={String(overview.datasets.length)} detail={`${overview.datasets.reduce((n, d) => n + d.count, 0)} 个个人助理用例`} />
+        <Metric icon={<CheckCircle2 size={17} />} label="最近通过率" value={latest && latest.report.total ? `${Math.round(latest.report.passed / latest.report.total * 100)}%` : "—"} detail={latest ? `${latest.report.passed} / ${latest.report.total} 个用例通过` : "尚未运行"} />
+        <Metric icon={<AlertCircle size={17} />} label="未通过用例" value={latest ? String(latest.report.failed) : "—"} detail="查看断言、回答与执行证据" />
+        <Metric icon={<Clock3 size={17} />} label="评估状态" value={overview.active ? labels[overview.active.status]! : latest ? labels[latest.report.decision]! : "未开始"} detail={latest ? `${latest.report.pending} 个用例证据待齐全` : "使用当前 Agent 配置"} />
       </div>
-      <div className="grid md:grid-cols-2 gap-3 my-3">{(["baseline", "candidate"] as const).map((side) => {
-        const runs = experiment.executions.filter((execution) => execution.variant === side);
-        const known = runs.filter((execution) => execution.evidence !== null);
-        const usd = runs.length && runs.every((execution) => execution.evidence?.agentUsd != null) ? runs.reduce((sum, execution) => sum + execution.evidence!.agentUsd!, 0) : null;
-        return <div key={side}><strong>{side === "baseline" ? "基线" : "候选"}</strong><p>平均响应：{known.length ? Math.round(known.reduce((sum, execution) => sum + execution.evidence!.responseMs, 0) / known.length) : "未知"} ms · 累计成本：{money(usd)}</p></div>;
-      })}</div>
-      {experiment.report && <>
-        <h3>发布门槛：{active ? "执行中，以下为阶段统计" : labels[experiment.report.decision]}</h3>
-        <p>基线通过率 {(experiment.report.baselineRate * 100).toFixed(1)}% → 候选通过率 {(experiment.report.candidateRate * 100).toFixed(1)}%</p>
-        <p>Agent 成本：{money(experiment.report.agentUsd)} · 评分成本：{money(experiment.report.judgeUsd)}</p>
-        <ul>{experiment.report.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
-        <table className="w-full text-left my-4"><thead><tr><th>用例</th><th>基线</th><th>候选</th><th>变化</th></tr></thead><tbody>
-          {experiment.report.comparisons.slice().sort((a, b) => Number(b.change === "regressed") - Number(a.change === "regressed")).map((row) => <tr key={row.caseId}>
-            <td><Button variant="ghost" onClick={() => setSelectedCase(row.caseId)}>{row.caseId}</Button></td><td>{(row.baselineRate * 100).toFixed(0)}%</td><td>{(row.candidateRate * 100).toFixed(0)}%</td><td>{labels[row.change]}</td>
-          </tr>)}
-        </tbody></table>
-      </>}
-      {testCase && <>
-        <h3>{testCase.name}{testCase.critical ? " · 关键用例" : ""}</h3>
-        <div className="grid md:grid-cols-2 gap-4 my-3">{(["baseline", "candidate"] as const).map((side) => <div key={side}>
-          <h4>{side === "baseline" ? "基线" : "候选"} · {experiment.plan[side].name}</h4>
-          {experiment.executions.filter((e) => e.caseId === selectedCase && e.variant === side).map((e) => <div className="border rounded p-3 my-2" key={e.id}>
-            <p>第 {e.repetition} 次 · {labels[e.status] ?? e.status}</p>{e.evidence && !e.evidence.complete && <p>进程中断，仅展示已保存的部分证据</p>}<p>{e.error}</p>
-            <pre className="whitespace-pre-wrap">{e.evidence?.replies.join("\n\n")}</pre>
-            <p>响应 {e.evidence?.responseMs ?? "未知"} ms · 完成 {e.evidence?.totalMs ?? "未知"} ms</p>
-            <ul>{e.scores.map((score) => <li key={score.name}>{score.name}：{labels[score.status] ?? score.status} {score.score} · {score.reason}</li>)}</ul>
-            <details><summary>记忆、文件与工具证据</summary><pre className="overflow-auto">{JSON.stringify({ memory: e.evidence?.memory, files: e.evidence?.files, tools: e.evidence?.toolCalls }, null, 2)}</pre></details>
-            <details><summary>完整 Trace（包含后台任务）</summary><pre className="overflow-auto max-h-96">{JSON.stringify(e.evidence?.traces, null, 2)}</pre></details>
-          </div>)}
-        </div>)}</div>
-        <Textarea aria-label="人工复核" value={review} onChange={(e) => setReview(e.target.value)} placeholder="记录退化原因和复核结论，不覆盖自动评分" />
-        <Button disabled={busy || active || !review.trim()} onClick={() => void perform(async () => { setExperiment(await reviewEvaluation(experiment.id, selectedCase, review)); setReview(""); })}>保存复核</Button>
-        <Button onClick={() => { setDraft(JSON.stringify({ ...experiment.plan, dataset: { ...experiment.plan.dataset, version: `${experiment.plan.dataset.version}-regression`, cases: [testCase] } }, null, 2)); setEditing(true); }}>整理为回归实验</Button>
-        {experiment.reviews.filter((r) => r.caseId === selectedCase).map((r, i) => <p key={i}>{r.createdAt} · {r.conclusion}</p>)}
-      </>}
-    </section>}
+      <section className="panel p-5 space-y-3"><div className="flex justify-between items-center"><h2>Langfuse</h2><Badge variant={overview.langfuse.configured ? "success" : "outline"}>{overview.langfuse.configured ? "已配置" : "未配置"}</Badge></div>
+        <p className="text-sm text-muted-foreground">数据集版本、执行轨迹与自动质量评分统一关联到 Langfuse。所有确定性检查通过且质量评分达标后，评估才通过。</p>
+        <p>评估正文上传：{overview.langfuse.captureContent ? "已开启（仅使用脱敏测试数据）" : "未开启，语义评分暂不可运行"}</p>
+        {overview.langfuse.url && <a className="inline-flex gap-1 items-center underline" href={overview.langfuse.url} target="_blank" rel="noreferrer">打开 Langfuse <ArrowUpRight size={14} /></a>}
+        {!overview.langfuse.configured && <p>请先在服务端配置 Langfuse 连接。配置完成后刷新即可。</p>}
+        <Button variant="outline" disabled={busy} onClick={() => void perform(reload)}><RefreshCw size={14} />刷新连接与概览</Button>
+      </section>
+      <section className="panel p-5 space-y-3"><h2>最近评估</h2>{latest ? <><p>{new Date(latest.createdAt).toLocaleString()} · {labels[latest.status]} · {labels[latest.report.decision]}</p><Button variant="outline" onClick={() => void perform(() => openRun(latest.id))}>查看结果与失败详情</Button></> : <p>尚无评估记录。先初始化个人助理数据集，再运行 Evaluate。</p>}</section>
+      <p className="text-sm text-muted-foreground">自动化接入：预留统一运行入口，CI 尚未启用。耗时与用量仅作观察指标。</p>
+    </>}
+    {overview && tab === "datasets" && <>
+      <div className="flex gap-2"><Button variant="outline" disabled={disabled} onClick={() => void perform(async () => { await initializeEvaluationDatasets(); await reload(); })}>初始化默认数据集</Button><Button disabled={disabled} onClick={() => setDraft({ id: crypto.randomUUID(), name: "新数据集", description: "", defaultEnabled: false, cases: [] })}>添加数据集</Button></div>
+      {!overview.datasets.length && <section className="panel p-5"><p>默认数据集聚焦时间、上下文、记忆、检索与能力边界，仅包含一个文件整理代码场景。</p></section>}
+      {draft ? <DatasetEditor key={draft.id} initial={draft} busy={busy} onClose={() => setDraft(null)} onSave={async value => { setBusy(true); try { await saveEvaluationDataset(value); await reload(); setDraft(null); } finally { setBusy(false); } }} /> : <div className="grid gap-4 lg:grid-cols-2">{overview.datasets.map(d => <section key={d.id} className="panel p-5 space-y-3"><div className="flex justify-between"><h2>{d.name}</h2><Badge variant="outline">{d.defaultEnabled ? "默认评估" : "按需运行"}</Badge></div><p className="text-muted-foreground">{d.description}</p><p>{d.count} 个用例 · {new Date(d.version).toLocaleString()}</p><div className="flex flex-wrap gap-2"><Button variant="outline" disabled={busy} onClick={() => void perform(async () => setDraft(await evaluationDataset(d.id)))}>浏览与编辑</Button><Button disabled={disabled} onClick={() => void perform(() => start([d.id]))}>运行此数据集</Button>{d.url && <a href={d.url} target="_blank" rel="noreferrer" className="inline-flex items-center text-sm underline">Langfuse <ArrowUpRight size={14} /></a>}</div></section>)}</div>}
+    </>}
+    {overview && tab === "runs" && <>
+      <section className="panel p-5 space-y-3"><h2>运行历史</h2>{!overview.runs.length && <p>暂无评估运行</p>}{overview.runs.map(item => <div key={item.id} className="flex flex-wrap justify-between gap-3 border-b py-3"><Button variant="ghost" onClick={() => void perform(() => openRun(item.id))}>{new Date(item.createdAt).toLocaleString()}</Button><span>{labels[item.status]} · {labels[item.report.decision]} · {item.report.passed}/{item.report.total}</span></div>)}</section>
+      {run && <section className="panel p-5 space-y-4"><div className="flex flex-wrap justify-between gap-3"><h2>评估结果 · {labels[run.report.decision]}</h2><div className="flex gap-2">{overview.active?.id === run.id ? <Button variant="destructive-outline" disabled={busy} onClick={() => void perform(async () => { await cancelEvaluation(run.id); await reload(); })}>取消评估</Button> : <Button variant="outline" disabled={busy || Boolean(overview.active) || run.status === "cancelled" || !["score", "gate"].includes(run.stage)} onClick={() => void perform(async () => { setRun(await refreshEvaluationScores(run.id)); await reload(); })}>刷新评分与同步</Button>}</div></div>
+        <p>{run.configuration.agent.model} · {labels[run.status]} · 已执行 {run.executions.length}/{run.report.total} 个用例</p>
+        {run.error && <p role="alert">{run.error}</p>}
+        {run.report.reasons.map(reason => <p key={reason}>{reason}</p>)}
+        <label className="flex gap-2"><input type="checkbox" checked={onlyFailures} onChange={e => setOnlyFailures(e.target.checked)} />只看失败与未完成用例</label>
+        {run.datasets.map(dataset => <div key={dataset.id}><h3>{dataset.name}</h3>{dataset.cases.map(c => {
+          const execution = run.executions.find(e => e.datasetId === dataset.id && e.caseId === c.id);
+          const passed = execution?.status === "completed" && execution.sync === "synced" && execution.evidence?.complete && execution.scores.length === c.assertions.length + (c.judge ? 1 : 0) && execution.scores.every(s => s.status === "passed");
+          if (onlyFailures && passed) return null;
+          return <details key={c.id} className="border rounded-lg my-3 p-3"><summary className="cursor-pointer">{c.name} · {passed ? "通过" : execution?.scores.some(s => s.status === "failed") ? "未通过" : execution ? labels[execution.status] + " / " + (c.judge && !execution.scores.some(s => s.name === c.judge!.scoreName) ? "待质量评分" : "证据待核实") : "尚未执行"}</summary><div className="space-y-3 mt-3"><p>输入：{c.turns.join(" → ")}</p><p>预期：{c.expectedOutput || "按确定性检查判定"}</p>{execution && <><p>Langfuse：{labels[execution.sync]} · 耗时 {execution.evidence?.totalMs ?? "未知"} ms · 费用 {execution.evidence?.agentUsd == null ? "未知" : `$${execution.evidence.agentUsd}`}</p>{execution.error && <p role="alert">{execution.error}</p>}<pre className="whitespace-pre-wrap">{execution.evidence?.replies.join("\n\n")}</pre><ul>{execution.scores.map(score => <li key={score.name}>{score.name} · {labels[score.status]} · {score.score ?? "—"} · {score.reason}</li>)}</ul>{execution.traceUrl && <a href={execution.traceUrl} target="_blank" rel="noreferrer" className="underline">在 Langfuse 查看 Trace</a>}<details><summary>工具、记忆与用量</summary><pre className="overflow-auto max-h-80">{JSON.stringify({ tools: execution.evidence?.toolCalls, memory: execution.evidence?.memory, usage: execution.evidence?.usage }, null, 2)}</pre></details><details><summary>文件改动</summary><div className="grid md:grid-cols-2 gap-3"><div><h4>执行前</h4><pre className="overflow-auto max-h-80">{JSON.stringify(c.files, null, 2)}</pre></div><div><h4>执行后</h4><pre className="overflow-auto max-h-80">{JSON.stringify(execution.evidence?.files, null, 2)}</pre></div></div></details><details><summary>完整执行轨迹</summary><pre className="overflow-auto max-h-80">{JSON.stringify(execution.evidence?.traces, null, 2)}</pre></details></>}</div></details>;
+        })}</div>)}
+      </section>}
+    </>}
   </div>;
 }
-function money(value: number | null) { return value === null ? "未知" : `$${value.toFixed(6)}`; }
+function Metric({ icon, label, value, detail }: { icon: React.ReactNode; label: string; value: string; detail: string }) { return <section className="panel p-5 space-y-3"><div className="flex gap-2 text-muted-foreground items-center">{icon}{label}</div><p className="text-2xl font-semibold">{value}</p><p className="text-sm text-muted-foreground">{detail}</p></section>; }

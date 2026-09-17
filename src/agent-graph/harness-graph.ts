@@ -23,6 +23,10 @@ export const harnessPresentation: Record<string, { title: string; subtitle: stri
   tools: { title: "Tools", subtitle: "受控调用 · 参数验证", x: 464, y: 460 },
   reply: { title: "Reply", subtitle: "流式输出", x: 904, y: 460 },
   memory_queue: { title: "记忆任务入队", subtitle: "manage_memory · 返回任务 ID", x: 244, y: 610 },
+  evaluate_dataset: { title: "固定 Dataset", subtitle: "Langfuse · 冻结用例版本", x: 24, y: 950 },
+  evaluate_agent: { title: "Evaluate Agent", subtitle: "当前配置 · 独立运行", x: 314, y: 950 },
+  evaluate_score: { title: "自动评分", subtitle: "确定性检查 + Langfuse 裁判", x: 604, y: 950 },
+  evaluate_gate: { title: "评估结论", subtitle: "通过 / 失败 / 证据不足", x: 894, y: 950 },
   consolidate_trigger: { title: "Consolidate", subtitle: "每日首次使用 / 手动触发", x: 24, y: 805 },
   consolidate_snapshot: { title: "全量事实与分批", subtitle: "Semantic Facts · 上下文预算", x: 244, y: 805 },
   consolidation: { title: "模型整理", subtitle: "去重 / 合并 / 冲突 / 清理", x: 464, y: 805 },
@@ -72,6 +76,9 @@ const connections = [
   ["consolidate_snapshot", "consolidation", "全量 / 分批"],
   ["consolidation", "consolidate_commit", "结构化建议"],
   ["consolidate_commit", "consolidate_result", "审计与汇总"],
+  ["evaluate_dataset", "evaluate_agent", "Evaluate 手动触发"],
+  ["evaluate_agent", "evaluate_score", "执行证据与轨迹"],
+  ["evaluate_score", "evaluate_gate", "全部评分齐全"],
   ["reply", END, "完成"],
 ] as const;
 for (const [source, target, label] of connections) {

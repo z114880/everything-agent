@@ -94,7 +94,7 @@ export class MemoryManagement {
       if ([response.stop_reason, response.stopReason].some((reason) => reason === "max_tokens" || reason === "length")) throw new TypeError("记忆模型输出被截断");
       const text = response.content.filter((item) => item.type === "text").map((item) => item.text ?? "").join("");
       const result = record(parseModelJsonObject(text));
-      await options.observer?.("memory_model_completed", { ...fields, durationMs: Math.round(performance.now() - startedAt) });
+      await options.observer?.("memory_model_completed", { ...fields, tokenUsage: response.tokenUsage, durationMs: Math.round(performance.now() - startedAt) });
       return result;
     } catch (error) {
       await options.observer?.("memory_model_failed", { ...fields, errorType: error instanceof Error ? error.name : "UnknownError" });

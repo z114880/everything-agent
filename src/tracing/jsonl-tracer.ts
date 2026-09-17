@@ -24,6 +24,8 @@ export interface TraceFile {
 export interface JsonlTracerOptions {
   onWarning?: (message: string) => void;
   now?: () => Date;
+  /** 接收相同的脱敏事件，不等待网络发送。 */
+  onRecord?: (record: TraceRecord) => void;
 }
 
 /** 按本地日期目录与 run JSONL 文件持久化 classic loop 和 memory 事件。 */
@@ -31,6 +33,7 @@ export class JsonlTracer {
   private readonly traceDirectory: string;
   private readonly onWarning: (message: string) => void;
   private readonly now: () => Date;
+  private readonly onRecord: ((record: TraceRecord) => void) | undefined;
   private writeQueue: Promise<void> = Promise.resolve();
   private checkedPaths = new Set<string>();
   private recoveryPaths = new Map<string, string>();
@@ -41,12 +44,14 @@ export class JsonlTracer {
   constructor(home: string, options: JsonlTracerOptions = {}) {
     this.traceDirectory = join(home, "traces");
     this.onWarning = options.onWarning ?? (() => {});
+    this.onRecord = options.onRecord;
     this.now = options.now ?? (() => new Date());
   }
 
   /** 排队写入一个事件；失败只告警，不影响 Agent Loop。 */
   async record(type: string, event: Record<string, unknown>): Promise<void> {
     const record = this.makeRecord(type, event);
+    this.onRecord?.(record);
     this.writeQueue = this.writeQueue.then(() => this.write(record)).catch((error) => {
       this.onWarning(`运行记录写入失败：${error instanceof Error ? error.message : String(error)}`);
     });
@@ -198,8 +203,10 @@ function traceEventFields(type: string, event: Record<string, unknown>): Record<
   const payloadFields: Record<string, string[]> = {
     run_started: ["userInput", "provider", "model", "settings", "runtime"],
     context_assembled: ["messageCount", "historyMessageCount", "hasSystemPrompt", "semanticMemoryIds", "sessionRecallSessionIds", "sessionRecallRanges", "sessionRecallEntryCount", "sessionRecallEstimatedTokens", "sessionRecallTruncated"],
-    gate_start: [],
-    gate_end: ["intent", "semantic", "sessionRecallMode", "reason", "fallback", "errorType"],
+    skills_discovered: ["skills", "count"],
+    skill_loaded: ["skill", "contentHash", "instructionLength"],
+    gate_start: ["model"],
+    gate_end: ["intent", "semantic", "sessionRecallMode", "reason", "fallback", "errorType", "model", "tokenUsage"],
     retrieval_start: ["mode", "intent"],
     model_request: ["provider", "model", "request"],
     model_response: ["provider", "model", "response", "stopReason", "tokenUsage", "ms"],
@@ -229,7 +236,7 @@ function traceEventFields(type: string, event: Record<string, unknown>): Record<
     consolidation_failed: ["attempt", "errorType", "nextAttemptAt"],
     consolidation_batch_failed: ["batchIndex", "totalBatches", "errorType"],
     consolidation_model_started: ["batchIndex", "totalBatches", "model"],
-    consolidation_model_completed: ["batchIndex", "totalBatches", "model", "durationMs"],
+    consolidation_model_completed: ["batchIndex", "totalBatches", "model", "durationMs", "tokenUsage"],
     consolidation_model_failed: ["batchIndex", "totalBatches", "model", "errorType"],
     memory_task_started: ["attempt"],
     memory_task_completed: ["attempt"],
@@ -239,16 +246,16 @@ function traceEventFields(type: string, event: Record<string, unknown>): Record<
     memory_candidate_extracted: ["candidateId", "intent", "evidenceMessageIds"],
     memory_search_completed: ["candidateId", "attempt", "revision", "candidateIds"],
     memory_model_started: ["candidateId", "batchIndex", "totalBatches", "model"],
-    memory_model_completed: ["candidateId", "batchIndex", "totalBatches", "model", "durationMs"],
+    memory_model_completed: ["candidateId", "batchIndex", "totalBatches", "model", "durationMs", "tokenUsage"],
     memory_model_failed: ["candidateId", "batchIndex", "totalBatches", "model", "errorType"],
     memory_decision_completed: ["candidateId", "attempt", "action", "reasonCode", "targetId", "sourceIds", "evidenceMessageIds"],
     memory_validation_completed: ["candidateId", "attempt", "action"],
     memory_conflict: ["candidateId", "attempt"],
     memory_change_completed: ["candidateId", "action", "reasonCode", "targetId", "deletedIds", "durationMs"],
     memory_change_failed: ["candidateId", "errorType", "durationMs"],
-    embedding_started: ["purpose", "batchIndex", "itemCount", "estimatedTokens", "rebuildId"],
-    embedding_completed: ["purpose", "batchIndex", "itemCount", "estimatedTokens", "tokenUsage", "dimensions", "ms", "rebuildId"],
-    embedding_failed: ["purpose", "batchIndex", "itemCount", "estimatedTokens", "errorType", "errorMessage", "ms", "rebuildId"],
+    embedding_started: ["model", "purpose", "batchIndex", "itemCount", "estimatedTokens", "rebuildId"],
+    embedding_completed: ["model", "purpose", "batchIndex", "itemCount", "estimatedTokens", "tokenUsage", "dimensions", "ms", "rebuildId"],
+    embedding_failed: ["model", "purpose", "batchIndex", "itemCount", "estimatedTokens", "errorType", "errorMessage", "ms", "rebuildId"],
     embedding_rebuild_started: ["generationId", "rebuildId"],
     embedding_rebuild_progress: ["generationId", "rebuildId", "processedChunks"],
     embedding_generation_activated: ["generationId", "rebuildId", "chunkCount"],
@@ -263,9 +270,10 @@ function traceEventFields(type: string, event: Record<string, unknown>): Record<
     user_feedback: ["rating", "correction"],
     eval_judgment: ["evaluator", "evaluatorVersion", "scores", "reason"],
     trace_read_error: ["file"],
+    langfuse_export_failed: ["message"],
   };
   const output: Record<string, unknown> = {};
-  for (const key of ["taskId", "taskKind", "taskCreatedAt", "sourceRunId"]) if (typeof event[key] === "string") output[key] = event[key];
+  for (const key of ["taskId", "taskKind", "taskCreatedAt", "sourceRunId", "operationId", "parentOperationId"]) if (typeof event[key] === "string") output[key] = event[key];
   if (typeof event.sessionId === "string") output.sessionId = event.sessionId;
   if (typeof event.iteration === "number") output.iteration = event.iteration;
   if (typeof event.modelCallId === "string") output.modelCallId = event.modelCallId;

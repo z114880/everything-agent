@@ -37,7 +37,7 @@ pnpm run mock-data
 - **Skills**：新建、编辑、重命名和删除 `.everything/skills/<skill-name>/SKILL.md`。每轮 Agent 只注入 Skill 名称与描述，需要使用时通过受控 `read_skill` 工具加载正文；目录发现、加载和工具调用均进入 observer 与 JSONL trace。
 - **Tools**：按来源展示 Agent 的真实工具目录。`manage_memory`、`session_search`、`session_read` 与 `read_skill` 固定启用；`get_current_time` 和 Tavily `search_web` 可独立启停，点击开关后立即保存；保存期间仅当前开关暂时禁用，其他开关可独立操作。工具开关写入 `.everything/config.json`，Tavily 密钥写入 `.everything/.env`；浏览器只读取密钥状态和末四位。
 - **Database**：列出 `.everything/database/state.db` 的全部普通表、字段类型、行数和最多 200 条最新数据，不展示 SQLite 内部表、FTS5 虚拟表及其索引中间表。SQL Console 支持单条 `SELECT`、只读 `WITH`、`INSERT`、`UPDATE` 和 `DELETE`；数据写操作执行前必须在页面二次确认，DDL 始终禁止。
-- **运行记录**：只读列出 `.everything/traces/<日期>/<序号>-run-<runId>.jsonl` 中的 classic loop 与 memory 执行事实，页面按 JSONL 文件直接展示已脱敏事件，不额外推导 Session 或 Agent 回合结构。trace 不记录 Session 创建、选择，以及 Memory 页面手动搜索记忆或历史会话这类 UI 活动；Agent 内部检索仍记录执行事件。“配置”页面提供带二次确认的“清除全部数据”，可删除数据库、Session、Memory 与 trace，保留 `.everything/EVERYTHING.md`、`.everything/skills`、`.everything/config.json` 和 `.everything/.env` 密钥。
+- **运行记录**：只读列出 `.everything/traces/<日期>/<序号>-run-<runId>.jsonl` 中的 classic loop 与 memory 执行事实，页面按 JSONL 文件直接展示已脱敏事件，不额外推导 Session 或 Agent 回合结构。trace 不记录 Session 创建、选择，以及 Memory 页面手动搜索记忆或历史会话这类 UI 活动；Agent 内部检索仍记录执行事件。“配置”页面提供带二次确认的“清除全部数据”，可删除数据库、Session、Memory 与 trace，保留 `.everything/EVERYTHING.md`、`.everything/skills`、`.everything/config.json`、`.everything/.env` 密钥和 `.everything/langfuse.env` 连接凭证。
 - **配置**：Agent Model 与 Small Model 各自拥有独立的 Provider、Model、Base URL 和 API Key；非敏感连接参数、Session Recall 预算和 Context Limit 等运行参数写入 `.everything/config.json`，四类 API Key 单独保存在 `.everything/.env`，用户可编辑的 Procedural Memory 保存到 `.everything/EVERYTHING.md`，与运行时内置的基础角色、Semantic Memory 策略和 Skills Catalog 一起组装 System Prompt。浏览器只能读取各密钥是否存在及末四位。
 
 运行 `pnpm run dev:web` 时，在接受页面请求前自动创建缺失的 `.everything/`、`config.json`、`EVERYTHING.md`、`skills/`、数据库和 `.everything/.env`，已有文件保留不变。根目录没有 `EVERYTHING.md` 模板时使用内置中文提示词。未配置模型密钥也能打开控制台、查看空数据并编辑配置；调用模型前需要在“配置”页面填写连接信息。打开“配置”菜单即可维护 JSON 中的普通设置；`.everything/.env` 只保存以下密钥：
@@ -293,10 +293,10 @@ Agent 运行期间可通过侧栏切换到其他页面，运行与实时事件�
 
 配套默认预算为 `modelContextWindow: 262144`（256K）与 `sessionRecall.entryTokenLimit: 8192`（Recall Entry Token Limit，session_search 的单条正文上限）。单次 session_search 的 token 总额不是独立配置，固定取 `modelContextWindow` 的 25%（默认 65,536），配置页只读展示。初始化、缺省配置、配置页和恢复默认保持一致。预留 32,768 输出 tokens 与 512 安全余量后，输入预算为 228,864 tokens；召回总额占上下文窗口的四分之一，为系统提示、当前会话和工具结果留出空间。100 轮是执行上限，不表示预留 100 份输出；每轮仍检查实际累计上下文。
 
-## Evaluation：离线回归实验
+## Evaluation：固定数据集回归
 
-已新增独立的 Node.js / TypeScript 评估模块与 **Evaluation** 页面：固定用例、初始记忆与工具环境，分别运行两个源码/配置版本，保存完整执行证据，使用确定性断言与 DeepEval G-Eval 评分，比较逐用例退化并输出发布门槛报告。支持重复运行、取消、人工复核、导出报告和失败用例回流。
+Evaluation 页面提供 Overview、固定数据集编辑、运行历史与失败证据。数据集通过 Langfuse API 保存版本；使用当前 Agent 配置隔离执行，以本地确定性检查和 Langfuse 自动模型裁判共同判定。默认覆盖个人助理时间、上下文、记忆、搜索与能力边界，仅包含一个真实沙箱文件整理代码场景。
 
-评估默认存储在 `.evaluations/`，与日常 `.everything/` 分离。CLI：`pnpm run evaluate <实验 JSON> [评估目录]`。Trace 页面按运行分页，详情保留完整前台与关联后台事件。
+Agent 页面提供 **Evaluate** 按钮、进度、取消与独立评估流程图。运行记录保存在 `.evaluations/`，与日常 `.everything/` 分离。CLI `pnpm run evaluate [数据集 ID...]` 预留自动化入口，尚未接入 CI 或自动发布。评分未完成、执行不完整或同步失败不能自动通过。
 
-详见 [Evaluation 使用、架构与边界](src/evaluation/README.md) 和 [Trace 分页协议](src/tracing/README.md)。当前是固定外部工具环境的离线评估；真实联网验收、自动部署及 DeepEval 原生轨迹指标尚未实现。
+详见 [Evaluation 使用与边界](src/evaluation/README.md)、[本地 Langfuse](deploy/langfuse/README.md) 和 [Trace 分页协议](src/tracing/README.md)。

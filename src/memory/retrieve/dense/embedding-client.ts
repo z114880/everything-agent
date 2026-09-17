@@ -26,19 +26,20 @@ export class OpenAIEmbeddingClient implements EmbeddingPort {
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
       const batch = batches[batchIndex]!;
       const startedAt = performance.now();
+      const operationId = crypto.randomUUID();
       await context.observer?.("embedding_started", metadata(context, {
-        batchIndex, itemCount: batch.texts.length, estimatedTokens: sum(batch.estimatedTokens),
+        operationId, model: this.profile.model, batchIndex, itemCount: batch.texts.length, estimatedTokens: sum(batch.estimatedTokens),
       }));
       try {
         const result = await this.request(batch.texts, context.signal);
         output.push(...result.vectors.map((item) => ({ index: batch.startIndex + item.index, vector: item.vector })));
         await context.observer?.("embedding_completed", metadata(context, {
-          batchIndex, itemCount: batch.texts.length, estimatedTokens: sum(batch.estimatedTokens), tokenUsage: result.tokenUsage,
+          operationId, model: this.profile.model, batchIndex, itemCount: batch.texts.length, estimatedTokens: sum(batch.estimatedTokens), tokenUsage: result.tokenUsage,
           dimensions: VECTOR_DIMENSIONS, ms: Math.round(performance.now() - startedAt),
         }));
       } catch (error) {
         await context.observer?.("embedding_failed", metadata(context, {
-          batchIndex, itemCount: batch.texts.length, estimatedTokens: sum(batch.estimatedTokens),
+          operationId, model: this.profile.model, batchIndex, itemCount: batch.texts.length, estimatedTokens: sum(batch.estimatedTokens),
           errorType: error instanceof Error ? error.name : "UnknownError",
           errorMessage: sanitizedError(error), ms: Math.round(performance.now() - startedAt),
         }));

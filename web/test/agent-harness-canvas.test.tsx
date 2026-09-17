@@ -63,8 +63,8 @@ describe("Agent 业务画布", () => {
     expect(html).not.toContain("Memory Queue");
     expect(html).toContain('agent-node running');
     expect(html).toContain('agent-edge active');
-    expect(html.match(/<rect x="1"[^>]*width="1108"[^>]*class="agent-loop-box"/g)).toHaveLength(3);
-    expect(html).toContain('viewBox="0 19 1110 872"');
+    expect(html.match(/<rect x="1"[^>]*width="1108"[^>]*class="agent-loop-box"/g)).toHaveLength(4);
+    expect(html).toContain('viewBox="0 19 1110 1022"');
     expect(html).toContain('<rect x="1" y="570" width="1108" height="170"');
     expect(html).toContain('<rect x="1" y="760" width="1108" height="130"');
     expect(harnessPresentation.consolidate_trigger!.y).toBe(805);

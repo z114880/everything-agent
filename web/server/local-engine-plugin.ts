@@ -1,4 +1,4 @@
-import { evaluationService, evaluationProjectRoot } from "./evaluation-service.ts";
+import { evaluationService } from "./evaluation-service.ts";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, URL } from "node:url";
@@ -162,13 +162,16 @@ async function handleAgentRequest(
   const query = new URL(request.url ?? "/", "http://localhost").searchParams;
   if (pathname === `${agentApiPrefix}/evaluation`) {
     if (request.method === "GET") {
-      const id = query.get("id");
-      sendJson(response, 200, id ? await evaluationService.get(id) : { ...await evaluationService.list(Number(query.get("page") ?? 1)), sourceRoot: evaluationProjectRoot });
+      const id = query.get("id"), datasetId = query.get("datasetId");
+      sendJson(response, 200, datasetId ? await evaluationService.dataset(datasetId) : id ? query.get("events") === "true" ? await evaluationService.events(id) : await evaluationService.get(id) : await evaluationService.overview());
     } else if (request.method === "POST") {
       const body = await readJsonBody(request, 2_000_000);
-      if (body.action === "cancel") sendJson(response, 200, { cancelled: evaluationService.cancel(String(body.id)) });
-      else if (body.action === "review") sendJson(response, 200, await evaluationService.review(String(body.id), String(body.caseId), String(body.conclusion)));
-      else sendJson(response, 200, { id: await evaluationService.start(body.plan) });
+      if (body.action === "save_dataset") sendJson(response, 200, await evaluationService.saveDataset(body.dataset));
+      else if (body.action === "initialize") sendJson(response, 200, await evaluationService.initializeDatasets());
+      else if (body.action === "cancel") sendJson(response, 200, { cancelled: evaluationService.cancel(String(body.id)) });
+      else if (body.action === "refresh_scores") sendJson(response, 200, await evaluationService.refreshScores(String(body.id)));
+      else if (body.action === "start") sendJson(response, 200, { id: await evaluationService.start(body.datasetIds as string[] | undefined) });
+      else sendJson(response, 400, { error: "未知评估操作" });
     } else sendJson(response, 405, { error: "不支持此请求方法" });
     return;
   }

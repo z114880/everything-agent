@@ -1,3 +1,4 @@
+import { redactExecution } from "./redaction.ts";
 import { fork } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
@@ -7,21 +8,30 @@ import type { EvaluationExecution } from "./types.ts";
 import { readTraceFiles } from "../tracing/jsonl-tracer.ts";
 
 /** 在隔离 Node 进程中运行一个任务；截止后强制结束并保留已落盘的执行证据。 */
-export async function runEvaluationProcess(input: WorkerInput, signal: AbortSignal): Promise<EvaluationExecution> {
+export async function runEvaluationProcess(input: WorkerInput, signal: AbortSignal, credentials: Record<string, string>): Promise<EvaluationExecution> {
+  input = structuredClone(input);
   const started = performance.now();
   const result = await new Promise<EvaluationExecution>((resolve) => {
-    const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: input.directory, TMPDIR: input.directory, TZ: "UTC", DEEPEVAL_TELEMETRY_OPT_OUT: "YES", CONFIDENT_API_KEY: "" };
-    for (const model of [input.variant.agent, input.variant.small, input.variant.retrieval.embedding, input.plan.judge]) if (model) env[model.apiKeyEnv] = process.env[model.apiKeyEnv];
+    const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: input.directory, TMPDIR: input.directory, TZ: "UTC", LANGFUSE_ENABLED: "false" };
+    const models = [input.configuration.agent, input.configuration.small, input.configuration.retrieval.embedding];
+    const secrets = models.map((model) => model ? credentials[model.apiKeyEnv] : undefined);
+    for (const [index, model] of models.entries()) if (model) {
+      const secret = secrets[index];
+      model.apiKeyEnv = `EVALUATION_CONNECTION_${index}`;
+      env[model.apiKeyEnv] = secret;
+    }
     const child = fork(fileURLToPath(new URL("./worker.ts", import.meta.url)), [], { cwd: input.directory, env, execArgv: [], stdio: ["ignore", "ignore", "ignore", "ipc"] });
     let received: EvaluationExecution | undefined; let stop: "cancelled" | "timed_out" | null = null;
-    const cancel = () => { stop = "cancelled"; child.kill("SIGKILL"); };
-    const timer = setTimeout(() => { stop = "timed_out"; child.kill("SIGKILL"); }, input.plan.timeoutMs);
+    let killTimer: ReturnType<typeof setTimeout> | undefined;
+    const stopChild = () => { if (child.connected) child.send("cancel"); killTimer ??= setTimeout(() => child.kill("SIGKILL"), 1500); };
+    const cancel = () => { stop = "cancelled"; stopChild(); };
+    const timer = setTimeout(() => { stop = "timed_out"; stopChild(); }, input.timeoutMs);
     signal.addEventListener("abort", cancel, { once: true });
     child.on("message", (message: { result?: EvaluationExecution }) => { if (message.result) received = message.result; });
     child.on("error", () => { received = { ...input.execution, status: "failed", error: "无法启动执行进程" }; });
     child.on("close", () => {
-      clearTimeout(timer); signal.removeEventListener("abort", cancel);
-      resolve(stop ? { ...input.execution, status: stop, error: stop === "cancelled" ? "实验已取消" : "执行或评分超过总时限" } : received ?? { ...input.execution, status: "failed", error: "执行进程异常退出" });
+      clearTimeout(timer); clearTimeout(killTimer); signal.removeEventListener("abort", cancel);
+      resolve(stop ? { ...input.execution, status: stop, error: stop === "cancelled" ? "评估已取消" : "执行或评分超过总时限" } : received ?? { ...input.execution, status: "failed", error: "执行进程异常退出" });
     });
     if (signal.aborted) cancel(); else child.send(input);
   });
@@ -34,5 +44,5 @@ export async function runEvaluationProcess(input: WorkerInput, signal: AbortSign
   }
   // SIGKILL 不能执行 finally，由父进程清理临时凭证。
   try { await writeFile(join(input.directory, "home", ".env"), "# 凭证已清除\n", { mode: 0o600 }); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-  return result;
+  return redactExecution(result, Object.values(credentials));
 }

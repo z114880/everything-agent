@@ -1,22 +1,22 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile, readdir, lstat, symlink } from "node:fs/promises";
 import { join } from "node:path";
-import type { EvaluationExperiment } from "./types.ts";
+import type { EvaluationRun } from "./types.ts";
 
 export function hash(value: unknown): string { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
-export function idPath(home: string, id: string): string { if (!/^[a-zA-Z0-9_-]+$/.test(id)) throw new Error("实验 ID 无效"); return join(home, id); }
+export function idPath(home: string, id: string): string { if (!/^[a-zA-Z0-9_-]+$/.test(id)) throw new Error("评估 ID 无效"); return join(home, id); }
 export async function writeJson(path: string, value: unknown): Promise<void> {
   const temp = `${path}.${crypto.randomUUID()}.tmp`; await writeFile(temp, JSON.stringify(value, null, 2), { mode: 0o600 }); await rename(temp, path);
 }
-/** 实验元数据原子写入，不覆盖独立保存的执行证据。 */
-export async function saveExperiment(home: string, experiment: EvaluationExperiment): Promise<void> {
-  const directory = idPath(home, experiment.id); await mkdir(directory, { recursive: true }); await writeJson(join(directory, "experiment.json"), experiment);
+/** 评估元数据原子写入，不覆盖独立保存的执行证据。 */
+export async function saveRun(home: string, experiment: EvaluationRun): Promise<void> {
+  const directory = idPath(home, experiment.id); await mkdir(directory, { recursive: true }); await writeJson(join(directory, "run.json"), experiment);
 }
-export async function readExperiment(home: string, id: string): Promise<EvaluationExperiment> { return JSON.parse(await readFile(join(idPath(home, id), "experiment.json"), "utf8")) as EvaluationExperiment; }
-export async function listExperiments(home: string): Promise<EvaluationExperiment[]> {
-  await mkdir(home, { recursive: true }); const result: EvaluationExperiment[] = [];
+export async function readRun(home: string, id: string): Promise<EvaluationRun> { return JSON.parse(await readFile(join(idPath(home, id), "run.json"), "utf8")) as EvaluationRun; }
+export async function listRuns(home: string): Promise<EvaluationRun[]> {
+  await mkdir(home, { recursive: true }); const result: EvaluationRun[] = [];
   for (const entry of await readdir(home, { withFileTypes: true })) if (entry.isDirectory()) {
-    try { result.push(await readExperiment(home, entry.name)); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    try { result.push(await readRun(home, entry.name)); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
   }
   return result.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
 }

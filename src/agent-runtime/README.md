@@ -116,6 +116,12 @@ Memory 页在 Consolidation 后提供只读 System Prompt 标签页，直接展�
 - `configureTools(original)`：宿主返回本回合使用的工具注册表；默认不替换。评估用它注入固定外部环境，保留真实 Memory / Recall / Skill 工具。
 - `onModelUsage(event)`：接收主模型、Small Model 和后台记忆模型的真实 token usage 与用途；供应商不返回用量或调用失败时为 null，不以估算值冒充账单用量。
 
-公开入口导出 `AGENT_RUNTIME_HOST_PROTOCOL = 1`，评估运行器要求所选源码版本显式支持该协议。选项由宿主提供，不进入模型上下文，不新增模型可调用的管理工具。更多内容见 [Evaluation](../evaluation/README.md)。
+公开入口导出 `AGENT_RUNTIME_HOST_PROTOCOL = 1`，评估运行器验证当前源码快照提供该协议。选项由宿主提供，不进入模型上下文，不新增模型可调用的管理工具。更多内容见 [Evaluation](../evaluation/README.md)。
 
 `readTraces()` 现在读取完整 JSONL 文件，不再截断到最近 2,000 条。Web 列表使用独立的 `listTraceRuns` 游标分页，详情使用 `readTraceRun` 完整读取。
+
+### Langfuse 导出
+
+Runtime 自动读取 `.everything/langfuse.env` 中显式启用的连接，将前台、工具、检索和后台记忆事件交给同一导出器。默认仅上传元数据，关闭时刷新。模型用量回调和受控工具注入仍服务于隔离评估。详见 [Tracing](../tracing/README.md)。
+
+清除全部数据时，若已启用 Langfuse，会先刷新在途导出，再按本地 JSONL 中 runId 对应的 trace ID 分批请求删除远端 traces（含 observations 和 scores），受理成功后才删除本地数据。远端删除失败会报错并保留本地数据供重试；Langfuse 实际删除可能延迟。本地记录已被删除的历史 traces、其他来源 traces 和独立 Evaluation 数据不在此范围内。未启用 Langfuse 时仅清除本地数据。清除会保留 `.everything/langfuse.env` 连接凭证，Langfuse 连接不会被中断。

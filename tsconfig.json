@@ -16,5 +16,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts", "mock-data/**/*.ts", "vitest.config.ts"]
+  "include": ["src/**/*.ts", "mock-data/**/*.ts", "deploy/**/*.ts", "vitest.config.ts"]
 }

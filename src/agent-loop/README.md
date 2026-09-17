@@ -88,3 +88,5 @@ observer 会收到 `context_assembled`、`loop_start`、`model_request`、`model
 ## 与 Agent Runtime 的关系
 
 `src/agent-runtime/` 组合真实模型、Memory、工具和 Tracer，并管理回合前后的检索、持久化与会话锁。本模块保持模型与工具无关，不读取本地配置文件，也不承担 Web 请求或资源初始化。集成入口见 [Agent Runtime](../agent-runtime/README.md)。
+
+工具执行期间通过 `notify` 发布的事件统一带有当前 `toolCallId` 与 `iteration`，用于关联内部检索、Skill 加载和审批步骤；工具不能自行改写这两个关联值。

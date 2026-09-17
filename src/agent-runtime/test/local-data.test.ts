@@ -5,9 +5,10 @@ import { describe, expect, it } from "vitest";
 import { clearEverythingData } from "../index.ts";
 
 describe("本地 Agent 数据清理", () => {
-  it("删除数据库、会话附件和全部 trace，保留 .env、EVERYTHING.md、Skills 和 config.json", async () => {
+  it("删除数据库、会话附件和全部 trace，保留 .env、langfuse.env、EVERYTHING.md、Skills 和 config.json", async () => {
     const home = await mkdtemp(join(tmpdir(), "everything-clear-"));
     await writeFile(join(home, ".env"), 'EVERYTHING_AGENT_API_KEY="keep"\n', "utf8");
+    await writeFile(join(home, "langfuse.env"), 'LANGFUSE_ENABLED=true\nLANGFUSE_SECRET_KEY="keep"\n', "utf8");
     await writeFile(join(home, "EVERYTHING.md"), "保留的规则", "utf8");
     const configContent = '{"models":{"agent":{"model":"test-model"}}}\n';
     await writeFile(join(home, "config.json"), configContent, "utf8");
@@ -21,8 +22,9 @@ describe("本地 Agent 数据清理", () => {
 
     await clearEverythingData(home);
 
-    expect((await readdir(home)).sort()).toEqual([".env", "EVERYTHING.md", "config.json", "skills"]);
+    expect((await readdir(home)).sort()).toEqual([".env", "EVERYTHING.md", "config.json", "langfuse.env", "skills"]);
     expect(await readFile(join(home, ".env"), "utf8")).toBe('EVERYTHING_AGENT_API_KEY="keep"\n');
+    expect(await readFile(join(home, "langfuse.env"), "utf8")).toBe('LANGFUSE_ENABLED=true\nLANGFUSE_SECRET_KEY="keep"\n');
     expect(await readFile(join(home, "config.json"), "utf8")).toBe(configContent);
     expect(await readFile(join(home, "EVERYTHING.md"), "utf8")).toBe("保留的规则");
     expect(await readFile(join(home, "skills", "daily-plan", "SKILL.md"), "utf8")).toBe("技能");

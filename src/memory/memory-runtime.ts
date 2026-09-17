@@ -41,7 +41,8 @@ export class MemoryRuntime {
   async retrieve(message: string, gateHistory: AgentMessage[], options: MemoryModelOptions): Promise<RetrievalResult> {
     const observer = options.observer ?? (() => {});
     const decision = await decideRetrieval(options.client, options.model, message, gateHistory, observer);
-    await observer("retrieval_start", { mode: this.embedding.retrieval.mode, intent: decision.intent });
+    const operationId = crypto.randomUUID();
+    await observer("retrieval_start", { operationId, mode: this.embedding.retrieval.mode, intent: decision.intent });
     const semantic = decision.intent === "fact_with_evidence"
       ? await this.search.searchSemantic({ denseQuery: decision.denseQuery, lexicalQuery: decision.lexicalQuery }, DEFAULT_SEMANTIC_LIMIT, undefined, options.runId, options.observer)
       : [];
@@ -54,6 +55,7 @@ export class MemoryRuntime {
         ? await this.recall.searchSessions({ recent: true, currentSessionId: options.currentSessionId }, options.recall)
         : null;
     await observer("retrieval_completed", {
+      operationId,
       semantic: {
         denseQuery: decision.intent === "fact_with_evidence" ? decision.denseQuery : "",
         lexicalQuery: decision.intent === "fact_with_evidence" ? decision.lexicalQuery : "",

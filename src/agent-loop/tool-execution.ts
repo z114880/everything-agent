@@ -55,7 +55,7 @@ export async function executeToolCalls({
     await notify("tool_started", { tool: toolName, toolCallId: toolUseId, iteration });
     try {
       rawOutput = await runGuarded(
-        () => tools.execute(toolName, args, notify, {
+        () => tools.execute(toolName, args, (kind, event) => notify(kind, { ...event, toolCallId: toolUseId, iteration }), {
           signal,
           deadline,
           iteration,

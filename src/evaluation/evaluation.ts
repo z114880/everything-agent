@@ -1,34 +1,82 @@
-import { appendFile, mkdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { appendFile, mkdir, readFile, readdir } from "node:fs/promises";
+import { join, resolve, relative, isAbsolute } from "node:path";
+import { homedir } from "node:os";
+import { setTimeout as delay } from "node:timers/promises";
 import { MemoryRuntime } from "../memory/index.ts";
-import { validateEvaluationPlan } from "./validation.ts";
-import { compareEvaluations } from "./scoring.ts";
-import { hash, idPath, listExperiments, readExperiment, saveExperiment, snapshotCode, writeJson } from "./storage.ts";
+import { readEvaluationConfiguration } from "./configuration.ts";
+import { EvaluationLangfuse } from "./langfuse.ts";
+import { starterDatasets } from "./datasets.ts";
+import { identifier } from "./validation.ts";
+import { summarizeRun } from "./scoring.ts";
+import { idPath, listRuns, readRun, saveRun, snapshotCode, writeJson } from "./storage.ts";
 import { runEvaluationProcess } from "./process-runner.ts";
-import type { EvaluationEvent, EvaluationExperiment, EvaluationExecution } from "./types.ts";
+import { identifier as traceIdentifier } from "../tracing/langfuse/observations.ts";
+import type { DatasetReference, EvaluationEvent, EvaluationExecution, EvaluationOverview, EvaluationRun, EvaluationRunSummary, EvaluationStage } from "./types.ts";
 
-/** 本地评估服务。独立目录保存实验；同一实例串行调度，调用方可取消和等待。 */
-export function createEvaluationService(home: string) {
+/** 固定数据集回归入口，页面和未来 CI 共用；同一实例只允许一个运行或目录写操作。 */
+export function createEvaluationService(home: string, configurationHome = join(process.cwd(), ".everything"), options: { sourceRoot?: string; executionTimeoutMs?: number; scoreWaitMs?: number; scorePollMs?: number } = {}) {
+  const runsHome = join(home, "runs");
+  const sourceRoot = options.sourceRoot ?? process.cwd();
+  let busy = false;
   let active: { id: string; controller: AbortController; promise: Promise<void> } | null = null;
+  const recovering = new Map<string, Promise<EvaluationRun>>();
   const observers = new Set<(event: EvaluationEvent) => void>();
-
-  async function emit(experiment: EvaluationExperiment, type: string, sequence: number, executionId?: string) {
-    const event: EvaluationEvent = { experimentId: experiment.id, timestamp: new Date().toISOString(), sequence, type, ...(executionId ? { executionId } : {}) };
-    await appendFile(join(idPath(home, experiment.id), "events.jsonl"), `${JSON.stringify(event)}\n`, { mode: 0o600 });
-    for (const observer of observers) observer(event);
+  const summary = (r: EvaluationRun): EvaluationRunSummary => ({ id: r.id, createdAt: r.createdAt, status: r.status, stage: r.stage, report: r.report, error: r.error });
+  async function catalog(): Promise<DatasetReference[]> {
+    try { return JSON.parse(await readFile(join(home, "datasets.json"), "utf8")) as DatasetReference[]; }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return []; throw error; }
   }
-  async function execute(experiment: EvaluationExperiment, signal: AbortSignal) {
-    const directory = idPath(home, experiment.id); let sequence = 0;
+  async function exclusive<T>(action: () => Promise<T>): Promise<T> {
+    if (busy || active) throw new Error("已有评估或数据集操作正在进行");
+    busy = true;
+    try { return await action(); } finally { busy = false; }
+  }
+  async function events(id: string): Promise<EvaluationEvent[]> {
+    try { return (await readFile(join(idPath(runsHome, identifier(id)), "events.jsonl"), "utf8")).trim().split("\n").filter(Boolean).map(line => JSON.parse(line) as EvaluationEvent); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return []; throw error; }
+  }
+  async function emit(run: EvaluationRun, type: string, stage: EvaluationStage, executionId?: string) {
+    run.stage = stage; run.updatedAt = new Date().toISOString(); run.report = summarizeRun(run);
+    await saveRun(runsHome, run);
+    const event: EvaluationEvent = { runId: run.id, sequence: (await events(run.id)).length + 1, timestamp: run.updatedAt, type, stage, status: run.status, decision: run.report.decision, ...(executionId ? { executionId } : {}) };
+    await appendFile(join(idPath(runsHome, run.id), "events.jsonl"), `${JSON.stringify(event)}\n`, { mode: 0o600 });
+    for (const observer of observers) { try { observer(event); } catch { console.warn("评估事件订阅者处理失败，执行事实已落盘"); } }
+  }
+  async function get(id: string): Promise<EvaluationRun> {
+    const pending = recovering.get(id); if (pending) return pending;
+    const run = await readRun(runsHome, identifier(id));
+    if ((run.status === "queued" || run.status === "running") && active?.id !== id) {
+      const existing = recovering.get(id); if (existing) return existing;
+      run.status = "failed"; run.error = "服务中断，执行未完成，请重新评估";
+      const recovery = emit(run, "run_failed", run.stage).then(() => run).finally(() => { recovering.delete(id); });
+      recovering.set(id, recovery); return recovery;
+    }
+    return run;
+  }
+  async function collectScores(run: EvaluationRun, client: EvaluationLangfuse, signal?: AbortSignal) {
+    let missing = false;
+    for (const execution of run.executions) {
+      signal?.throwIfAborted();
+      const testCase = run.datasets.find(d => d.id === execution.datasetId)!.cases.find(c => c.id === execution.caseId)!;
+      if (execution.sync !== "synced") await client.publish(run, execution, signal);
+      if (execution.status !== "completed" || !execution.evidence?.complete || !testCase.judge) continue;
+      const score = await client.score(execution, testCase, signal);
+      execution.scores = execution.scores.filter(s => s.name !== testCase.judge!.scoreName);
+      if (score) execution.scores.push(score); else missing = true;
+    }
+    return missing;
+  }
+  async function execute(run: EvaluationRun, credentials: Record<string, string>, signal: AbortSignal) {
+    const directory = idPath(runsHome, run.id);
+    const client = new EvaluationLangfuse(configurationHome);
     try {
-      experiment.status = "running"; await saveExperiment(home, experiment); await emit(experiment, "experiment_started", ++sequence);
-      for (const side of ["baseline", "candidate"] as const) {
-        signal.throwIfAborted(); experiment.codeHashes[side] = await snapshotCode(experiment.plan[side].sourceRoot, join(directory, "code", side));
-      }
-      experiment.fingerprint = hash({ plan: experiment.plan, code: experiment.codeHashes, scorer: experiment.scorerVersion });
-      await writeJson(join(directory, "manifest.json"), { fingerprint: experiment.fingerprint, codeHashes: experiment.codeHashes, plan: experiment.plan, scorerVersion: experiment.scorerVersion });
-      for (const testCase of experiment.plan.dataset.cases) {
+      run.status = "running";
+      await emit(run, "dataset_ready", "dataset");
+      run.codeHash = await snapshotCode(sourceRoot, join(directory, "code"));
+      await emit(run, "agent_started", "agent");
+      for (const dataset of run.datasets) for (const testCase of dataset.cases) {
         signal.throwIfAborted();
-        const seed = join(directory, "seeds", testCase.id); await mkdir(seed, { recursive: true });
+        const seed = join(directory, "seeds", dataset.id, testCase.id); await mkdir(seed, { recursive: true });
         const memory = new MemoryRuntime(seed); let sessionId: string;
         try {
           for (const fact of testCase.memory) await memory.createSemantic(fact.subject, fact.content, fact.source);
@@ -38,86 +86,125 @@ export function createEvaluationService(home: string) {
             await memory.completeRun(session.id, runId, [{ role: "user", content: turn.prompt }, { role: "assistant", content: [{ type: "text", text: turn.reply }] }]);
           }
         } finally { memory.close(); }
-        for (let repetition = 1; repetition <= experiment.plan.repetitions; repetition++) {
-          // 交错先后顺序，避免一侧总处于供应商冷启动或高负载时段。
-          const sides = repetition % 2 ? ["baseline", "candidate"] as const : ["candidate", "baseline"] as const;
-          for (const variant of sides) {
-            signal.throwIfAborted();
-            const execution: EvaluationExecution = { id: `${testCase.id}-${variant}-${repetition}`, caseId: testCase.id, variant, repetition, status: "failed", error: null, evidence: null, scores: [], judgeUsd: null };
-            const runDirectory = join(directory, "executions", execution.id); await mkdir(runDirectory, { recursive: true });
-            await emit(experiment, "execution_started", ++sequence, execution.id);
-            const result = await runEvaluationProcess({ directory: runDirectory, codeRoot: join(directory, "code", variant), seed, sessionId, testCase, variant: experiment.plan[variant], plan: experiment.plan, execution }, signal);
-            await writeJson(join(runDirectory, "execution.json"), result);
-            experiment.executions.push(result);
-            experiment.report = compareEvaluations(experiment.plan, experiment.executions);
-            await saveExperiment(home, experiment); await emit(experiment, "execution_completed", ++sequence, execution.id);
-            if (budgetExceeded(experiment)) throw new Error("已达到实验预算门槛，停止后续执行");
-          }
-        }
+        const id = crypto.randomUUID(), traceId = traceIdentifier(`${run.id}:${id}`);
+        const execution: EvaluationExecution = { id, datasetId: dataset.id, caseId: testCase.id, status: "failed", error: null, evidence: null, scores: [], traceId, observationId: traceIdentifier(`${traceId}:root`, 16), traceUrl: null, sync: "pending" };
+        const runDirectory = join(directory, "executions", id); await mkdir(runDirectory, { recursive: true });
+        await emit(run, "execution_started", "agent", id);
+        const result = await runEvaluationProcess({ directory: runDirectory, codeRoot: join(directory, "code"), seed, sessionId, testCase, configuration: run.configuration, execution, timeoutMs: options.executionTimeoutMs ?? 300000, denyRead: await terminalDenyRead(runDirectory, configurationHome) }, signal, credentials);
+        run.executions.push(result);
+        await emit(run, "execution_completed", "agent", id);
       }
-      experiment.status = "completed";
+      signal.throwIfAborted(); run.status = "waiting_scores";
+      await emit(run, "scoring_started", "score");
+      for (const execution of run.executions) {
+        try { await client.publish(run, execution, signal); }
+        catch (error) { execution.sync = "failed"; throw error; }
+      }
+      const deadline = Date.now() + (options.scoreWaitMs ?? 120000);
+      while (await collectScores(run, client, signal)) {
+        await emit(run, "scores_pending", "score");
+        if (Date.now() >= deadline) { run.error = "等待 Langfuse 自动评分超时，可在详情中刷新评分"; return; }
+        await delay(options.scorePollMs ?? 3000, undefined, { signal });
+      }
+      run.status = "completed"; await emit(run, "gate_completed", "gate");
     } catch (error) {
-      experiment.status = signal.aborted ? "cancelled" : "failed";
-      experiment.error = signal.aborted ? "实验已取消" : error instanceof Error ? error.message : String(error);
-    } finally {
-      experiment.report = compareEvaluations(experiment.plan, experiment.executions);
-      if (experiment.status !== "completed" && experiment.report.decision === "passed") { experiment.report.decision = "insufficient"; experiment.report.reasons.push("实验未正常结束"); }
-      await saveExperiment(home, experiment); await emit(experiment, `experiment_${experiment.status}`, ++sequence);
-    }
+      run.status = signal.aborted ? "cancelled" : "failed";
+      run.error = signal.aborted ? "评估已取消" : error instanceof Error ? error.message : "评估失败";
+      await emit(run, signal.aborted ? "run_cancelled" : "run_failed", run.stage);
+    } finally { run.report = summarizeRun(run); await saveRun(runsHome, run); }
   }
-
   return {
-    /** 校验并持久化实验后立即返回 ID，执行进度通过事件与详情查询获得。 */
-    async start(value: unknown): Promise<string> {
-      if (active) throw new Error("已有评估实验正在运行");
-      const plan = validateEvaluationPlan(value);
-      for (const model of [plan.baseline.agent, plan.baseline.small, plan.baseline.retrieval.embedding, plan.candidate.agent, plan.candidate.small, plan.candidate.retrieval.embedding, plan.judge]) {
-        if (model && !process.env[model.apiKeyEnv]) throw new Error(`请在服务端配置模型凭证环境变量：${model.apiKeyEnv}`);
-      }
-      const experiment: EvaluationExperiment = { id: crypto.randomUUID(), createdAt: new Date().toISOString(), status: "queued", plan, fingerprint: "", codeHashes: { baseline: "", candidate: "" }, scorerVersion: "assertions-v1/deepeval-0.9.16", executions: [], report: null, reviews: [], error: null };
-      const controller = new AbortController();
-      // 先占用运行槽，避免并发 start 在首次落盘前同时通过检查。
-      const task = { id: experiment.id, controller, promise: Promise.resolve() }; active = task;
-      try { await saveExperiment(home, experiment); }
-      catch (error) { active = null; throw error; }
-      task.promise = execute(experiment, controller.signal).finally(() => { active = null; });
-      // 保留可 await 的失败，同时避免 HTTP 分离执行产生未处理 rejection。
-      void task.promise.catch(() => {});
-      return experiment.id;
+    /** Overview 返回摘要和连接状态，不批量传输私人执行正文。 */
+    async overview(): Promise<EvaluationOverview> {
+      const runs = await listRuns(runsHome);
+      const summaries = await Promise.all(runs.slice(0, 30).map(async r => summary(await get(r.id))));
+      return { datasets: await catalog(), runs: summaries, active: active ? summary(await get(active.id)) : null, langfuse: EvaluationLangfuse.status(configurationHome) };
     },
-    /** 等待当前实验落盘；CLI 和测试使用，HTTP 创建接口不等待。 */
+    async dataset(id: string) {
+      const reference = (await catalog()).find(d => d.id === identifier(id));
+      if (!reference) throw new Error("数据集不存在");
+      return new EvaluationLangfuse(configurationHome).dataset(reference);
+    },
+    /** 保存新版本成功后才替换目录引用；上传失败不会破坏上一版本。 */
+    async saveDataset(value: unknown) {
+      return exclusive(async () => {
+        const reference = await new EvaluationLangfuse(configurationHome).saveDataset(value);
+        const all = await catalog(); await mkdir(home, { recursive: true });
+        await writeJson(join(home, "datasets.json"), [...all.filter(d => d.id !== reference.id), reference]);
+        return reference;
+      });
+    },
+    /** 显式安装缺失的默认数据集，不覆盖已编辑内容。 */
+    async initializeDatasets() {
+      return exclusive(async () => {
+        const all = await catalog(); const client = new EvaluationLangfuse(configurationHome);
+        await mkdir(home, { recursive: true });
+        for (const dataset of starterDatasets()) if (!all.some(d => d.id === dataset.id)) {
+          all.push(await client.saveDataset(dataset)); await writeJson(join(home, "datasets.json"), all);
+        }
+        return all;
+      });
+    },
+    /** 运行选定数据集或全部默认集，始终使用当前 Agent，冻结用例与源码。 */
+    async start(datasetIds?: string[]): Promise<string> {
+      return exclusive(async () => {
+        if (datasetIds !== undefined && (!Array.isArray(datasetIds) || !datasetIds.length || datasetIds.length > 100 || new Set(datasetIds).size !== datasetIds.length)) throw new Error("请选择有效且不重复的数据集");
+        const all = await catalog();
+        if (datasetIds) for (const id of datasetIds) if (!all.some(d => d.id === identifier(id))) throw new Error("数据集不存在");
+        const selected = all.filter(d => datasetIds ? datasetIds.includes(d.id) : d.defaultEnabled);
+        if (!selected.length) throw new Error("请先在 Evaluation 初始化或启用默认数据集");
+        const client = new EvaluationLangfuse(configurationHome);
+        const datasets = await Promise.all(selected.map(d => client.dataset(d)));
+        if (datasets.reduce((total, dataset) => total + dataset.cases.length, 0) > 1000) throw new Error("单次评估最多 1000 个用例");
+        if (datasets.some(d => d.cases.some(c => c.judge)) && !EvaluationLangfuse.status(configurationHome).captureContent) throw new Error("语义评分需要启用 LANGFUSE_EVALUATION_CAPTURE_CONTENT");
+        const { configuration, credentials } = await readEvaluationConfiguration(configurationHome);
+        const now = new Date().toISOString();
+        const run: EvaluationRun = { id: crypto.randomUUID(), createdAt: now, updatedAt: now, status: "queued", stage: "dataset", datasets, configuration, codeHash: "", executions: [], report: { decision: "insufficient", total: 0, passed: 0, failed: 0, pending: 0, reasons: [] }, error: null };
+        run.report = summarizeRun(run); await saveRun(runsHome, run);
+        const task = { id: run.id, controller: new AbortController(), promise: Promise.resolve() }; active = task;
+        task.promise = execute(run, credentials, task.controller.signal).finally(() => { active = null; });
+        void task.promise.catch(() => {});
+        return run.id;
+      });
+    },
+    get, events,
+    /** 刷新已有证据的同步与平台评分，绝不重新执行 Agent。 */
+    async refreshScores(id: string) {
+      return exclusive(async () => {
+        const run = await get(id);
+        if (run.stage !== "score" && run.stage !== "gate") throw new Error("执行尚未完整，不能只刷新评分");
+        if (run.status === "cancelled") throw new Error("已取消的运行不能恢复评分，请重新评估");
+        run.status = "waiting_scores"; run.error = null;
+        try {
+          const missing = await collectScores(run, new EvaluationLangfuse(configurationHome));
+          run.status = missing ? "waiting_scores" : "completed";
+          await emit(run, missing ? "scores_pending" : "gate_completed", missing ? "score" : "gate");
+        } catch (error) { run.error = error instanceof Error ? error.message : "评分刷新失败"; await emit(run, "scores_failed", "score"); }
+        return run;
+      });
+    },
+    cancel(id: string) { if (active?.id !== id) return false; active.controller.abort(); return true; },
     async wait() { await active?.promise; },
-    /** 取消当前实验；已完成的评分与证据保留。 */
-    cancel(id: string) { if (!active || active.id !== id) return false; active.controller.abort(); return true; },
-    /** 分页返回实验摘要，避免批量传输证据正文。 */
-    async list(page = 1, pageSize = 20) {
-      if (!Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) throw new Error("分页参数无效");
-      const all = await listExperiments(home);
-      return { total: all.length, page, items: all.slice((page - 1) * pageSize, page * pageSize).map((e) => ({ id: e.id, name: e.plan.name, createdAt: e.createdAt, status: (e.status === "running" || e.status === "queued") && active?.id !== e.id ? "interrupted" : e.status, completed: e.executions.length, total: e.plan.dataset.cases.length * e.plan.repetitions * 2, decision: e.report?.decision ?? null })) };
-    },
-    /** 完整实验详情，包含各次执行证据，不从分页列表拼接。 */
-    async get(id: string) {
-      const e = await readExperiment(home, id);
-      if ((e.status === "running" || e.status === "queued") && active?.id !== id) { e.status = "failed"; e.error = "服务中断，实验没有完成；请创建新实验重跑"; e.report = compareEvaluations(e.plan, e.executions); e.report.decision = "insufficient"; }
-      return e;
-    },
-    /** 人工复核以附加记录保存，不能覆盖自动评分或发布结论。 */
-    async review(id: string, caseId: string, conclusion: string) {
-      if (active?.id === id) throw new Error("请在实验完成后复核");
-      const e = await readExperiment(home, id);
-      if (!e.plan.dataset.cases.some((c) => c.id === caseId) || typeof conclusion !== "string" || !conclusion.trim() || conclusion.length > 10000) throw new Error("复核内容或用例无效");
-      e.reviews.push({ caseId, conclusion, createdAt: new Date().toISOString() }); await saveExperiment(home, e); return e;
-    },
-    /** 读取实际调度事件用于回放；与 Agent Trace 分开存放。 */
-    async events(id: string): Promise<EvaluationEvent[]> {
-      const text = await readFile(join(idPath(home, id), "events.jsonl"), "utf8"); return text.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as EvaluationEvent);
-    },
-    subscribe(observer: (event: EvaluationEvent) => void) { observers.add(observer); return () => observers.delete(observer); },
+    subscribe(observer: (event: EvaluationEvent) => void) { observers.add(observer); return () => { observers.delete(observer); }; },
   };
 }
-function budgetExceeded(experiment: EvaluationExperiment): boolean {
-  const g = experiment.plan.gate;
-  const costs = (kind: "agent" | "judge") => experiment.executions.reduce((sum, e) => sum + (kind === "agent" ? e.evidence?.agentUsd ?? 0 : e.judgeUsd ?? 0), 0);
-  return (g.maxAgentUsd !== null && (costs("agent") > g.maxAgentUsd || experiment.executions.some((e) => e.evidence?.agentUsd == null)))
-    || (g.maxJudgeUsd !== null && (costs("judge") > g.maxJudgeUsd || experiment.executions.some((e) => e.judgeUsd === null)));
+/** 屏蔽宿主个人目录与评估凭证；沿工作区祖先逐级拒读兄弟路径，保留 Node 安装路径。 */
+async function terminalDenyRead(directory: string, configurationHome: string): Promise<string[]> {
+  const workspace = resolve(directory, "home", "sandbox");
+  const denied = new Set([resolve(configurationHome)]);
+  const contains = (parent: string, child: string) => { const rel = relative(parent, child); return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel)); };
+  let cursor = homedir();
+  // 宿主项目可能在临时目录，仍拒读个人目录；保留运行时安装所在的一级目录。
+  while (true) {
+    for (const entry of await readdir(cursor, { withFileTypes: true })) {
+      const path = join(cursor, entry.name);
+      if (!contains(path, workspace) && !contains(path, process.execPath)) denied.add(path);
+    }
+    if (!contains(cursor, workspace) || cursor === workspace) break;
+    const next = relative(cursor, workspace).split("/")[0]; if (!next) break;
+    cursor = join(cursor, next);
+    try { await readdir(cursor); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") break; throw error; }
+  }
+  denied.add(join(directory, "home", ".env"));
+  return [...denied];
 }

@@ -1092,10 +1092,10 @@ function AllDataClearDialog({
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>永久清除全部本地数据？</AlertDialogTitle>
+          <AlertDialogTitle>永久清除全部数据？</AlertDialogTitle>
           <AlertDialogDescription>
-            数据库、会话、记忆、索引和运行记录都会被删除。EVERYTHING.md、Skills、config.json
-            与 .everything/.env 密钥将保留；如已完整配置
+            数据库、会话、记忆、索引和运行记录都会被删除。启用 Langfuse 时，会同步请求删除这些本地运行对应的远端 traces（含 observations 和 scores）；远端处理可能延迟，请求失败将保留本地数据供重试。独立评估数据和其他 traces 不受影响。EVERYTHING.md、Skills、config.json、
+            .everything/.env 密钥与 .everything/langfuse.env 连接凭证将保留；如已完整配置
             Embedding，清理后会自动重建向量索引。
           </AlertDialogDescription>
         </AlertDialogHeader>

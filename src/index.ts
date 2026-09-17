@@ -51,3 +51,6 @@ export { listTraceRuns, readTraceRun } from "./tracing/run-reader.ts";
 export type { TraceRunPage, TraceRunSummary, TracePageOptions } from "./tracing/run-reader.ts";
 
 export * from "./evaluation/index.ts";
+
+export { createLangfuseTracer, readLangfuseConfiguration } from "./tracing/langfuse/index.ts";
+export type { LangfuseConfiguration } from "./tracing/langfuse/index.ts";

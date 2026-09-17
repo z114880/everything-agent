@@ -14,6 +14,10 @@
 - Consolidation 独立成区，与其他流程没有连线：每日首次使用 / 手动 Consolidate → 全量事实与分批 → 模型整理 → 校验提交 → 结果汇总。仅处理 semantic facts。
 - 两种后台入口共用检索旧记忆、小模型判断、证据及版本校验、事务提交和审计，执行新增、更新、删除、合并或跳过。
 
+## Evaluation 区域
+
+固定 Dataset → Evaluate Agent → 自动评分 → 评估结论是独立区域，节点和边同样来自 `Graph.describe()`。Agent 页面 Evaluate 按钮运行默认数据集，支持取消；点击评估节点或状态进入 Evaluation。状态来自独立评估事件流，不受聊天或 Consolidate 重置影响。当前无 CI 触发和自动发布。
+
 ## 静态与动态边界
 
 `agentHarnessGraph.describe()` 是所有节点和连线的唯一拓扑来源。`harnessPresentation` 和 `harnessEdgeLabels` 在同模块提供业务名称、简述、布局位置与边说明；Web 服务将其附加到 describe 输出，前端不补画固定输入或业务关系。

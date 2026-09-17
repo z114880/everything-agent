@@ -6,15 +6,16 @@ interface AgentHarnessCanvasProps {
   workflow: Workflow;
   nodeStates: Record<string, VisualNodeState>;
   activeEdges: Set<string>;
+  onOpenEvaluation?: (() => void) | undefined;
 }
 
 /** 展示服务端 Graph 提供的业务节点与边，后台关系不推断为聊天执行状态。 */
-export function AgentHarnessCanvas({ workflow, nodeStates, activeEdges }: AgentHarnessCanvasProps) {
+export function AgentHarnessCanvas({ workflow, nodeStates, activeEdges, onOpenEvaluation }: AgentHarnessCanvasProps) {
   const markerId = useId().replaceAll(":", "");
   const nodes = workflow.nodes.filter((node) => node.id !== "START" && node.id !== "END");
   const positions = new Map(nodes.map((node, index) => [node.id, node.presentation ?? { x: 24 + index % 5 * 220, y: 85 + Math.floor(index / 5) * 105 }]));
   return <div className="business-graph-scroll">
-      <svg viewBox="0 19 1110 872" style={{ width: "100%", minWidth: 850 }} className="agent-harness-svg" role="img" aria-label="Agent 与 Memory 业务流程图">
+      <svg viewBox="0 19 1110 1022" style={{ width: "100%", minWidth: 850 }} className="agent-harness-svg" role="img" aria-label="Agent、Memory 与 Evaluation 业务流程图">
         <defs><marker id={markerId} viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" className="arrow-head" /></marker></defs>
         <rect x="1" y="20" width="1108" height="527" rx="16" className="agent-loop-box" />
         <text x="17" y="47" className="agent-loop-label">Memory Retrieval &amp; Agent Loop</text>
@@ -22,6 +23,8 @@ export function AgentHarnessCanvas({ workflow, nodeStates, activeEdges }: AgentH
         <text x="17" y="595" className="agent-loop-label">后台写入 · 独立串行队列，不阻塞回复</text>
         <rect x="1" y="760" width="1108" height="130" rx="16" className="agent-loop-box" />
         <text x="17" y="785" className="agent-loop-label">Consolidation / Dreaming</text>
+        <rect x="1" y="910" width="1108" height="130" rx="16" className="agent-loop-box" />
+        <text x="17" y="935" className="agent-loop-label">Evaluation · 固定数据集回归</text>
         {workflow.edges.map((edge) => {
           const source = positions.get(edge.source), target = positions.get(edge.target);
           if (!source || !target) return null;
@@ -57,7 +60,7 @@ export function AgentHarnessCanvas({ workflow, nodeStates, activeEdges }: AgentH
         })}
         {nodes.map((node) => {
           const position = positions.get(node.id)!;
-          return <g key={node.id} className={`agent-node ${nodeStates[node.id] ?? "idle"}`} data-node={node.id}><title>{`${node.label}：${node.presentation?.subtitle ?? ""}`}</title><rect x={position.x} y={position.y} width="164" height="50" rx="9" /><text x={position.x + 10} y={position.y + 21} className="agent-node-title">{node.label}</text><text x={position.x + 10} y={position.y + 39} className="agent-node-subtitle">{node.presentation?.subtitle}</text></g>;
+          return <g key={node.id} role={node.id.startsWith("evaluate_") ? "button" : undefined} tabIndex={node.id.startsWith("evaluate_") ? 0 : undefined} aria-label={node.id.startsWith("evaluate_") ? `打开 Evaluation：${node.label}` : undefined} onClick={node.id.startsWith("evaluate_") ? onOpenEvaluation : undefined} onKeyDown={event => { if (node.id.startsWith("evaluate_") && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onOpenEvaluation?.(); } }} className={`agent-node ${nodeStates[node.id] ?? "idle"}`} data-node={node.id}><title>{`${node.label}：${node.presentation?.subtitle ?? ""}`}</title><rect x={position.x} y={position.y} width="164" height="50" rx="9" /><text x={position.x + 10} y={position.y + 21} className="agent-node-title">{node.label}</text><text x={position.x + 10} y={position.y + 39} className="agent-node-subtitle">{node.presentation?.subtitle}</text></g>;
         })}
       </svg>
   </div>;

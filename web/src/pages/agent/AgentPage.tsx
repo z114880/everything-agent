@@ -1,3 +1,4 @@
+import { useEvaluation } from "./useEvaluation";
 import { advanceHarnessMemory } from "../../harness-playback";
 import {
   Bot,
@@ -47,6 +48,7 @@ import { Textarea } from "../../components/ui/textarea";
 interface AgentPageProps {
   active?: boolean;
   onOpenConfig(): void;
+  onOpenEvaluation?: () => void;
 }
 interface ToolView {
   id: string;
@@ -105,7 +107,8 @@ const idleStates: Record<string, VisualNodeState> = {
   reply: "idle",
 };
 
-export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
+export function AgentPage({ active = true, onOpenConfig, onOpenEvaluation }: AgentPageProps) {
+  const evaluation = useEvaluation();
   const [bootstrap, setBootstrap] = useState<AgentBootstrap | null>(null);
   const [chatCollapsed, setChatCollapsed] = useState(false);
   const [sessionRailCollapsed, setSessionRailCollapsed] = useState(true);
@@ -658,6 +661,10 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
                   <RefreshCw size={13} aria-hidden="true" /> Consolidate
                 </Button>
               </div>
+              <div className="consolidation-action">
+                {evaluation.status && <button type="button" className="text-sm underline" onClick={onOpenEvaluation}>{evaluation.status}</button>}
+                <Button variant="secondary" size="sm" loading={evaluation.busy} disabled={evaluation.busy || !bootstrap.settings.agentModel.keyConfigured || !bootstrap.settings.smallModel.keyConfigured} onClick={() => void (evaluation.running ? evaluation.cancel() : evaluation.start())}>{evaluation.running ? "取消 Evaluate" : "Evaluate"}</Button>
+              </div>
               {(!bootstrap.settings.agentModel.keyConfigured ||
                 !bootstrap.settings.smallModel.keyConfigured) && (
                 <Button className="config-warning" onClick={onOpenConfig}>
@@ -667,11 +674,13 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
             </div>
           }
         />
+        {evaluation.error && <p role="alert">{evaluation.error}</p>}
         <AgentHarnessCanvas
           workflow={bootstrap.workflow}
-          nodeStates={{ ...nodeStates, ...backgroundStates }}
+          nodeStates={{ ...nodeStates, ...backgroundStates, ...evaluation.states }}
+          onOpenEvaluation={onOpenEvaluation}
           activeEdges={
-            new Set([...activeEdges, ...memoryEdges, ...consolidationEdges])
+            new Set([...activeEdges, ...memoryEdges, ...consolidationEdges, ...evaluation.edges])
           }
         />
       </div>

@@ -4,15 +4,16 @@ import { isDeepStrictEqual } from "node:util";
 import type { ToolRegistry } from "../agent-loop/agent-loop.ts";
 import { timeToolSchema } from "../tools/tool-registry.ts";
 import { searchWebSchema } from "../tools/tavily-search.ts";
-import { runTerminalSchema } from "../tools/terminal.ts";
+import { TerminalTool, runTerminalSchema } from "../tools/terminal.ts";
 import { evaluateCommand } from "../tools/approval.ts";
 import { safeRelativePath } from "./validation.ts";
 import type { EvaluationCase } from "./types.ts";
 
 /** 仅替换外部工具；记忆、Skill 和历史召回继续走原始实现。 */
-export function createFixtureTools(original: ToolRegistry, testCase: EvaluationCase, workspace: string): ToolRegistry {
+export function createFixtureTools(original: ToolRegistry, testCase: EvaluationCase, workspace: string, denyRead: string[] = []): ToolRegistry {
+  const terminal = testCase.terminal ? new TerminalTool({ workspaceRoot: workspace, sessionTempDir: join(workspace, ".tmp"), denyRead: [...denyRead, join(workspace, "..", ".env"), join(workspace, "..", "config.json")] }) : null;
   const external = [timeToolSchema, searchWebSchema, runTerminalSchema];
-  const schemas = external.filter((s) => testCase.tools.some((f) => f.name === s.name));
+  const schemas = external.filter((s) => testCase.tools.some((f) => f.name === s.name) || (terminal !== null && s.name === "run_terminal"));
   return {
     schemas() { return [...(original.schemas() as { name: string }[]).filter((s) => !external.some((e) => e.name === s.name)), ...schemas]; },
     async execute(name, args, notify, context) {
@@ -26,6 +27,11 @@ export function createFixtureTools(original: ToolRegistry, testCase: EvaluationC
       if (name === "run_terminal") {
         if (!String(argumentsObject.command).trim() || String(argumentsObject.command).length > 10000) throw new Error("命令为空或过长");
         if (argumentsObject.workdir) safeRelativePath(String(argumentsObject.workdir));
+      }
+      if (name === "run_terminal" && terminal) {
+        const result = await terminal.execute(args, notify, context);
+        if (result.exitCode !== 0 || result.timedOut) throw new Error(`终端执行失败：${result.stderr || result.exitCode}`);
+        return result;
       }
       const fixture = testCase.tools.find((f) => f.name === name && isDeepStrictEqual(f.arguments, args));
       if (!fixture) throw new Error(`固定工具环境未匹配：${name}`);

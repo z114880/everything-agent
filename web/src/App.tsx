@@ -58,7 +58,7 @@ export default function App() {
 
       {/* 页面导航只隐藏 Agent，保留运行请求、事件订阅和会话状态。 */}
       <main className="main-content agent-main-content" hidden={page !== "agent"}>
-        <AgentPage active={page === "agent"} onOpenConfig={() => setPage("config")} />
+        <AgentPage active={page === "agent"} onOpenConfig={() => setPage("config")} onOpenEvaluation={() => setPage("evaluation")} />
       </main>
       {page !== "agent" && <main className="main-content">{pageContent}</main>}
     </div>

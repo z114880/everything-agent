@@ -1,13 +1,12 @@
-import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createEvaluationService } from "./index.ts";
 
-const [planFile, directory = ".evaluations"] = process.argv.slice(2);
-if (!planFile) throw new Error("用法：pnpm run evaluate <实验 JSON> [评估目录]");
-const service = createEvaluationService(resolve(directory));
-const id = await service.start(JSON.parse(await readFile(resolve(planFile), "utf8")));
+// 预留与页面一致的自动化入口；尚不配置任何 CI 工作流。
+const service = createEvaluationService(resolve(".evaluations"));
+const ids = process.argv.slice(2);
+const id = await service.start(ids.length ? ids : undefined);
 process.once("SIGINT", () => service.cancel(id));
 await service.wait();
-const experiment = await service.get(id);
-console.log(JSON.stringify({ id, report: experiment.report, error: experiment.error }, null, 2));
-process.exitCode = experiment.report?.decision === "passed" ? 0 : experiment.report?.decision === "failed" ? 1 : 2;
+const run = await service.get(id);
+console.log(JSON.stringify({ id, status: run.status, report: run.report, error: run.error }, null, 2));
+process.exitCode = run.report.decision === "passed" ? 0 : run.report.decision === "failed" ? 1 : 2;

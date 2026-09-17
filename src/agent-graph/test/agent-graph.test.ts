@@ -185,3 +185,11 @@ describe("模型客户端", () => {
     vi.restoreAllMocks();
   });
 });
+
+it("评估拓扑独立于聊天与整理，展示固定数据集到判定的真实关系", () => {
+  const description = agentHarnessGraph.describe();
+  const evaluation = new Set(["evaluate_dataset", "evaluate_agent", "evaluate_score", "evaluate_gate"]);
+  expect(description.nodes.filter(n => evaluation.has(n.name)).map(n => n.name)).toEqual([...evaluation]);
+  expect(description.edges.filter(e => evaluation.has(e.source)).map(e => `${e.source}->${e.target}`)).toEqual(["evaluate_dataset->evaluate_agent", "evaluate_agent->evaluate_score", "evaluate_score->evaluate_gate"]);
+  expect(description.edges.every(e => evaluation.has(e.source) === evaluation.has(e.target))).toBe(true);
+});

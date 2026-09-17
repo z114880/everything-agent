@@ -20,7 +20,7 @@ it("read_skill 按需返回正文，并发布不含正文的加载事件", async
     signal: undefined, deadline: null, iteration: 2, toolUseId: "tool-1",
   })).resolves.toMatchObject({ name: "daily-plan", instructions: "先列出三件要事" });
   expect(notify).toHaveBeenCalledWith("skill_loaded", expect.objectContaining({
-    skill: "daily-plan", instructionLength: 7, iteration: 2, toolCallId: "tool-1",
+    skill: "daily-plan", contentHash: expect.stringMatching(/^[a-f0-9]{64}$/), instructionLength: 7, iteration: 2, toolCallId: "tool-1",
   }));
   expect(JSON.stringify(notify.mock.calls)).not.toContain("先列出三件要事");
 });

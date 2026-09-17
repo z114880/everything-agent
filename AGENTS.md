@@ -148,7 +148,7 @@ pnpm run example
 
 ## Evaluation 模块
 
-- `src/evaluation/`：独立离线回归评估；固定测试集、隔离运行、DeepEval TypeScript 评分、比较与发布门槛。行为测试位于 `src/evaluation/test/`，使用说明位于 `src/evaluation/README.md`。
+- `src/evaluation/`：个人助理固定数据集回归；Langfuse 数据集版本、当前 Agent 隔离运行、确定性检查、平台自动裁判与评估结论。行为测试位于 `src/evaluation/test/`，使用说明位于 `src/evaluation/README.md`。
 - `.evaluations/`：评估运行数据，不能提交；与 `.everything/` 分离。
 - `web/server/evaluation-service.ts`、`web/src/evaluation-api.ts`、`web/src/pages/evaluation/`：Evaluation 页面与服务接入。
-- 评估不得将未匹配的 fixture 回退成真实外部工具调用，不得因评分失败、缺失用量或未完成运行而自动判定发布通过。
+- 评估不得将未匹配的 fixture 回退成真实外部工具调用；只有显式开启 terminal 的用例可在受控沙箱内真实执行。评分失败、同步失败或未完成运行不得自动判定通过；费用与用量只作观察指标，不作为质量硬门槛。

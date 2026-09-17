@@ -1,9 +1,2 @@
 allowBuilds:
   nodejieba: true
-  protobufjs: false
-
-minimumReleaseAgeExclude:
-  - deepeval@0.9.16
-
-patchedDependencies:
-  deepeval@0.9.16: patches/deepeval@0.9.16.patch

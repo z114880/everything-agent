@@ -1,3 +1,4 @@
+import { deleteLangfuseRunTraces, createLangfuseTracer, readLangfuseConfiguration } from "../tracing/langfuse/index.ts";
 import { join } from "node:path";
 import { RoughTokenEstimator } from "../model/token-estimator.ts";
 import { LocalToolRegistry } from "../tools/tool-registry.ts";
@@ -45,6 +46,7 @@ export function createAgentRuntime(paths: LocalConfigPaths, options: AgentRuntim
   let closed = false;
   let memoryRuntime: MemoryRuntime | null = null;
   let tracer: JsonlTracer | null = null;
+  let langfuse: ReturnType<typeof createLangfuseTracer> | null = null;
   let recoveryScheduled = false;
   let dailyConsolidation: DailyConsolidationCheck | null = null;
   let dataClearing = false;
@@ -412,10 +414,17 @@ export function createAgentRuntime(paths: LocalConfigPaths, options: AgentRuntim
         memoryRuntime.stopBackgroundTasks();
         await memoryRuntime.waitForBackgroundTasks();
       }
+      if (langfuse) await langfuse.flush(true);
       if (tracer) await tracer.flush();
+      const connection = readLangfuseConfiguration(everythingHome);
+      if (connection) {
+        const files = await readTraceFiles(everythingHome);
+        await deleteLangfuseRunTraces(connection, files.flatMap(file => file.records.map(record => record.runId)));
+      }
       memoryRuntime?.close();
       memoryRuntime = null;
       tracer = null;
+      langfuse = null;
       recoveryScheduled = false;
       await clearEverythingData(everythingHome);
       return { cleared: true };
@@ -431,7 +440,15 @@ export function createAgentRuntime(paths: LocalConfigPaths, options: AgentRuntim
   }
 
   function getTracer(): JsonlTracer {
-    tracer ??= new JsonlTracer(everythingHome);
+    if (!tracer) {
+      const connection = readLangfuseConfiguration(everythingHome);
+      langfuse = connection ? createLangfuseTracer(connection, (message) => {
+        void tracer?.record("langfuse_export_failed", { message });
+      }) : null;
+      tracer = new JsonlTracer(everythingHome, { onRecord: (record) => {
+        if (record.type !== "langfuse_export_failed") langfuse?.record(record);
+      } });
+    }
     return tracer;
   }
 
@@ -520,6 +537,7 @@ export function createAgentRuntime(paths: LocalConfigPaths, options: AgentRuntim
         memoryRuntime.stopBackgroundTasks();
         await memoryRuntime.waitForBackgroundTasks();
       }
+      if (langfuse) await langfuse.flush(true);
       if (tracer) await tracer.flush();
       memoryRuntime?.close();
       closed = true;
