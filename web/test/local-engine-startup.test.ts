@@ -2,6 +2,8 @@ import { expect, it, vi } from "vitest";
 import { createServer } from "vite";
 import { localEnginePlugin } from "../server/local-engine-plugin.ts";
 
+vi.mock("../server/evaluation-service.ts", () => ({ startEvaluation: vi.fn(async () => {}), closeEvaluation: vi.fn(async () => {}), evaluationDashboard: vi.fn(), evaluationDatasets: vi.fn(), evaluationWebhookHeaders: vi.fn(), evaluationAction: vi.fn() }));
+
 const { startLocalAgent } = vi.hoisted(() => ({ startLocalAgent: vi.fn(async () => {}) }));
 vi.mock("../server/agent-service.ts", async (importOriginal) => ({
   ...await importOriginal<typeof import("../server/agent-service.ts")>(),

@@ -1,3 +1,4 @@
+import { startEvaluation, closeEvaluation, evaluationDashboard, evaluationDatasets, evaluationWebhookHeaders, evaluationAction } from "./evaluation-service.ts";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, URL } from "node:url";
@@ -45,12 +46,14 @@ interface WorkflowModule {
 export function localEnginePlugin(): Plugin {
   return {
     name: "everything-agent-local-engine",
+    async closeBundle() { await closeEvaluation(); },
     // 编辑器保存本地工作流时不刷新页面；下一次 describe/run 会加载带新时间戳的模块。
     handleHotUpdate(context) {
       if (context.file.startsWith(workflowDirectory) && context.file.endsWith(".ts")) return [];
     },
     async configureServer(server) {
       await startLocalAgent();
+      await startEvaluation();
       server.middlewares.use((request, response, next) => {
         void handleLocalApiRequest(server, request, response, next);
       });
@@ -66,7 +69,7 @@ async function handleLocalApiRequest(
 ): Promise<void> {
   const requestUrl = new URL(request.url ?? "/", "http://localhost");
   const pathname = requestUrl.pathname;
-  if (!pathname.startsWith(workflowApiPrefix) && !pathname.startsWith(agentApiPrefix)) {
+  if (!pathname.startsWith(workflowApiPrefix) && !pathname.startsWith(agentApiPrefix) && !pathname.startsWith("/api/evaluation")) {
     next();
     return;
   }
@@ -74,6 +77,14 @@ async function handleLocalApiRequest(
   try {
     if (["PUT", "POST", "DELETE"].includes(request.method ?? "") && !isLocalOrigin(request.headers.origin)) {
       sendJson(response, 403, { error: "本地工作流接口只接受本机页面请求" });
+      return;
+    }
+    if (pathname.startsWith("/api/evaluation")) {
+      if (request.method === "GET" && pathname === "/api/evaluation") sendJson(response, 200, evaluationDashboard());
+      else if (request.method === "GET" && pathname === "/api/evaluation/datasets") sendJson(response, 200, await evaluationDatasets());
+      else if (request.method === "POST" && pathname === "/api/evaluation/webhook-headers") sendJson(response, 200, evaluationWebhookHeaders());
+      else if (request.method === "POST" && pathname === "/api/evaluation") sendJson(response, 200, await evaluationAction(await readJsonBody(request)));
+      else sendJson(response, 404, { error: "未知评估接口" });
       return;
     }
     if (pathname.startsWith(workflowApiPrefix)) {

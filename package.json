@@ -46,10 +46,14 @@
     "./skills": {
       "types": "./src/skills/index.ts",
       "default": "./src/skills/index.ts"
+    },
+    "./evaluation": {
+      "types": "./src/evaluation/index.ts",
+      "default": "./src/evaluation/index.ts"
     }
   },
   "scripts": {
-    "start": "npm run dev:web",
+    "start": "pnpm run dev:web",
     "build": "pnpm run typecheck && pnpm run build:web",
     "dev:web": "vite --config web/vite.config.ts",
     "build:web": "tsc -p web/tsconfig.json && vite build --config web/vite.config.ts",
@@ -59,7 +63,10 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "example": "node src/engine/examples/basic.ts",
-    "mock-data": "node mock-data/cli.ts"
+    "mock-data": "node mock-data/cli.ts",
+    "langfuse:up": "node deploy/langfuse/setup.mjs up",
+    "langfuse:down": "node deploy/langfuse/setup.mjs down",
+    "langfuse:status": "node deploy/langfuse/setup.mjs status"
   },
   "engines": {
     "node": ">=24.12"
@@ -79,6 +86,7 @@
     "vitest": "^4.1.11"
   },
   "dependencies": {
+    "@langfuse/client": "^5.11.1",
     "@radix-ui/react-alert-dialog": "^1.1.23",
     "@radix-ui/react-select": "^2.3.7",
     "@radix-ui/react-slot": "^1.3.3",

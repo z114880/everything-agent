@@ -75,6 +75,8 @@
 - `src/agent-runtime/`：组合 Agent Loop、模型客户端、工具注册表、Memory 与 Tracer 的本地个人助理运行时；内部辅助模块（`configuration/`、`integrations/`、`events/`）不从 `index.ts` 导出，行为测试放在 `src/agent-runtime/test/`。
 - `src/skills/`：基于 `.everything/skills/<skill-name>/SKILL.md` 的按需过程知识存取；行为测试放在 `src/skills/test/`。
 - `src/tracing/`：classic Agent Loop 与 Memory 的 JSONL 运行记录；行为测试放在 `src/tracing/test/`。
+- `src/evaluation/`：Langfuse v4 数据集真实评估、隔离 Runtime、平台回调和轨迹回传；行为测试放在 `src/evaluation/test/`，用法见同目录 README。终端用例必须显式设置 metadata.terminal=true；执行、同步和评分状态分别记录。
+- `deploy/langfuse/`：完整 Docker Compose、随机凭证初始化和内部评估网关；凭证保存在被忽略的 `.langfuse/`，评估数据保存在被忽略的 `.evaluations/`。
 - `src/workflows/`：与 Engine、Agent 同级的本地工作流；行为测试放在 `src/workflows/test/`。
 - `mock-data/`：与 `src`、`web` 同级的模拟数据工具；`datasets/` 存放数据集 JSON，其余为写入脚本，用本地模拟模型驱动真实 Runtime 把数据合并进现有数据目录，不参与产品运行；行为测试放在 `mock-data/test/`。
 - `web/test/`：Web 模块的行为测试。

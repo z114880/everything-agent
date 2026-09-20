@@ -8,3 +8,6 @@ coverage/
 dist-web/
 *.tgz
 .everything/
+
+.evaluations/
+.langfuse/

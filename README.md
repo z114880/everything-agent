@@ -27,6 +27,17 @@ pnpm run mock-data
 
 数据默认合并进 `.everything/`，写过的数据集不会重复写入，模型配置与向量索引不受影响；详见 [`mock-data/README.md`](mock-data/README.md)。
 
+## Langfuse 真实环境评估
+
+```bash
+pnpm run langfuse:up
+pnpm run dev:web
+```
+
+完整 Docker Compose 会启动 Langfuse v4 及数据库、对象存储和实验回调网关，首次自动生成本地凭证。管理平台地址为 `http://localhost:3300`，账号在 `.langfuse/compose.env` 中。详见 [一键部署说明](deploy/langfuse/README.md)。
+
+新增 **Evaluation** 页面，支持从本地或 Langfuse Custom Experiment 启动真实 Agent，使用独立评估会话、可选日常记忆快照、真实模型与工具，保留工具审批和取消能力；展示进度、结果、用量、平台评分与同步错误。执行轨迹回传 Langfuse v4，执行完成不代表质量通过。评估器在 Langfuse 管理，尚未配置时不生成虚假评分。详见 [Evaluation 使用说明](src/evaluation/README.md)。
+
 ## 本地可视化控制台
 
 仓库已包含一个 React + Tailwind CSS v4 + shadcn/ui 的本地控制台。页面共用本地设计令牌和可复用基础组件，Graph 与 Agent Harness 画布仍以真实拓扑和 observer 事件为唯一事实来源：

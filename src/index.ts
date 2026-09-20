@@ -46,3 +46,5 @@ export * from "./skills/index.ts";
 export { JsonlTracer, readTraceFiles, readTraceRecords } from "./tracing/jsonl-tracer.ts";
 export type { JsonlTracerOptions, TraceFile, TraceRecord } from "./tracing/jsonl-tracer.ts";
 export * from "./agent-runtime/index.ts";
+
+export * from "./evaluation/index.ts";
