@@ -3,7 +3,7 @@ import { createAgentRuntime } from '../agent-runtime/index.ts';
 
 /** 空白评估库也要建立当前 Embedding generation，保持真实检索配置不变。 */
 export async function createEvaluationRuntime(home: string, signal: AbortSignal) {
-  const runtime = createAgentRuntime({ home, defaultSystemPromptPath: join(home, 'EVERYTHING.md') });
+  const runtime = createAgentRuntime({ home, defaultSystemPromptPath: join(home, 'EVERYTHING.md') }, { langfuse: false });
   const cancelRebuild = () => { runtime.cancelEmbeddingIndexRebuild(); };
   try {
     signal.throwIfAborted();

@@ -107,3 +107,7 @@ Web 配置页的 Memory Retrieval 区域提供 Retrieval Mode 与 Minimum Simila
 图中的 System Prompt 是组装结果，并非一次额外模型调用；现有 `context_assembled` 事件标记其完成，不新增虚构执行事件。提示词指导提交与回复，参数、证据、事务和审计约束仍由工具与记忆模块执行。
 
 Memory 页在 Consolidation 后提供只读 System Prompt 标签页，直接展示 `system-prompt.ts` 导出的运行时提示词正文，不拼接用户规则、Skills 或召回内容，不提供修改和保存入口。
+
+## 实时 Trace 导出
+
+日常 observer 事件经 `createRuntimeTracer` 统一生成时间、ID、顺序并脱敏，分别交给 JSONL 写入队列和异步 OTLP exporter。导出不读取 JSONL，也不等待聊天结束。`createAgentRuntime(paths, { langfuse: false })` 可由隔离评估宿主显式禁用日常导出。配置、内容边界和分页接口见 [Tracing](../tracing/README.md)。`readTraces()` 完整读取，不再截断到最近 2,000 条。清除操作只清除本地数据，并保留 `langfuse.env`；关闭和清理前会结束导出队列，不删除远端 traces。

@@ -69,3 +69,7 @@ docker compose --env-file .langfuse/compose.env -f deploy/langfuse/compose.yaml 
 - 启动超时：用 `docker compose --env-file .langfuse/compose.env -f deploy/langfuse/compose.yaml logs --tail 100` 检查服务，不要公开含凭证的配置或日志。
 
 官方参考：[Docker Compose 部署](https://langfuse.com/self-hosting/deployment/docker-compose)、[远程实验触发](https://langfuse.com/docs/evaluation/experiments/experiments-via-sdk)。
+
+## 日常聊天的 Trace
+
+部署完成不会自动开启日常聊天导出。按 [Tracing 配置](../../src/tracing/README.md) 设置 `.everything/langfuse.env` 后重启 Agent。exporter 从实时事件流生成 OTEL spans，通过本服务的 OTLP 入口上传；日常导出和 Evaluation 的实验上传相互独立。默认仅上传元数据，清除 Agent 本地数据不会删除 Langfuse 中的 traces。

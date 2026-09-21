@@ -76,3 +76,5 @@ pnpm exec vitest run src/evaluation/test web/test/evaluation-page.test.tsx deplo
 pnpm run build
 pnpm run test:coverage
 ```
+
+评估 Runtime 显式关闭日常 Langfuse exporter，保留独立的实验轨迹上传和同步状态，避免宿主环境启用日常导出后生成重复 trace。

@@ -201,3 +201,5 @@ Agent 页面每日首次进入时调用 `runtime.consolidate("daily")`，按服�
 Semantic 检索按全局模式执行所需路线，Hybrid 将两路独立候选融合。任一路查询缺失或空白时，该路回退到当前消息；Gate 失败时，两路及 Session 搜索一起回退到当前消息。手动 `searchSemantic` 和记忆管理检索不调用 Gate，直接把调用方提供的文本用于两路。
 
 `retrieval_completed.semantic` 使用 `denseQuery`、`lexicalQuery` 和 `hits`，不再使用单一 `query`；JSONL 记录继续对两路查询递归脱敏。阶段事件只表示实际执行过的路线。
+
+Gate、自动检索和每批 Embedding 调用的开始/结束事件携带相同 `operationId`；Gate 与 Embedding 同时携带模型名称。Gate、记忆裁判和整理模型完成事件补充供应商返回的真实 `tokenUsage`，缺失时不估算。运行时导出详见 [Tracing](../tracing/README.md)。

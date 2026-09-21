@@ -719,3 +719,9 @@ button:disabled { cursor: not-allowed; }
 .terminal-config-details > div { display: grid; grid-template-columns: 5em minmax(0, 1fr); align-items: baseline; gap: 16px; }
 .terminal-config-details dt { color: var(--muted); }
 .terminal-config-details dd { min-width: 0; margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+
+/* 分页位于记录列表底部，小屏自动换行，避免遮挡展开的 JSON。 */
+.trace-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 20px; padding: 14px 0; border-top: 1px solid var(--line); }
+.trace-pagination-summary { color: var(--muted); font-size: 12px; }
+.trace-pagination-controls { display: flex; align-items: center; gap: 12px; }
+.trace-pagination-page { min-width: 64px; text-align: center; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }

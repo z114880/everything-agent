@@ -1,7 +1,7 @@
 import { readdir, rm } from "node:fs/promises";
 import { join, parse, resolve } from "node:path";
 
-const PRESERVED_FILES = new Set([".env", "EVERYTHING.md", "config.json", "skills"]);
+const PRESERVED_FILES = new Set([".env", "langfuse.env", "EVERYTHING.md", "config.json", "skills"]);
 
 /** 删除本地 Agent 数据目录中的运行数据，保留 procedural memory、Skills、JSON 配置和密钥文件。 */
 export async function clearEverythingData(home: string): Promise<void> {

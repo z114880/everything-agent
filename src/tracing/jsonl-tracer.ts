@@ -1,20 +1,9 @@
+import { createHash } from "node:crypto";
 import { appendFile, mkdir, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
-export interface TraceRecord {
-  version: 1 | 2;
-  eventId?: string;
-  type: string;
-  timestamp: string;
-  sequence?: number;
-  runId: string;
-  sessionId?: string;
-  iteration?: number;
-  modelCallId?: string;
-  toolCallId?: string;
-  payload?: Record<string, unknown>;
-  [key: string]: unknown;
-}
+import { createTraceEventFactory, type TraceRecord } from "./trace-event.ts";
+export type { TraceRecord } from "./trace-event.ts";
 
 export interface TraceFile {
   path: string;
@@ -30,23 +19,26 @@ export interface JsonlTracerOptions {
 export class JsonlTracer {
   private readonly traceDirectory: string;
   private readonly onWarning: (message: string) => void;
-  private readonly now: () => Date;
+  private readonly makeRecord: ReturnType<typeof createTraceEventFactory>;
   private writeQueue: Promise<void> = Promise.resolve();
   private checkedPaths = new Set<string>();
   private recoveryPaths = new Map<string, string>();
-  private sequences = new Map<string, number>();
   // 同一记录器的系统事件共用 UUID，避免把每个无 Session 事件拆成文件。
   private readonly systemId = crypto.randomUUID();
 
   constructor(home: string, options: JsonlTracerOptions = {}) {
     this.traceDirectory = join(home, "traces");
     this.onWarning = options.onWarning ?? (() => {});
-    this.now = options.now ?? (() => new Date());
+    this.makeRecord = createTraceEventFactory(options.now);
   }
 
   /** 排队写入一个事件；失败只告警，不影响 Agent Loop。 */
   async record(type: string, event: Record<string, unknown>): Promise<void> {
-    const record = this.makeRecord(type, event);
+    await this.writeEvent(this.makeRecord(type, event));
+  }
+
+  /** 写入已标准化的 TraceEvent，与其他导出器共享相同的事件标识和时间。 */
+  async writeEvent(record: TraceRecord): Promise<void> {
     this.writeQueue = this.writeQueue.then(() => this.write(record)).catch((error) => {
       this.onWarning(`运行记录写入失败：${error instanceof Error ? error.message : String(error)}`);
     });
@@ -55,22 +47,6 @@ export class JsonlTracer {
 
   async flush(): Promise<void> {
     await this.writeQueue;
-  }
-
-  private makeRecord(type: string, event: Record<string, unknown>): TraceRecord {
-    const runId = typeof event.runId === "string" ? event.runId : crypto.randomUUID();
-    const sequence = (this.sequences.get(runId) ?? 0) + 1;
-    this.sequences.set(runId, sequence);
-    const sanitized = traceEventFields(type, event);
-    return {
-      version: 2,
-      eventId: crypto.randomUUID(),
-      type,
-      timestamp: localIsoMilliseconds(this.now()),
-      sequence,
-      runId,
-      ...sanitized,
-    };
   }
 
   // 固定使用前台运行首个事件的本地日期，避免跨午夜拆分。
@@ -105,13 +81,13 @@ export class JsonlTracer {
 }
 
 /** 读取 trace 目录中的事件；损坏行作为错误记录返回，不猜测修复。 */
-export async function readTraceRecords(home: string, limit = 1_000): Promise<TraceRecord[]> {
-  const files = await readTraceFiles(home, limit);
+export async function readTraceRecords(home: string): Promise<TraceRecord[]> {
+  const files = await readTraceFiles(home);
   return files.flatMap((file) => file.records).sort(compareTraceRecords);
 }
 
 /** 按日期和带序号的 JSONL 文件读取运行记录。 */
-export async function readTraceFiles(home: string, limit = 1_000): Promise<TraceFile[]> {
+export async function readTraceFiles(home: string): Promise<TraceFile[]> {
   const directory = join(home, "traces");
   let dateDirectories: string[];
   try {
@@ -131,18 +107,20 @@ export async function readTraceFiles(home: string, limit = 1_000): Promise<Trace
     for (const file of files) {
       const text = await readFile(join(directory, dateDirectory, file), "utf8");
       const records: TraceRecord[] = [];
-      for (const line of text.split(/\r?\n/)) {
+      for (const [lineIndex, line] of text.split(/\r?\n/).entries()) {
         if (!line.trim()) continue;
         try {
-          records.push(JSON.parse(line) as TraceRecord);
+          const record = JSON.parse(line) as TraceRecord;
+          if (!record || typeof record.runId !== "string" || typeof record.type !== "string" || typeof record.timestamp !== "string" || !Number.isFinite(Date.parse(record.timestamp))) throw new Error("运行记录字段无效");
+          records.push(record);
         } catch {
           records.push({
             version: 2,
-            eventId: crypto.randomUUID(),
+            eventId: createHash("sha256").update(`${dateDirectory}/${file}:${lineIndex}`).digest("hex"),
             type: "trace_read_error",
-            timestamp: `${dateDirectory}T23:59:59`,
+            timestamp: `${dateDirectory}T23:59:59Z`,
             sequence: 0,
-            runId: crypto.randomUUID(),
+            runId: `corrupt-${createHash("sha256").update(`${dateDirectory}/${file}`).digest("hex")}`,
             payload: { file: `${dateDirectory}/${file}` },
           });
         }
@@ -151,15 +129,7 @@ export async function readTraceFiles(home: string, limit = 1_000): Promise<Trace
       traceFiles.push({ path: `${dateDirectory}/${file}`, records });
     }
   }
-  const boundedLimit = Math.max(1, Math.min(10_000, Math.trunc(limit)));
-  const selected = new Set(traceFiles.flatMap((file, fileIndex) => file.records.map((record, recordIndex) => ({
-    key: `${fileIndex}:${recordIndex}`,
-    record,
-  }))).sort((left, right) => compareTraceRecords(left.record, right.record)).slice(-boundedLimit).map((item) => item.key));
-  return traceFiles.flatMap((file, fileIndex) => {
-    const records = file.records.filter((_, recordIndex) => selected.has(`${fileIndex}:${recordIndex}`));
-    return records.length > 0 ? [{ ...file, records }] : [];
-  });
+  return traceFiles;
 }
 
 async function numberedTracePath(directory: string, sessionFile: string): Promise<string> {
@@ -200,122 +170,6 @@ async function validateJsonl(path: string): Promise<void> {
     throw error;
   }
   for (const line of text.split(/\r?\n/)) if (line.trim()) JSON.parse(line);
-}
-
-function traceEventFields(type: string, event: Record<string, unknown>): Record<string, unknown> {
-  const payloadFields: Record<string, string[]> = {
-    run_started: ["userInput", "provider", "model", "settings", "runtime"],
-    context_assembled: ["messageCount", "historyMessageCount", "hasSystemPrompt", "semanticMemoryIds", "sessionRecallSessionIds", "sessionRecallRanges", "sessionRecallEntryCount", "sessionRecallEstimatedTokens", "sessionRecallTruncated"],
-    gate_start: [],
-    gate_end: ["intent", "semantic", "sessionRecallMode", "reason", "fallback", "errorType"],
-    retrieval_start: ["mode", "intent"],
-    model_request: ["provider", "model", "request"],
-    model_response: ["provider", "model", "response", "stopReason", "tokenUsage", "ms"],
-    model_failed: ["provider", "model", "errorType", "errorMessage", "ms"],
-    stream_fallback: ["error"],
-    tool_started: ["tool"],
-    tool_completed: ["tool", "arguments", "result", "summary", "isError", "ms", "outputLength"],
-    tool_failed: ["tool", "arguments", "result", "summary", "isError", "ms", "outputLength"],
-    run_completed: [
-      "provider", "model", "reply", "iterations", "stopReason", "toolCallCount", "failedToolCallCount",
-      "derivedTaskIds", "ms", "retrievalMs", "modelMs", "toolMs",
-      "contextWindow", "maxTokens", "contextSafetyTokens", "availableInputTokens",
-      "peakEstimatedInputTokens", "peakInputTokens",
-    ],
-    run_failed: [
-      "provider", "model", "errorType", "errorMessage", "iterations", "cancelled", "timedOut",
-      "derivedTaskIds", "ms", "retrievalMs",
-    ],
-    consolidation_started: ["trigger", "attempt", "createdAt"],
-    consolidation_snapshot: ["batchIndex", "totalBatches", "factCount"],
-    consolidation_batch_started: ["batchIndex", "totalBatches", "factCount"],
-    consolidation_reviewed: ["batchIndex", "totalBatches", "decisionCount", "unresolvedConflicts"],
-    consolidation_change: ["batchIndex", "totalBatches", "action", "reasonCode", "targetId", "deletedIds"],
-    consolidation_batch_completed: ["batchIndex", "totalBatches", "completedBatches"],
-    consolidation_completed: ["attempt", "completedBatches"],
-    consolidation_retry: ["attempt", "errorType", "nextAttemptAt"],
-    consolidation_failed: ["attempt", "errorType", "nextAttemptAt"],
-    consolidation_batch_failed: ["batchIndex", "totalBatches", "errorType"],
-    consolidation_model_started: ["batchIndex", "totalBatches", "model"],
-    consolidation_model_completed: ["batchIndex", "totalBatches", "model", "durationMs"],
-    consolidation_model_failed: ["batchIndex", "totalBatches", "model", "errorType"],
-    memory_task_started: ["attempt"],
-    memory_task_completed: ["attempt"],
-    memory_task_retry: ["attempt", "errorType", "nextAttemptAt"],
-    memory_task_failed: ["attempt", "errorType", "nextAttemptAt"],
-    memory_change_replayed: ["candidateId", "action", "targetId"],
-    memory_candidate_extracted: ["candidateId", "intent", "evidenceMessageIds"],
-    memory_search_completed: ["candidateId", "attempt", "revision", "candidateIds"],
-    memory_model_started: ["candidateId", "batchIndex", "totalBatches", "model"],
-    memory_model_completed: ["candidateId", "batchIndex", "totalBatches", "model", "durationMs"],
-    memory_model_failed: ["candidateId", "batchIndex", "totalBatches", "model", "errorType"],
-    memory_decision_completed: ["candidateId", "attempt", "action", "reasonCode", "targetId", "sourceIds", "evidenceMessageIds"],
-    memory_validation_completed: ["candidateId", "attempt", "action"],
-    memory_conflict: ["candidateId", "attempt"],
-    memory_change_completed: ["candidateId", "action", "reasonCode", "targetId", "deletedIds", "durationMs"],
-    memory_change_failed: ["candidateId", "errorType", "durationMs"],
-    embedding_started: ["purpose", "batchIndex", "itemCount", "estimatedTokens", "rebuildId"],
-    embedding_completed: ["purpose", "batchIndex", "itemCount", "estimatedTokens", "tokenUsage", "dimensions", "ms", "rebuildId"],
-    embedding_failed: ["purpose", "batchIndex", "itemCount", "estimatedTokens", "errorType", "errorMessage", "ms", "rebuildId"],
-    embedding_rebuild_started: ["generationId", "rebuildId"],
-    embedding_rebuild_progress: ["generationId", "rebuildId", "processedChunks"],
-    embedding_generation_activated: ["generationId", "rebuildId", "chunkCount"],
-    embedding_rebuild_completed: ["generationId", "rebuildId", "chunkCount"],
-    embedding_rebuild_failed: ["generationId", "rebuildId", "errorType"],
-    embedding_rebuild_cancelled: ["generationId", "rebuildId"],
-    dense_retrieval_completed: ["corpus", "candidateCount"],
-    lexical_retrieval_completed: ["corpus", "candidateCount"],
-    rrf_completed: ["corpus", "candidateCount"],
-    mmr_completed: ["corpus", "selected", "excludedAsDuplicate"],
-    retrieval_completed: ["semantic", "sessionRecall", "semanticCount", "sessionCount", "mode"],
-    user_feedback: ["rating", "correction"],
-    eval_judgment: ["evaluator", "evaluatorVersion", "scores", "reason"],
-    trace_read_error: ["file"],
-  };
-  const output: Record<string, unknown> = {};
-  for (const key of ["taskId", "taskKind", "taskCreatedAt", "sourceRunId"]) if (typeof event[key] === "string") output[key] = event[key];
-  if (typeof event.sessionId === "string") output.sessionId = event.sessionId;
-  if (typeof event.iteration === "number") output.iteration = event.iteration;
-  if (typeof event.modelCallId === "string") output.modelCallId = event.modelCallId;
-  if (typeof event.toolCallId === "string") output.toolCallId = event.toolCallId;
-  const payload = Object.fromEntries((payloadFields[type] ?? []).flatMap((key) => event[key] === undefined
-    ? []
-    : [[key, sanitizeTraceValue(event[key], key)]]));
-  if (type.startsWith("consolidation_") && typeof event.attempt === "number") payload.attempt = event.attempt;
-  if (Object.keys(payload).length > 0) output.payload = payload;
-  return output;
-}
-
-function sanitizeTraceValue(value: unknown, key: string): unknown {
-  if (isCredentialField(key)) return "[凭证已移除]";
-  if (typeof value === "string") return removeCredentialText(value);
-  if (Array.isArray(value)) {
-    return value.map((item) => sanitizeTraceValue(item, ""));
-  }
-  if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(Object.entries(value)
-    .map(([itemKey, itemValue]) => [itemKey, sanitizeTraceValue(itemValue, itemKey)]));
-}
-
-function isCredentialField(key: string): boolean {
-  const normalized = key.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
-  if (/(?:^|_)token_(?:count|limit|budget|usage)$/.test(normalized)) return false;
-  return /(?:^|_)(?:api_key|authorization|cookie|token|access_token|refresh_token|auth_token|secret|client_secret|password)(?:$|_)/.test(normalized);
-}
-
-function removeCredentialText(value: string): string {
-  return value
-    .replace(/\b(?:sk|key|token)-[A-Za-z0-9_-]{8,}\b/gi, "[凭证已移除]")
-    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [凭证已移除]");
-}
-
-function localIsoMilliseconds(date: Date): string {
-  const pad = (value: number) => String(value).padStart(2, "0");
-  const milliseconds = String(date.getMilliseconds()).padStart(3, "0");
-  const offset = -date.getTimezoneOffset();
-  const sign = offset >= 0 ? "+" : "-";
-  const absolute = Math.abs(offset);
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${milliseconds}${sign}${pad(Math.floor(absolute / 60))}:${pad(absolute % 60)}`;
 }
 
 function isMissing(error: unknown): boolean {

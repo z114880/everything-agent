@@ -257,7 +257,8 @@ async function handleAgentRequest(
   }
 
   if (request.method === "GET" && pathname === `${agentApiPrefix}/traces`) {
-    sendJson(response, 200, await loadTraceDashboard());
+    const query = new URL(request.url ?? "/", "http://localhost").searchParams;
+    sendJson(response, 200, await loadTraceDashboard({ ...(query.get("cursor") ? { cursor: query.get("cursor")! } : {}), ...(query.get("runId") ? { runId: query.get("runId")! } : {}) }));
     return;
   }
 

@@ -20,3 +20,5 @@ description: "准备会前材料和风险清单"
 名称只能包含小写英文字母、数字和单个连字符，且必须与目录名一致。`SkillStore` 提供列表、读取、原子保存、重命名和删除；重命名移动完整目录，因此配套资源不会丢失。
 
 Agent 每轮开始时重新读取目录，只把名称和描述加入 System Prompt。模型决定使用某项 Skill 后，必须调用 `read_skill` 获取正文。`skills_discovered` 和 `skill_loaded` 事件只记录目录元数据，`tool_completed` 也不会暴露 Skill 正文；实际模型请求仍遵循现有 trace 输入快照规则。
+
+`skill_loaded` 额外记录 Skill 正文的 SHA-256 `contentHash` 与 `instructionLength`，用于核对执行时加载的版本，不在该事件中保存正文。

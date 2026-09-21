@@ -223,6 +223,13 @@ describe("Memory Runtime", () => {
       ]), "current"),
       observer: (kind, data) => { events.push({ kind, data }) },
     });
+    for (const [startKind, endKind] of [["gate_start", "gate_end"], ["retrieval_start", "retrieval_completed"]]) {
+      const start = events.find(event => event.kind === startKind)!.data;
+      const end = events.find(event => event.kind === endKind)!.data;
+      expect(start.operationId).toEqual(expect.any(String));
+      expect(end.operationId).toBe(start.operationId);
+    }
+    expect(events.find(event => event.kind === "gate_start")!.data.model).toEqual(expect.any(String));
     const kinds = events.map((event) => event.kind);
     expect(kinds).not.toContain("retrieval");
     expect(kinds.filter((kind) => kind === "retrieval_start")).toHaveLength(1);

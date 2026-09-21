@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { AgentObserver, ToolExecutionContext } from "../agent-loop/agent-loop.ts";
 import type { SkillStore } from "./skill-store.ts";
 
@@ -37,6 +38,7 @@ export class ReadSkillTool {
       description: skill.description,
       path: skill.path,
       instructionLength: skill.instructions.length,
+      contentHash: createHash("sha256").update(skill.instructions).digest("hex"),
       iteration: context.iteration,
       toolCallId: context.toolUseId,
     });

@@ -1,9 +1,10 @@
+import { createRuntimeTracer } from "../tracing/runtime-tracer.ts";
 import { join } from "node:path";
 import { RoughTokenEstimator } from "../model/token-estimator.ts";
 import { LocalToolRegistry } from "../tools/tool-registry.ts";
 import { ManageMemoryTool } from "../tools/manage-memory.ts";
 import { MemoryRuntime } from "../memory/index.ts";
-import { JsonlTracer, readTraceFiles } from "../tracing/jsonl-tracer.ts";
+import { readTraceFiles } from "../tracing/jsonl-tracer.ts";
 import { AgentLoopAbortError, AgentLoopTimeoutError, runAgentLoop } from "../agent-loop/agent-loop.ts";
 import type { AgentMessage, AgentObserver } from "../agent-loop/agent-loop.ts";
 import { ApprovalRegistry } from "./approval-registry.ts";
@@ -31,7 +32,7 @@ import { RUNTIME_SYSTEM_PROMPT } from "./system-prompt.ts";
 const DEFAULT_TIMEOUT_MS = 300_000;
 
 /** 创建本地个人助理 Runtime；资源与会话锁由实例独立持有。 */
-export function createAgentRuntime(paths: LocalConfigPaths) {
+export function createAgentRuntime(paths: LocalConfigPaths, options: { langfuse?: boolean } = {}) {
   const everythingHome = paths.home;
   const config = createLocalConfig(paths);
   const { readSystemPrompt } = config;
@@ -44,7 +45,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
   const loadRuntimeSettings = settingsStore.load;
   let closed = false;
   let memoryRuntime: MemoryRuntime | null = null;
-  let tracer: JsonlTracer | null = null;
+  let tracer: ReturnType<typeof createRuntimeTracer> | null = null;
   let recoveryScheduled = false;
   let dailyConsolidation: DailyConsolidationCheck | null = null;
   let dataClearing = false;
@@ -378,7 +379,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
 
   /** 读取本地追踪文件，展示结构由宿主组装。 */
   async function readTraces() {
-    return readTraceFiles(everythingHome, 2_000);
+    return readTraceFiles(everythingHome);
   }
 
   /** 列出可用 Skills；损坏的 SKILL.md 会阻止返回不完整目录。 */
@@ -412,7 +413,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
         memoryRuntime.stopBackgroundTasks();
         await memoryRuntime.waitForBackgroundTasks();
       }
-      if (tracer) await tracer.flush();
+      if (tracer) await tracer.close();
       memoryRuntime?.close();
       memoryRuntime = null;
       tracer = null;
@@ -430,8 +431,8 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
     return memoryRuntime;
   }
 
-  function getTracer(): JsonlTracer {
-    tracer ??= new JsonlTracer(everythingHome);
+  function getTracer(): ReturnType<typeof createRuntimeTracer> {
+    tracer ??= createRuntimeTracer(everythingHome, options.langfuse !== false);
     return tracer;
   }
 
@@ -519,7 +520,7 @@ export function createAgentRuntime(paths: LocalConfigPaths) {
         memoryRuntime.stopBackgroundTasks();
         await memoryRuntime.waitForBackgroundTasks();
       }
-      if (tracer) await tracer.flush();
+      if (tracer) await tracer.close();
       memoryRuntime?.close();
       closed = true;
     } finally {

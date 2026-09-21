@@ -127,7 +127,7 @@ describe("JSONL 运行记录", () => {
     expect(files[1]?.records[0]?.runId).toBe("r3");
   });
 
-  it("重启后继续写入原 run 编号，并按限额保留最新事件", async () => {
+  it("重启后继续写入原 run 编号，并保留完整事件", async () => {
     const home = await mkdtemp(join(tmpdir(), "everything-trace-"));
     const firstTracer = new JsonlTracer(home, { now: () => new Date("2026-09-03T08:00:00Z") });
     await firstTracer.record("run_started", { runId: "r1", sessionId: "s1" });
@@ -140,7 +140,11 @@ describe("JSONL 运行记录", () => {
 
     const directory = join(home, "traces", "2026-09-03");
     expect((await readdir(directory)).sort()).toEqual(["001-run-r1.jsonl", "002-run-r2.jsonl"]);
-    expect(await readTraceFiles(home, 1)).toEqual([
+    expect(await readTraceFiles(home)).toEqual([
+      expect.objectContaining({
+        path: "2026-09-03/001-run-r1.jsonl",
+        records: [expect.objectContaining({ runId: "r1" }), expect.objectContaining({ runId: "r1" })],
+      }),
       expect.objectContaining({
         path: "2026-09-03/002-run-r2.jsonl",
         records: [expect.objectContaining({ runId: "r2" })],
@@ -170,7 +174,7 @@ describe("JSONL 运行记录", () => {
     const directory = join(home, "traces", "2026-09-03");
     await mkdir(directory, { recursive: true });
     await writeFile(join(directory, "001-run-r1.jsonl"), '{"version":1,"type":"turn_end","timestamp":"2026-09-03T08:00:00Z","runId":"r1"}\n损坏\n', "utf8");
-    expect(await readTraceRecords(home, 100)).toEqual([
+    expect(await readTraceRecords(home)).toEqual([
       expect.objectContaining({ type: "turn_end", runId: "r1" }),
       expect.objectContaining({ type: "trace_read_error", payload: { file: "2026-09-03/001-run-r1.jsonl" } }),
     ]);
@@ -195,7 +199,7 @@ describe("JSONL 运行记录", () => {
       rawPrompt: "不能出现",
     });
     await tracer.flush();
-    const [record] = await readTraceRecords(home, 0);
+    const [record] = await readTraceRecords(home);
 
     expect(record?.runId).toEqual(expect.any(String));
     expect(JSON.stringify(record?.payload?.semantic)).toContain("凭证已移除");

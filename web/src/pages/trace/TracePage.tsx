@@ -1,34 +1,62 @@
-import { ChevronRight, FileJson, RefreshCw } from "lucide-react";
-import { useEffect, useState } from "react";
-import { loadTraces, type TraceDashboard } from "../../agent-api";
+import { ChevronLeft, ChevronRight, FileJson, RefreshCw } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { loadTraces, loadTraceRun, type TraceFile, type TraceDashboard } from "../../agent-api";
 import { MINIMUM_FEEDBACK_DURATION_MS, withMinimumDuration } from "../../lib/minimum-duration";
 import { Button } from "../../components/ui/button";
 import { PageHeading } from "../../components/PageHeading";
 import { SaveMessage } from "../../components/SaveMessage";
 
-const EMPTY_DASHBOARD: TraceDashboard = { files: [] };
+const EMPTY_DASHBOARD: TraceDashboard = { runs: [], nextCursor: null };
 
 /** 按 JSONL 文件原样列出 Trace，不在页面中推导 Session 或回合结构。 */
 export function TracePage() {
   const [dashboard, setDashboard] = useState<TraceDashboard>(EMPTY_DASHBOARD);
+  const [files, setFiles] = useState<TraceFile[]>([]);
+  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
+  const requestNumber = useRef(0);
   const [error, setError] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const reload = async (minimumDurationMs = 0) => {
+  const reload = async (minimumDurationMs = 0, cursor?: string) => {
+    const current = ++requestNumber.current;
     setError("");
     setLoading(true);
     try {
-      setDashboard(await withMinimumDuration(loadTraces, minimumDurationMs));
+      const result = await withMinimumDuration(async () => {
+        const page = await loadTraces(cursor);
+        const details = await Promise.all(page.runs.map((run) => loadTraceRun(run.runId)));
+        // 关联后台任务可能出现在多个运行详情中，同一文件中的事件只展示一次。
+        const grouped = new Map<string, Map<string, TraceFile["records"][number]>>();
+        for (const detail of details) for (const file of detail.files) {
+          const records = grouped.get(file.path) ?? new Map();
+          for (const record of file.records) records.set(record.eventId ?? JSON.stringify(record), record);
+          grouped.set(file.path, records);
+        }
+        const pageFiles = [...grouped].sort(([a], [b]) => {
+          const [leftDate, leftName = ""] = a.split("/");
+          const [rightDate, rightName = ""] = b.split("/");
+          const sequence = (name: string) => Number(/^(\d+)-/.exec(name)?.[1] ?? Number.MAX_SAFE_INTEGER);
+          return rightDate!.localeCompare(leftDate!) || sequence(rightName) - sequence(leftName) || b.localeCompare(a);
+        }).map(([path, records]) => ({
+          path,
+          records: [...records.values()].sort((a, b) => a.timestamp.localeCompare(b.timestamp) || (a.sequence ?? 0) - (b.sequence ?? 0)),
+        }));
+        return { page, files: pageFiles };
+      }, minimumDurationMs);
+      if (current !== requestNumber.current) return false;
+      setDashboard(result.page);
+      setFiles(result.files);
+      setCursors((previous) => cursor === undefined ? [undefined] : previous);
       return true;
     } catch (value) {
-      setError(value instanceof Error ? value.message : String(value));
+      if (current === requestNumber.current) setError(value instanceof Error ? value.message : String(value));
       return false;
     } finally {
-      setLoading(false);
+      if (current === requestNumber.current) setLoading(false);
     }
   };
-  useEffect(() => { void reload(); }, []);
+  useEffect(() => { void reload(); return () => { requestNumber.current++; }; }, []);
 
   async function refresh() {
     if (loading) return;
@@ -45,9 +73,9 @@ export function TracePage() {
     <PageHeading eyebrow="JSONL traces" title="Traces" description="按文件查看已脱敏的 JSONL 事件。" descriptionActions={<Button size="sm" loading={refreshing} onClick={() => void refresh()}><RefreshCw size={14} /> 刷新数据</Button>} />
     <SaveMessage message={saveMessage} setMessage={setSaveMessage} />
     {error && <div className="error-message" role="alert">{error}</div>}
-    {!error && dashboard.files.length === 0 && <div className="panel trace-empty">No traces yet.</div>}
-    <div className="trace-file-list">
-      {dashboard.files.slice().reverse().map((file) => <details className="panel trace-file" open key={file.path}>
+    {!loading && !error && dashboard.runs.length === 0 && <div className="panel trace-empty">No traces yet.</div>}
+    <div className="trace-file-list" aria-busy={loading}>
+      {files.map((file) => <details className="panel trace-file" open key={file.path}>
         <summary className="trace-file-summary">
           <ChevronRight className="trace-file-chevron" size={14} />
           <FileJson size={15} />
@@ -67,5 +95,15 @@ export function TracePage() {
         </div>
       </details>)}
     </div>
+    <nav className="trace-pagination" aria-label="Trace 分页">
+      <span className="trace-pagination-summary" role="status">
+        {loading ? "正在加载…" : `本页 ${dashboard.runs.length} 次运行 · ${files.length} 个文件`}
+      </span>
+      <div className="trace-pagination-controls">
+        <Button variant="outline" size="sm" disabled={loading || cursors.length < 2} onClick={() => { const next = cursors.slice(0, -1); void reload(0, next.at(-1)).then((success) => { if (success) setCursors(next); }); }}><ChevronLeft size={14} />上一页</Button>
+        <span className="trace-pagination-page" aria-current="page">第 {cursors.length} 页</span>
+        <Button variant="outline" size="sm" disabled={loading || !dashboard.nextCursor} onClick={() => { const cursor = dashboard.nextCursor!; void reload(0, cursor).then((success) => { if (success) setCursors([...cursors, cursor]); }); }}>下一页<ChevronRight size={14} /></Button>
+      </div>
+    </nav>
   </div>;
 }

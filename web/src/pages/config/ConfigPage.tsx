@@ -1095,7 +1095,7 @@ function AllDataClearDialog({
           <AlertDialogTitle>永久清除全部本地数据？</AlertDialogTitle>
           <AlertDialogDescription>
             数据库、会话、记忆、索引和运行记录都会被删除。EVERYTHING.md、Skills、config.json
-            与 .everything/.env 密钥将保留；如已完整配置
+            与 .everything/.env 密钥、.everything/langfuse.env 连接配置将保留；如已完整配置
             Embedding，清理后会自动重建向量索引。
           </AlertDialogDescription>
         </AlertDialogHeader>

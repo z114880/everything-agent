@@ -128,7 +128,7 @@ describe("合并写入现有数据目录", () => {
     const result = await seedMockData({ home, sessionCount: 20 });
 
     // 验证真实生成产物：同一会话的多轮执行必须分文件，不能重新合并为 Session 文件。
-    const traceFiles = await readTraceFiles(home, Number.MAX_SAFE_INTEGER);
+    const traceFiles = await readTraceFiles(home);
     const runFiles = traceFiles.filter((file) => /\/\d+-run-/.test(file.path));
     expect(runFiles).toHaveLength(result.runsExecuted);
     expect(runFiles.length).toBeGreaterThan(result.sessionsCreated);

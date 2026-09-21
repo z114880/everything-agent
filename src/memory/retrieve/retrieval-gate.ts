@@ -35,7 +35,8 @@ export async function decideRetrieval(
   history: AgentMessage[],
   observer: AgentObserver = () => {},
 ): Promise<GateDecision> {
-  await observer("gate_start", {});
+  const operationId = crypto.randomUUID();
+  await observer("gate_start", { operationId, model });
   try {
     const context = history.map((item) => `${item.role}: ${plainText(item.content)}`).join("\n");
     const response = await client.messages.create({
@@ -46,14 +47,14 @@ export async function decideRetrieval(
     const text = response.content.filter((block) => block.type === "text").map((block) => block.text ?? "").join("");
     const json = parseModelJsonObject(text);
     const decision = parseDecision(json, message);
-    await observer("gate_end", gateEvent(decision));
+    await observer("gate_end", { ...gateEvent(decision), operationId, model, tokenUsage: response.tokenUsage });
     return decision;
   } catch (error) {
     const decision: GateDecision = {
       intent: "fact_with_evidence", denseQuery: message, lexicalQuery: message, sessionRecall: { mode: "search", query: message },
       reason: "检索判定失败，对 Semantic Memory 与 Session Recall 执行回退检索", fallback: true,
     };
-    await observer("gate_end", { ...gateEvent(decision), errorType: error instanceof Error ? error.name : "UnknownError" });
+    await observer("gate_end", { ...gateEvent(decision), operationId, model, errorType: error instanceof Error ? error.name : "UnknownError" });
     return decision;
   }
 }

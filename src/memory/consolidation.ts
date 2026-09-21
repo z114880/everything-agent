@@ -62,7 +62,7 @@ export class MemoryConsolidation {
               const response = await abortable(Promise.resolve(options.client.messages.create(request(facts))), signal);
               if ([response.stop_reason, response.stopReason].some((reason) => reason === "max_tokens" || reason === "length")) throw new TypeError("Consolidate 模型输出被截断");
               plan = readPlan(parseModelJsonObject(response.content.filter((item) => item.type === "text").map((item) => item.text ?? "").join("")), new Set(facts.map((fact) => fact.id)));
-              await emit("consolidation_model_completed", { ...fields, durationMs: Math.round(performance.now() - started) });
+              await emit("consolidation_model_completed", { ...fields, tokenUsage: response.tokenUsage, durationMs: Math.round(performance.now() - started) });
             } catch (error) {
               await emit("consolidation_model_failed", { ...fields, errorType: error instanceof Error ? error.name : "UnknownError" });
               throw error;
