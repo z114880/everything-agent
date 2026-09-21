@@ -164,7 +164,7 @@ export class EvaluationService {
             if (kind === 'tool_started') item.toolCalls++;
             if (kind === 'model_request' && event.request && typeof event.request === 'object' && 'model' in event.request && typeof event.request.model === 'string') item.model = event.request.model;
             // 模型完整上下文含日常记忆，评估只保留调用元数据和用量。
-            const data = Object.fromEntries(['runId', 'sessionId', 'iteration', 'modelCallId', 'toolCallId', 'tool', 'isError', 'ms', 'tokenUsage', 'stopReason', 'approvalId', 'kind', 'command', 'reason', 'detail', 'approved', 'errorType', 'summary'].filter(key => event[key] !== undefined).map(key => [key, event[key]]));
+            const data = projectEvaluationEvent(kind, event);
             item.events.push({ sequence: item.events.length + 1, kind, timestamp: new Date().toISOString(), data: redactEvaluation(data, this.secrets) as Record<string, unknown> });
             if (kind === 'approval_requested') item.status = 'waiting_approval';
             if (kind === 'approval_resolved') { item.status = 'running'; if (event.approved === false) item.approvalDenied = true; }
@@ -200,6 +200,32 @@ export class EvaluationService {
     this.writes.set(run.id, task); return task;
   }
 }
+/**
+ * 事件顶层允许进入评估记录的键。
+ *
+ * 审批命令、理由和详情保留在本地记录里供审计；这些事件不在 publish 的回传范围内，
+ * 所以它们不会出现在平台上。新增回传事件类型时必须重新检查这条前提。
+ */
+const SAFE_EVENT_KEYS = ['runId', 'sessionId', 'iteration', 'modelCallId', 'toolCallId', 'tool', 'isError', 'ms', 'outputLength', 'tokenUsage', 'stopReason', 'approvalId', 'kind', 'command', 'reason', 'detail', 'approved', 'errorType', 'summary'];
+/** 工具结果里允许进入评估记录的统计键；终端命令、工作目录、检索查询和正文都不在其中。 */
+const SAFE_TOOL_RESULT_KEYS = ['exitCode', 'stdoutLength', 'stderrLength', 'truncated', 'timedOut', 'action', 'reasonCode', 'targetId', 'instructionLength'];
+
+/**
+ * 把一个观察者事件投影成评估记录。
+ *
+ * 评估记录既本地持久化也会回传平台，因此这里只保留标识、枚举和统计字段：模型请求、
+ * 检索上下文和工具正文都不进入记录。工具结果按固定键名筛选，所以没有专用脱敏的工具
+ * （例如 search_web、get_current_time）也不会把原始结果带出来。
+ */
+function projectEvaluationEvent(kind: string, event: Record<string, unknown>): Record<string, unknown> {
+  const data = Object.fromEntries(SAFE_EVENT_KEYS.filter(key => event[key] !== undefined).map(key => [key, event[key]]));
+  if (kind !== 'tool_completed' && kind !== 'tool_failed') return data;
+  const result = event.result;
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return data;
+  const safe = Object.fromEntries(SAFE_TOOL_RESULT_KEYS.filter(key => (result as Record<string, unknown>)[key] !== undefined).map(key => [key, (result as Record<string, unknown>)[key]]));
+  return Object.keys(safe).length > 0 ? { ...data, result: safe } : data;
+}
+
 /** 验证数据集输入，拒绝任意 Runtime 配置和远程工具定义。 */
 export function evaluationTurns(input: unknown): string[] {
   if (typeof input === 'string') return [text(input, '用例输入', 40_000)];

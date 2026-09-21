@@ -217,6 +217,35 @@ describe('Langfuse v4 协议', () => {
     expect(spans[1].attributes).toContainEqual({ key: 'langfuse.observation.usage_details', value: { stringValue: '{"input":10,"output":20}' } });
     expect(JSON.stringify(spans)).not.toContain('私有系统提示');
   });
+  it('执行痕迹只带统计字段，命令与工具正文既不入记录也不回传平台', async () => {
+    const { service } = await setup(async (_, options) => {
+      await options.observer('tool_completed', { toolCallId: 't1', tool: 'run_terminal', isError: false, ms: 12, outputLength: 0, summary: '工具执行完成',
+        result: { command: 'cat .everything/.env', workdir: '/tmp/ws', exitCode: 0, stdoutLength: 431, stderrLength: 0, timeout_ms: 1_000 } });
+      await options.observer('tool_completed', { toolCallId: 't2', tool: 'search_web', isError: false, ms: 30, outputLength: 120, summary: '工具执行完成',
+        result: { query: '私密查询', results: [{ title: '私密标题' }] } });
+      await options.observer('tool_failed', { toolCallId: 't3', tool: 'run_terminal', isError: true, ms: 5_000, outputLength: 8_192, summary: '工具执行失败',
+        result: { command: 'sleep 999', stdoutLength: 4_096, stderrLength: 0, timedOut: true, truncated: true } });
+      throw new Error('本轮结束');
+    });
+    const { id } = await service.start({ datasetName: '痕迹' }); await service.wait(id);
+    const record = service.list()[0]!;
+    expect(record.items[0]?.events[0]?.data).toMatchObject({ tool: 'run_terminal', outputLength: 0, result: { exitCode: 0, stdoutLength: 431, stderrLength: 0 } });
+    // search_web 没有专用脱敏结果，按键名投影后不保留任何结果字段。
+    expect(record.items[0]?.events[1]?.data.result).toBeUndefined();
+    expect(JSON.stringify(record)).not.toContain('.everything/.env');
+    expect(JSON.stringify(record)).not.toContain('私密查询');
+    const mocked = vi.fn(async (_url: unknown, _init: RequestInit) => Response.json({})); vi.stubGlobal('fetch', mocked);
+    const client = new LangfuseEvaluationClient({ baseUrl: 'http://localhost:3300', publicKey: 'pk', secretKey: 'sk', projectId: 'p' });
+    await client.publish(record, record.items[0]!);
+    const body = mocked.mock.calls[0]![1].body as string;
+    const root = JSON.parse(body).resourceSpans[0].scopeSpans[0].spans[0];
+    const trace = root.attributes.find((item: { key: string }) => item.key === 'langfuse.observation.metadata.execution_trace').value.stringValue as string;
+    expect(trace).toContain('run_terminal | exit=0 | stdout=431B | stderr=0B | 返回=0字符 | 成功');
+    expect(trace).toContain('search_web | 返回=120字符 | 成功');
+    expect(trace).toContain('run_terminal | stdout=4096B | stderr=0B | 返回=8192字符 | 超时 | 输出被截断 | 失败');
+    expect(body).not.toContain('.everything/.env');
+    expect(body).not.toContain('私密查询');
+  });
   it('SDK 读取固定版本并排除归档用例，保留显式终端标记', async () => {
     const fetched = vi.fn(async (url: string | URL | Request) => {
       if (String(url).includes('/dataset-items')) return Response.json({ data: [

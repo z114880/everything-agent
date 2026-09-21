@@ -52,10 +52,12 @@ export class LangfuseEvaluationClient {
       'langfuse.experiment.item.root_observation_id': item.observationId,
       'langfuse.experiment.metadata.memory_snapshot': String(run.memorySnapshot),
     };
+    const trace = executionTrace(item);
     const root = span(item.traceId, item.observationId, undefined, 'Everything Agent', item.startedAt!, item.finishedAt!, {
       ...shared, 'langfuse.observation.type': 'agent',
       'langfuse.observation.input': JSON.stringify(item.input),
       'langfuse.observation.output': JSON.stringify(item.output.length === 1 ? item.output[0] : item.output),
+      ...(trace ? { 'langfuse.observation.metadata.execution_trace': trace } : {}),
       'langfuse.experiment.item.expected_output': JSON.stringify(item.expectedOutput ?? null),
       'langfuse.observation.metadata.execution_status': item.status,
       ...(item.error ? { 'langfuse.observation.status_message': item.error, 'langfuse.observation.level': 'ERROR' } : {}),
@@ -87,6 +89,34 @@ export class LangfuseEvaluationClient {
     return await response.json() as T;
   }
 }
+/** 一次工具调用压成一行可核对痕迹；只含统计与枚举，命令和输出正文都不进入平台。 */
+function describeToolCall(data: Record<string, unknown>): string {
+  const result = (data.result && typeof data.result === 'object' ? data.result : {}) as Record<string, unknown>;
+  const parts = [String(data.tool)];
+  if (typeof result.exitCode === 'number') parts.push(`exit=${result.exitCode}`);
+  if (typeof result.stdoutLength === 'number') parts.push(`stdout=${result.stdoutLength}B`);
+  if (typeof result.stderrLength === 'number') parts.push(`stderr=${result.stderrLength}B`);
+  if (typeof data.outputLength === 'number') parts.push(`返回=${data.outputLength}字符`);
+  if (result.timedOut === true) parts.push('超时');
+  if (result.truncated === true) parts.push('输出被截断');
+  parts.push(data.isError === true ? '失败' : '成功');
+  return parts.join(' | ');
+}
+
+/**
+ * 生成挂在根 observation 上的执行痕迹。
+ *
+ * Langfuse 的评估器只读被规则匹配到的那一个 observation，不会加载同一 trace 的子
+ * observation，所以痕迹必须写在根节点上，评估器才能用 JSONPath 把它映射成变量。
+ */
+function executionTrace(item: EvaluationItem): string {
+  const lines = item.events
+    .filter(event => event.kind === 'tool_completed' || event.kind === 'tool_failed')
+    .map((event, index) => `${index + 1}. ${describeToolCall(event.data)}`);
+  if (lines.length === 0) return '';
+  return `自动生成的脱敏执行痕迹（不含命令内容与工具输出正文）：\n${lines.join('\n')}`;
+}
+
 function attributes(values: Record<string, string | undefined>) { return Object.entries(values).filter((entry): entry is [string, string] => entry[1] !== undefined).map(([key, value]) => ({ key, value: { stringValue: value } })); }
 function span(traceId: string, spanId: string, parentSpanId: string | undefined, name: string, start: string, end: string, values: Record<string, string | undefined>, failed: boolean) {
   return { traceId, spanId, ...(parentSpanId ? { parentSpanId } : {}), name, kind: 1,
