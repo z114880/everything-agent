@@ -207,8 +207,10 @@ export class EvaluationService {
  * 所以它们不会出现在平台上。新增回传事件类型时必须重新检查这条前提。
  */
 const SAFE_EVENT_KEYS = ['runId', 'sessionId', 'iteration', 'modelCallId', 'toolCallId', 'tool', 'isError', 'ms', 'outputLength', 'tokenUsage', 'stopReason', 'approvalId', 'kind', 'command', 'reason', 'detail', 'approved', 'errorType', 'summary'];
-/** 工具结果里允许进入评估记录的统计键；终端命令、工作目录、检索查询和正文都不在其中。 */
-const SAFE_TOOL_RESULT_KEYS = ['exitCode', 'stdoutLength', 'stderrLength', 'truncated', 'timedOut', 'action', 'reasonCode', 'targetId', 'instructionLength'];
+/** 工具结果里允许进入评估记录的键；工作目录、检索查询、技能说明和工具正文都不在其中。 */
+const SAFE_TOOL_RESULT_KEYS = ['command', 'exitCode', 'stdoutLength', 'stderrLength', 'truncated', 'timedOut', 'instructionLength'];
+/** 命令上限：完整命令仍留在本地 Runtime trace 的 JSONL 里，评估记录和平台回传只保留前缀。 */
+const MAX_RECORDED_COMMAND_LENGTH = 500;
 
 /**
  * 把一个观察者事件投影成评估记录。
@@ -222,7 +224,12 @@ function projectEvaluationEvent(kind: string, event: Record<string, unknown>): R
   if (kind !== 'tool_completed' && kind !== 'tool_failed') return data;
   const result = event.result;
   if (!result || typeof result !== 'object' || Array.isArray(result)) return data;
-  const safe = Object.fromEntries(SAFE_TOOL_RESULT_KEYS.filter(key => (result as Record<string, unknown>)[key] !== undefined).map(key => [key, (result as Record<string, unknown>)[key]]));
+  const source = result as Record<string, unknown>;
+  // 技能名是 read_skill 独有的短标识，按工具单独放行；把通用的 name 加进白名单，会让
+  // 其它工具将来返回的同名键静默漏出去。
+  const keys = event.tool === 'read_skill' ? [...SAFE_TOOL_RESULT_KEYS, 'name'] : SAFE_TOOL_RESULT_KEYS;
+  const safe: Record<string, unknown> = Object.fromEntries(keys.filter(key => source[key] !== undefined).map(key => [key, source[key]]));
+  if (typeof safe.command === 'string' && safe.command.length > MAX_RECORDED_COMMAND_LENGTH) safe.command = `${safe.command.slice(0, MAX_RECORDED_COMMAND_LENGTH)}…`;
   return Object.keys(safe).length > 0 ? { ...data, result: safe } : data;
 }
 

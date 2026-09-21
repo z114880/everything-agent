@@ -55,7 +55,7 @@ Evaluation 展示连接状态、数据集、运行记录、用例输入与输出
 
 实验和模型／工具子节点通过官方 OTLP HTTP 协议回传到 Langfuse v4，携带 experiment、dataset、item 和根 observation 关联字段。Engine 的 `Graph.describe()` 与调度不受影响。
 
-实验根 Agent observation 另外携带脱敏执行痕迹 `langfuse.observation.metadata.execution_trace`，按顺序列出每次工具调用的工具名、退出码、输出长度和成败。痕迹是必要的：Langfuse v4 的评估器只读被规则匹配到的那一个 observation，不会加载同一 trace 的兄弟或子 observation，因此工具执行证据只有写在根节点上，模型裁判才可能看到。
+实验根 Agent observation 另外携带脱敏执行痕迹 `langfuse.observation.metadata.execution_trace`，按顺序列出每次工具调用的工具名、终端命令、退出码、输出长度和成败。痕迹是必要的：Langfuse v4 的评估器只读被规则匹配到的那一个 observation，不会加载同一 trace 的兄弟或子 observation，因此工具执行证据只有写在根节点上，模型裁判才可能看到。终端命令是判断“跑的到底是不是那条命令”的唯一依据，因此包含在内，但截断到 500 字符；完整命令仍留在用例副本的 Runtime trace JSONL 里。
 
 执行状态、同步状态、评分分开保存。HTTP 错误或 OTLP 部分拒收会显示同步失败；“刷新评分／重试同步”只重传同一组 trace/span ID，不重新调用 Agent。平台评分通过 v3 Scores API 查询用例根 observation，尚未收到评分时显示等待。首版不配置隐含质量阈值，也不把“执行完成”或“收到评分”推断为通过。
 
@@ -65,7 +65,7 @@ Evaluation 展示连接状态、数据集、运行记录、用例输入与输出
 
 运行记录位于 `.evaluations/langfuse-v4/`，配置和会话副本在同目录的实验子目录；不兼容、不读取回退之前留下的其他评估格式。此目录与 `.langfuse/` 均已加入 Git 忽略规则。
 
-评估展示与平台回传移除已知凭证及敏感键；不上传完整模型请求、检索记忆上下文或工具原始输出。评估事件按固定键名投影，只保留标识、枚举和统计字段：工具结果按键名投影为退出码、输出长度等统计量，没有专用脱敏的工具（例如 `search_web`、`get_current_time`）不会带出原始结果；终端命令内容、工作目录和检索查询都不写入。审批相关事件保留命令供本地审计，这类事件不回传平台。数据集输入、实际回复及预期输出会作为评估内容回传到配置的 Langfuse。副本里的原始本地会话仍是私人数据，不应提交。
+评估展示与平台回传移除已知凭证及敏感键；不上传完整模型请求、检索记忆上下文或工具原始输出。评估事件按固定键名投影，只保留标识、枚举和统计字段：终端只保留命令（截断到 500 字符）、退出码和输出长度，工作目录与输出正文不写入；技能只额外保留技能名和指令长度，说明文字不写入。工具结果按键名筛选，没有专用脱敏的工具（例如 `search_web`、`get_current_time`）不会带出原始结果，检索查询也不写入。审批相关事件保留命令供本地审计，这类事件不回传平台。数据集输入、实际回复及预期输出会作为评估内容回传到配置的 Langfuse。副本里的原始本地会话仍是私人数据，不应提交。
 
 已有独立 Langfuse 部署可用 `LANGFUSE_BASE_URL`、`LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`、`LANGFUSE_PROJECT_ID` 覆盖连接配置。`EVERYTHING_EVALUATION_PORT` 可修改本机回调监听端口，启动 Docker 和 Web 时应使用同一值。完整 Compose 的管理端口固定为 3300，对象存储端口为 9390。
 

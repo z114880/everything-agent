@@ -217,34 +217,52 @@ describe('Langfuse v4 协议', () => {
     expect(spans[1].attributes).toContainEqual({ key: 'langfuse.observation.usage_details', value: { stringValue: '{"input":10,"output":20}' } });
     expect(JSON.stringify(spans)).not.toContain('私有系统提示');
   });
-  it('执行痕迹只带统计字段，命令与工具正文既不入记录也不回传平台', async () => {
+  it('执行痕迹带终端命令并截断，工具正文、检索查询与技能说明都不进入记录和回传', async () => {
+    const longCommand = 'x'.repeat(900);
     const { service } = await setup(async (_, options) => {
-      await options.observer('tool_completed', { toolCallId: 't1', tool: 'run_terminal', isError: false, ms: 12, outputLength: 0, summary: '工具执行完成',
-        result: { command: 'cat .everything/.env', workdir: '/tmp/ws', exitCode: 0, stdoutLength: 431, stderrLength: 0, timeout_ms: 1_000 } });
-      await options.observer('tool_completed', { toolCallId: 't2', tool: 'search_web', isError: false, ms: 30, outputLength: 120, summary: '工具执行完成',
+      await options.observer('tool_completed', { toolCallId: 't1', tool: 'run_terminal', isError: false, ms: 12, outputLength: 12, summary: '工具执行完成',
+        result: { command: 'cat hello.txt', workdir: '/tmp/ws', exitCode: 0, stdout: '私人文件正文', stdoutLength: 12, stderrLength: 0, approved: false } });
+      await options.observer('tool_completed', { toolCallId: 't2', tool: 'run_terminal', isError: false, ms: 9, outputLength: 0, summary: '工具执行完成',
+        result: { command: longCommand, exitCode: 0, stdoutLength: 0, stderrLength: 0 } });
+      await options.observer('tool_completed', { toolCallId: 't3', tool: 'run_terminal', isError: false, ms: 9, outputLength: 0, summary: '工具执行完成',
+        result: { command: 'curl -H "Authorization: Bearer sk-lf-abcdefghijkl"', exitCode: 0, stdoutLength: 0, stderrLength: 0 } });
+      await options.observer('tool_completed', { toolCallId: 't4', tool: 'search_web', isError: false, ms: 30, outputLength: 120, summary: '工具执行完成',
         result: { query: '私密查询', results: [{ title: '私密标题' }] } });
-      await options.observer('tool_failed', { toolCallId: 't3', tool: 'run_terminal', isError: true, ms: 5_000, outputLength: 8_192, summary: '工具执行失败',
-        result: { command: 'sleep 999', stdoutLength: 4_096, stderrLength: 0, timedOut: true, truncated: true } });
+      await options.observer('tool_completed', { toolCallId: 't5', tool: 'read_skill', isError: false, ms: 3, outputLength: 500, summary: '工具执行完成',
+        result: { name: 'daily-plan', description: '先列出三件要事', instructionLength: 480 } });
+      await options.observer('tool_completed', { toolCallId: 't6', tool: 'get_current_time', isError: false, ms: 1, outputLength: 61, summary: '工具执行完成',
+        result: { name: '私密名称', iso: '2026-09-21T07:00:00.000Z' } });
+      await options.observer('tool_failed', { toolCallId: 't7', tool: 'run_terminal', isError: true, ms: 5_000, outputLength: 8_192, summary: '工具执行失败',
+        result: { command: 'sleep 999', exitCode: null, stdoutLength: 4_096, stderrLength: 0, timedOut: true, truncated: true } });
       throw new Error('本轮结束');
     });
     const { id } = await service.start({ datasetName: '痕迹' }); await service.wait(id);
     const record = service.list()[0]!;
-    expect(record.items[0]?.events[0]?.data).toMatchObject({ tool: 'run_terminal', outputLength: 0, result: { exitCode: 0, stdoutLength: 431, stderrLength: 0 } });
-    // search_web 没有专用脱敏结果，按键名投影后不保留任何结果字段。
-    expect(record.items[0]?.events[1]?.data.result).toBeUndefined();
-    expect(JSON.stringify(record)).not.toContain('.everything/.env');
-    expect(JSON.stringify(record)).not.toContain('私密查询');
+    const serialized = JSON.stringify(record);
+    expect(record.items[0]?.events[0]?.data.result).toEqual({ command: 'cat hello.txt', exitCode: 0, stdoutLength: 12, stderrLength: 0 });
+    expect(serialized).toContain(`${'x'.repeat(500)}…`); expect(serialized).not.toContain('x'.repeat(501));
+    expect(serialized).not.toContain('私人文件正文'); expect(serialized).not.toContain('/tmp/ws');
+    expect(serialized).not.toContain('私密查询'); expect(serialized).not.toContain('先列出三件要事');
+    // 命令里内联的凭证形状字面量在进入记录前就被清掉。
+    expect(serialized).not.toContain('sk-lf-abcdefghijkl');
+    // 技能名只对 read_skill 放行，其它工具的同名键不保留。
+    expect(record.items[0]?.events[4]?.data.result).toEqual({ name: 'daily-plan', instructionLength: 480 });
+    expect(record.items[0]?.events[5]?.data.result).toBeUndefined();
     const mocked = vi.fn(async (_url: unknown, _init: RequestInit) => Response.json({})); vi.stubGlobal('fetch', mocked);
     const client = new LangfuseEvaluationClient({ baseUrl: 'http://localhost:3300', publicKey: 'pk', secretKey: 'sk', projectId: 'p' });
     await client.publish(record, record.items[0]!);
     const body = mocked.mock.calls[0]![1].body as string;
-    const root = JSON.parse(body).resourceSpans[0].scopeSpans[0].spans[0];
-    const trace = root.attributes.find((item: { key: string }) => item.key === 'langfuse.observation.metadata.execution_trace').value.stringValue as string;
-    expect(trace).toContain('run_terminal | exit=0 | stdout=431B | stderr=0B | 返回=0字符 | 成功');
+    const trace = JSON.parse(body).resourceSpans[0].scopeSpans[0].spans[0]
+      .attributes.find((item: { key: string }) => item.key === 'langfuse.observation.metadata.execution_trace').value.stringValue as string;
+    expect(trace).toContain('run_terminal | cmd=cat hello.txt | exit=0 | stdout=12B | stderr=0B | 返回=12字符 | 成功');
+    expect(trace).toContain(`cmd=${'x'.repeat(500)}…`);
+    expect(trace).toContain('Bearer [凭证已移除]');
     expect(trace).toContain('search_web | 返回=120字符 | 成功');
-    expect(trace).toContain('run_terminal | stdout=4096B | stderr=0B | 返回=8192字符 | 超时 | 输出被截断 | 失败');
-    expect(body).not.toContain('.everything/.env');
-    expect(body).not.toContain('私密查询');
+    expect(trace).toContain('read_skill | skill=daily-plan | 返回=500字符 | 成功');
+    expect(trace).toContain('get_current_time | 返回=61字符 | 成功');
+    expect(trace).toContain('run_terminal | cmd=sleep 999 | stdout=4096B | stderr=0B | 返回=8192字符 | 超时 | 输出被截断 | 失败');
+    expect(body).not.toContain('私人文件正文'); expect(body).not.toContain('私密查询');
+    expect(body).not.toContain('先列出三件要事'); expect(body).not.toContain('sk-lf-abcdefghijkl');
   });
   it('SDK 读取固定版本并排除归档用例，保留显式终端标记', async () => {
     const fetched = vi.fn(async (url: string | URL | Request) => {

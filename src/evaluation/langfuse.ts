@@ -89,10 +89,13 @@ export class LangfuseEvaluationClient {
     return await response.json() as T;
   }
 }
-/** 一次工具调用压成一行可核对痕迹；只含统计与枚举，命令和输出正文都不进入平台。 */
+/** 一次工具调用压成一行可核对痕迹；只含命令、统计与枚举，工具输出正文不进入平台。 */
 function describeToolCall(data: Record<string, unknown>): string {
   const result = (data.result && typeof data.result === 'object' ? data.result : {}) as Record<string, unknown>;
   const parts = [String(data.tool)];
+  if (typeof result.command === 'string') parts.push(`cmd=${result.command}`);
+  // 技能名只对 read_skill 放行，见 evaluation.ts 的投影规则。
+  if (data.tool === 'read_skill' && typeof result.name === 'string') parts.push(`skill=${result.name}`);
   if (typeof result.exitCode === 'number') parts.push(`exit=${result.exitCode}`);
   if (typeof result.stdoutLength === 'number') parts.push(`stdout=${result.stdoutLength}B`);
   if (typeof result.stderrLength === 'number') parts.push(`stderr=${result.stderrLength}B`);
@@ -114,7 +117,7 @@ function executionTrace(item: EvaluationItem): string {
     .filter(event => event.kind === 'tool_completed' || event.kind === 'tool_failed')
     .map((event, index) => `${index + 1}. ${describeToolCall(event.data)}`);
   if (lines.length === 0) return '';
-  return `自动生成的脱敏执行痕迹（不含命令内容与工具输出正文）：\n${lines.join('\n')}`;
+  return `自动生成的脱敏执行痕迹（命令已截断，不含工具输出正文）：\n${lines.join('\n')}`;
 }
 
 function attributes(values: Record<string, string | undefined>) { return Object.entries(values).filter((entry): entry is [string, string] => entry[1] !== undefined).map(([key, value]) => ({ key, value: { stringValue: value } })); }
