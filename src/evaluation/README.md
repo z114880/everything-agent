@@ -11,7 +11,7 @@ pnpm run dev:web
 
 首次部署自动生成 `.langfuse/compose.env`，包含项目 API 凭证和管理员随机密码。Langfuse 地址为 `http://localhost:3300`。后端读取该文件中的 `LANGFUSE_INIT_PROJECT_*`，不把平台密钥发送给浏览器。详见 [Docker 部署说明](../../deploy/langfuse/README.md)。
 
-打开 Evaluation → 连接平台，选择数据集，即可从本地发起运行。
+打开 Evaluation → 连接平台，选择数据集，点击「本地直接启动」即可从本地发起运行。
 
 在 Langfuse 中选择数据集 → Start Experiment → Custom Experiment → ⚡：
 
@@ -21,6 +21,15 @@ pnpm run dev:web
 - 保存并点击 Run。本地 Web 服务必须保持运行。
 
 Docker 内部网关使用 80 端口，满足 Langfuse 的 Webhook 端口限制；只有该网关主机加入平台白名单。网关不映射宿主端口，只转发 `/trigger`，本地 `4319` 接口要求独立 Bearer 令牌和匹配的项目 ID。远程入口不能管理本地文件、修改运行时配置或批准工具操作。
+
+## 启动入口
+
+本地页面和 Langfuse Custom Experiment 回调进入同一个执行层：都按启动时刻固定数据集版本，读取数据集 metadata 的 `terminal` 与 `memorySnapshot`，共用并发上限、隔离目录、审批、超时和结果回传策略，因此“一次只允许一个实验”的限制也是共享的，两条入口会互相阻塞。
+
+差别只在发起位置和结果归属：
+
+- 平台入口由 Langfuse 创建本次实验，实验记录、名称和版本留在平台；回调额外携带数据集 ID，运行时校验 ID 与名称一致。远程入口只能启动实验，不能管理本地文件、修改运行时配置或批准工具操作，启动失败时平台只收到统一的 400 提示，看不到具体原因。
+- 本地入口（页面按钮「本地直接启动」）不创建平台实验记录，运行记录只保存在 `.evaluations/langfuse-v4/`，执行轨迹仍关联到对应数据集条目；本地只提交数据集名称，实验名使用默认前缀，失败原因直接显示在页面上。
 
 ## 数据集输入
 
