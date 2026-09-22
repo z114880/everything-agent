@@ -11,7 +11,7 @@ let container: HTMLDivElement; let root: ReturnType<typeof createRoot>;
 const dashboard: EvaluationDashboard = { configured: true, error: '', baseUrl: 'http://localhost:3300', projectId: 'p', webhookUrl: 'http://evaluation-gateway/trigger', approvals: [], runs: [{
   id: 'run', name: '真实实验', datasetId: 'dataset', datasetName: '测试集', datasetVersion: '2026-09-20T00:00:00Z', memorySnapshot: false, terminalEnabled: false, createdAt: '2026-09-20T00:00:00Z', status: 'completed', items: [{ id: 'item', input: '问题', expectedOutput: '期望', output: ['回答'], traceId: 'trace', observationId: 'span', status: 'completed', sync: 'synced', events: [], scores: [], toolCalls: 1, inputTokens: null, outputTokens: null, approvalDenied: false }],
 }] };
-beforeEach(() => { vi.useFakeTimers(); vi.clearAllMocks(); Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true }); container = document.createElement('div'); document.body.append(container); root = createRoot(container); request.mockResolvedValue(structuredClone(dashboard)); });
+beforeEach(() => { vi.useFakeTimers(); vi.resetAllMocks(); Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true }); container = document.createElement('div'); document.body.append(container); root = createRoot(container); request.mockResolvedValue(structuredClone(dashboard)); });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); });
 async function click(label: string) { const button = [...container.querySelectorAll('button')].find(button => button.textContent?.includes(label)); expect(button).toBeDefined(); await act(async () => button!.click()); }
 it('保留本地启动但不提供或发送记忆快照开关', async () => {
@@ -46,7 +46,34 @@ it('复制的是 Authorization 值，能够直接粘贴到平台请求头字段'
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
   await act(async () => root.render(<EvaluationPage />));
   request.mockResolvedValueOnce({ Authorization: 'Bearer dedicated-test-token' });
-  await click('复制 Authorization 值');
+  await click('复制 authorization 值');
   expect(writeText).toHaveBeenCalledWith('Bearer dedicated-test-token');
   expect(writeText).not.toHaveBeenCalledWith(expect.stringContaining('{'));
+});
+
+it('配置入口常驻展示默认值，并展示实验采用的配置', async () => {
+  const data = structuredClone(dashboard); data.runs[0]!.terminalEnabled = true; request.mockResolvedValue(data);
+  await act(async () => root.render(<EvaluationPage />));
+  expect(container.textContent).toContain('{"terminal":false,"memorySnapshot":false}');
+  expect(container.textContent).toContain('{"name":"Everything Agent"}');
+  expect(container.textContent).toContain('terminal：true');
+  expect(container.textContent).toContain('memorySnapshot：false');
+  expect(container.textContent).toContain('名称填 authorization');
+  expect([...container.querySelectorAll('details')].some(item => item.textContent?.includes('从 Langfuse 管理平台发起实验'))).toBe(false);
+});
+it('实验记录每页十条，翻页及轮询保留选中实验', async () => {
+  const data = structuredClone(dashboard);
+  data.runs = Array.from({ length: 12 }, (_, i) => ({ ...structuredClone(dashboard.runs[0]!), id: String(i), name: `实验记录-${i}` }));
+  request.mockResolvedValue(data);
+  await act(async () => root.render(<EvaluationPage />));
+  const records = () => container.querySelector('[aria-label="实验记录"]')!;
+  expect(records().querySelectorAll('button[aria-pressed]').length).toBe(10);
+  await click('下一页');
+  expect(records().querySelectorAll('button[aria-pressed]').length).toBe(2);
+  await click('实验记录-11');
+  await act(async () => vi.advanceTimersByTimeAsync(2000));
+  expect(records().textContent).toContain('第 2 / 2 页');
+  expect(records().querySelector('[aria-pressed="true"]')?.textContent).toContain('实验记录-11');
+  await click('上一页');
+  expect(container.querySelector('[aria-label="实验详情"]')?.textContent).toContain('实验记录-11');
 });

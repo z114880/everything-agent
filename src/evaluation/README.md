@@ -17,7 +17,7 @@ pnpm run dev:web
 
 - 回调地址：`http://evaluation-gateway/trigger`。
 - Default payload：`{}`。仅支持可选 `name` 指定实验名称前缀；记忆快照不在 payload 中配置。
-- Advanced Options → Custom headers：名称填 `Authorization`，值为 Evaluation 页面“复制 Authorization 值”获得的内容，标记为 Secret。
+- Advanced Options → Custom headers：名称填 `authorization`，值为 Evaluation 页面“复制 authorization 值”获得的内容，标记为 Secret。
 - 保存并点击 Run。本地 Web 服务必须保持运行。
 
 Docker 内部网关使用 80 端口，满足 Langfuse 的 Webhook 端口限制；只有该网关主机加入平台白名单。网关不映射宿主端口，只转发 `/trigger`，本地 `4319` 接口要求独立 Bearer 令牌和匹配的项目 ID。远程入口不能管理本地文件、修改运行时配置或批准工具操作。
@@ -50,6 +50,11 @@ Docker 内部网关使用 80 端口，满足 Langfuse 的 Webhook 端口限制�
 - 取消不会撤销已经发生的外部操作。进程重启将未完成实验标为中断，不自动重复真实工具调用。
 
 ## 页面和可观测性
+
+页面常驻展示平台启动步骤与两处配置入口：数据集 Metadata 示例为 `{"terminal":false,"memorySnapshot":false}`，两个开关默认均为 false；Custom Experiment 的 Default payload 示例为 `{"name":"Everything Agent"}`，默认名称前缀为 Everything Agent，最终名称附加运行 ID 短码。实验详情展示本次读取的两个开关及最终实验名称，不区分未配置与显式 false。终端开关表示数据集授权，实际可用性仍取决于日常工具配置和沙箱。
+
+实验记录每页 10 条，显示总数和页码，翻页与进度轮询保留选中的实验；平台启动说明始终展开。
+
 
 Evaluation 展示连接状态、数据集、运行记录、用例输入与输出、预期结果、平台评分、模型、工具调用次数、耗时、模型返回的输入／输出 Token，以及按 observer 顺序记录的执行事件。Token 统计来自 Agent 主循环模型；未返回用量时显示 `—`，不伪造费用或用量。
 
