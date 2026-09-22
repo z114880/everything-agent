@@ -16,7 +16,7 @@ it("首次启动会创建完整的 .everything 基础目录", async () => {
       models: { agent: {}, small: {} },
       sandbox: { workspaceRoot: join(home, "sandbox") },
       maxTokens: 32_768, maxIterations: 100,
-      modelContextWindow: 262_144, sessionRecall: { searchWindow: 10, entryTokenLimit: 8_192 },
+      modelContextWindow: 262_144, sessionRecall: { searchWindow: 5, entryTokenLimit: 8_192 },
       retrieval: { mode: "lexical_only", embedding: {} },
       tools: { getCurrentTimeEnabled: true, searchWebEnabled: false },
     });

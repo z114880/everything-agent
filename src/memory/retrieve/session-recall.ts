@@ -6,6 +6,11 @@ import { SEARCH_SESSION_LIMIT } from "./memory-search.ts";
 import type { SessionStore } from "../storage/session-store.ts";
 import type { EmbeddingIndex } from "./embedding-index.ts";
 
+/** search 模式的固定首尾语境段；命中点两侧半径由 Session Search Window 决定。 */
+const SEARCH_EDGE_MESSAGES = 4;
+/** recent 模式没有锚点，只能取首尾两段。 */
+const RECENT_EDGE_MESSAGES = 6;
+
 /** Session 召回窗口、预算截断与游标分页。 */
 export class SessionRecall {
   private readonly embedding: EmbeddingIndex;
@@ -86,9 +91,9 @@ export class SessionRecall {
     let anchorIndex = -1;
     const add = (items: Row[]) => items.forEach((row) => chosen.add(Number(row.id)));
     if (mode === "recent") {
-      add(indexed.slice(0, 6)); add(indexed.slice(-6));
+      add(indexed.slice(0, RECENT_EDGE_MESSAGES)); add(indexed.slice(-RECENT_EDGE_MESSAGES));
     } else {
-      add(indexed.slice(0, 3)); add(indexed.slice(-3));
+      add(indexed.slice(0, SEARCH_EDGE_MESSAGES)); add(indexed.slice(-SEARCH_EDGE_MESSAGES));
       anchorIndex = indexed.findIndex((row) => Number(row.id) === candidate.messageId);
       if (anchorIndex >= 0) add(indexed.slice(Math.max(0, anchorIndex - radius), anchorIndex + radius + 1));
     }
@@ -96,7 +101,7 @@ export class SessionRecall {
     const selectedRows = rows.filter((row) => selectedRuns.has(String(row.run_id)));
     const entries = capEntries(this.sessions.decorateEntries(selectedRows), selectedRows, settings);
     const isComplete = entries.length === rows.length && !entries.some((entry) => entry.contentTruncated);
-    // 窗口含尾 3 条，整段 entries 的右边界通常就是 Session 末尾；续读必须从锚点窗口的
+    // 窗口含固定尾段，整段 entries 的右边界通常就是 Session 末尾；续读必须从锚点窗口的
     // 右边界开始，才能读到锚点之后、尾部之前被跳过的那一段。
     const resumeAfterId = isComplete || anchorIndex < 0 ? 0 : runEndRowId(rows, indexed[Math.min(anchorIndex + radius, indexed.length - 1)]!);
     const nextCursor = resumeAfterId && resumeAfterId !== Number(rows[rows.length - 1]?.id)

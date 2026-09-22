@@ -623,7 +623,7 @@ button:disabled { cursor: not-allowed; }
 }
 
 /* 紧凑业务图保持可读字号，小屏通过滚动与缩放查看。 */
-.business-graph-scroll { overflow: auto; }
+.business-graph-scroll { overflow: auto;}
 .harness-edge-label { fill: var(--muted); font-size: 9px; paint-order: stroke; stroke: var(--panel, #fff); stroke-width: 4px; stroke-linejoin: round; }
 
 

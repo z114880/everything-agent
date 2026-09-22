@@ -315,7 +315,7 @@ describe("Runtime 配置与维护", () => {
     const config = await readFile(join(homes.at(-1)!, ".everything", "config.json"), "utf8");
     expect(config).toContain('"model": "main"');
     expect(config).not.toContain("agent-secret");
-    expect((await runtime.resetRuntimeSettings()).settings.sessionSearchWindow).toBe(10);
+    expect((await runtime.resetRuntimeSettings()).settings.sessionSearchWindow).toBe(5);
     expect((await runtime.clearEmbeddingApiKey()).settings).toMatchObject({ retrievalMode: "lexical_only", embeddingKeyConfigured: false });
     expect(runtime.cancelEmbeddingIndexRebuild()).toEqual({ cancelled: false });
     await runtime.prepareMemory();

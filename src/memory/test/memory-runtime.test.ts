@@ -113,12 +113,38 @@ describe("Memory Runtime", () => {
     const found = await memory.searchSessions({ query: "ALPHA", limit: 4 }, { ...recall, searchWindow: 2 });
     expect(found).toMatchObject({ returnedSessionCount: 4, droppedSessionCount: 0, droppedReason: null, truncated: false });
     for (const item of found.sessions) {
-      // 首 3 + 命中前后各 2 + 尾 3，按 run 展开后每条都完整，没有被预算切过。
+      // 首 4 + 命中前后各 2 + 尾 4，按 run 展开后每条都完整，没有被预算切过。
       expect(item.entries.map((entry) => entry.id)).toContain(item.match!.messageId);
       expect(item.truncated).toBe(false);
       expect(item.entries.some((entry) => entry.contentTruncated)).toBe(false);
     }
     expect(found.estimatedTokens).toBeGreaterThan(0);
+  });
+
+  it("search 窗口由首 4、命中两侧各 Session Search Window 条与尾 4 构成", async () => {
+    const memory = await createMemory(); const session = memory.createSession("窗口");
+    // run a 写入 3 条可检索消息，让首段边界落在 run 之间：首 3 只覆盖 a，首 4 还要带上 b 的第一条。
+    memory.startRun(session.id, "a", "A 问题");
+    await memory.completeRun(session.id, "a", [
+      { role: "assistant", content: [{ type: "text", text: "A 中间回答" }] },
+      { role: "assistant", content: [{ type: "text", text: "A 最终回答" }] },
+    ]);
+    for (const name of ["b", "c", "d", "e", "f", "g", "h", "i", "j"]) {
+      await addCompletedRun(memory, session.id, name, `${name} 问题`, name === "f" ? "命中标记 最终回答" : `${name} 回答`);
+    }
+    const found = await memory.searchSessions({ query: "命中标记" }, { ...recall, searchWindow: 1 });
+    const result = found.sessions[0]!;
+    expect(result.match?.messageId).toEqual(expect.any(Number));
+    // 首 4（a、b）、命中前后各 1 条（f、g）、尾 4（i、j）；每个 run 按完整行展开。
+    expect(result.entries.map((entry) => entry.runId)).toEqual([
+      "a", "a", "a", "b", "b", "f", "f", "g", "g", "i", "i", "j", "j",
+    ]);
+    expect(result.returnedRanges).toEqual([
+      { fromMessageId: result.entries[0]!.id, toMessageId: result.entries[4]!.id },
+      { fromMessageId: result.entries[5]!.id, toMessageId: result.entries[8]!.id },
+      { fromMessageId: result.entries[9]!.id, toMessageId: result.entries[12]!.id },
+    ]);
+    expect(result.nextCursor).toEqual(expect.any(String));
   });
 
   it("session_search 截断超长单条，contentCursor 经 session_read 能读回完整正文", async () => {

@@ -6,7 +6,7 @@ import type { MemoryRuntime, RetrievalMode } from "../../memory/index.ts";
 const VALID_PROVIDERS = new Set<AgentProvider>(["anthropic", "openai-compatible"]);
 const VALID_RETRIEVAL_MODES = new Set<RetrievalMode>(["lexical_only", "dense_only", "hybrid"]);
 export const RUNTIME_DEFAULTS = {
-  sessionSearchWindow: 10,
+  sessionSearchWindow: 5,
   sessionRecallEntryTokenLimit: 8_192,
   modelContextWindow: 262_144,
   maxTokens: 32_768,

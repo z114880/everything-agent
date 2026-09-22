@@ -61,7 +61,7 @@ Gate 采用召回率优先策略：宁可多执行一次 Session Recall，也不
 session_search 是只读的发现工具，有两种互斥模式：按 query 执行 FTS5 + BM25 搜索（不受全局 Semantic 检索模式影响），或以 recent: true 返回最近活跃 Session。
 
 - limit 限制 Session 数，默认 4。
-- search 每个 Session 选择FTS 的最佳消息锚点，返回首 3 条、命中点前后各 Session Search Window 条（默认 10，由运行配置决定，Agent 不能通过参数调整）、尾 3 条；内容不够时用返回的 cursor 交给 session_read 继续往后读。
+- search 每个 Session 选择 FTS 的最佳消息锚点，返回首 4 条、命中点前后各 Session Search Window 条（默认 5，由运行配置决定，Agent 不能通过参数调整）、尾 4 条；内容不够时用返回的 cursor 交给 session_read 继续往后读。
 - 返回量由窗口结构决定，没有条数预算：limit 个 Session 各自拿到完整窗口，不会被按条数裁剪。
 - recent 按 updated_at 降序返回非空 Session，返回首 6 条和尾 6 条，结果使用 retrievalMode: recent 与 match: null。
 - 窗口按可检索对话消息计数，随后展开这些消息所属的完整 run。
@@ -78,7 +78,7 @@ session_read 不受 Recall Entry Token Limit 约束：它是按需取全文的�
 
 cursor 有三种来源，语义相同（都是「从这里往后连续读」），只是起点不同：
 
-- search 正常返回时，结果的 nextCursor 指向**锚点窗口的右边界**。窗口含尾 3 条，整段结果的右边界通常就是 Session 末尾，因此续读必须从锚点窗口右边界开始，才能读到锚点之后、尾部之前被跳过的那一段。
+- search 正常返回时，结果的 nextCursor 指向**锚点窗口的右边界**。窗口含尾 4 条，整段结果的右边界通常就是 Session 末尾，因此续读必须从锚点窗口右边界开始，才能读到锚点之后、尾部之前被跳过的那一段。
 - 某条消息正文被单条上限截断时，该 entry 自带 `contentCursor`，指向这条消息的断点。它是读回完整单条的唯一出口，与 Session 级 nextCursor 不重叠。
 - search 因总额被收缩时，结果的 nextCursor 指向 Session 开头。收缩结果只保留命中点附近的若干 run，其前后都有缺口，只有从头读才能保证不跳过中间消息。
 
@@ -92,7 +92,7 @@ cursor 有三种来源，语义相同（都是「从这里往后连续读」）�
 
 | 配置 | 默认值 | 服务端范围 |
 | --- | ---: | ---: |
-| sessionSearchWindow | 10 | 1–20 |
+| sessionSearchWindow | 5 | 1–20 |
 | sessionRecallEntryTokenLimit | 8,192 | 256–16,384 |
 | modelContextWindow | 262,144 | 4,096–2,000,000 |
 | 单次 session_search 总额 | modelContextWindow × 25% | 派生，不可配置 |
@@ -100,7 +100,7 @@ cursor 有三种来源，语义相同（都是「从这里往后连续读」）�
 预算不控制返回条数，只有三层防护：
 
 1. **单条正文上限**（`sessionRecallEntryTokenLimit`）。这是唯一压得住成本的一层：个别超长记录（如大段工具结果）被截断到上限内，窗口结构与 Session 数完全不受影响，全文通过 `contentCursor` 交给 session_read 读取。
-2. **单次调用的 token 总额**，由 `modelContextWindow` 派生。只有第 1 层压完仍超额时才触发，裁剪单位是整个 Session：从最低排名开始丢弃，绝不切碎已经给出的窗口，并在结果中如实上报 `droppedSessionCount` 与 `droppedReason: "token_budget"`。排名第一的 Session 不能空手返回，按 run 粒度从尾 3、首 3 交替向命中所在 run 收缩；只剩命中 run 仍超额时在 run 内围绕命中消息收缩，保证总额是硬上界。
+2. **单次调用的 token 总额**，由 `modelContextWindow` 派生。只有第 1 层压完仍超额时才触发，裁剪单位是整个 Session：从最低排名开始丢弃，绝不切碎已经给出的窗口，并在结果中如实上报 `droppedSessionCount` 与 `droppedReason: "token_budget"`。排名第一的 Session 不能空手返回，按 run 粒度从尾部、首部交替向命中所在 run 收缩；只剩命中 run 仍超额时在 run 内围绕命中消息收缩，保证总额是硬上界。
 3. **`modelContextWindow` 硬失败**，由 Agent Loop 在请求前判定，不静默裁剪。
 
 `estimatedTokens`、`droppedReason` 与每个 Session 的 `truncatedEntryCount` 都进入检索事件，预算去向可在 trace 中解释。
