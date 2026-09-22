@@ -1,6 +1,6 @@
 # Evaluation
 
-已实现 Langfuse v4 固定数据集的真实环境评估。Langfuse 管理数据集和平台评估器，本地 Everything Agent 执行任务；支持从 Langfuse Custom Experiment 或本地 Evaluation 页面启动。
+已实现 Langfuse v4 固定数据集的真实环境评估。Langfuse 管理数据集和平台评估器，本地 Everything Agent 执行任务；支持从 Langfuse remote experiment trigger（数据集页面的 via Webhook）或本地 Evaluation 页面启动。
 
 ## 部署和启动
 
@@ -13,23 +13,26 @@ pnpm run dev:web
 
 打开 Evaluation → 连接平台，选择数据集，点击「Run Experiment」即可从本地发起运行。
 
-在 Langfuse 中选择数据集 → Start Experiment → Custom Experiment → ⚡：
+在 Langfuse 中选择数据集 → 进入 **Experiments** 标签页 → 右上角 **Run experiment** → 在 **Run Experiment** 弹窗里选 **via Webhook** 卡片：
 
-- 回调地址：`http://evaluation-gateway/trigger`。
-- Default payload：`{}`。仅支持可选 `name` 指定 Experiment 名称前缀；记忆快照不在 payload 中配置。
-- Advanced Options → Custom headers：名称填 `authorization`，值为 Evaluation 页面“复制 authorization 值”获得的内容，标记为 Secret。
-- 保存并点击 Run。本地 Web 服务必须保持运行。
+- 首次点击卡片上的 Configure，进入 **Set up remote experiment trigger in UI**。URL 填回调地址 `http://evaluation-gateway/trigger`。该地址是 Docker 内部网关，平台会提示明文 HTTP，属预期提示。
+- Default config：`{}`，或填写 `{"name":"Everything Agent"}` 指定 Experiment 名称前缀。仅在远程回调时生效，不承载 terminal、memorySnapshot 等运行开关。
+- Sign requests：保持关闭。开启后平台只额外发送 `x-langfuse-signature`，本地网关不校验它；鉴权始终由下方 authorization header 承担。
+- Enabled：打开，否则平台不允许触发并提示 enable webhook。
+- Advanced Options → Custom headers：名称填 `authorization`，值为 Evaluation 页面“复制 authorization 值”获得的内容，标记为 Secret。Langfuse 会拒绝覆盖 `content-type`、`user-agent`、`x-langfuse-signature` 等由它自己添加的保留头。
+- 保存后卡片按钮变为 **Run**。点击它打开 **Run remote dataset run**，可确认或临时修改本次 config，再点击 Run 触发；触发成功后平台会创建本次 Experiment 并把执行轨迹关联到对应数据集条目。
+- 本地 Web 服务必须保持运行。
 
 Docker 内部网关使用 80 端口，满足 Langfuse 的 Webhook 端口限制；只有该网关主机加入平台白名单。网关不映射宿主端口，只转发 `/trigger`，本地 `4319` 接口要求独立 Bearer 令牌和匹配的项目 ID。远程入口不能管理本地文件、修改运行时配置或批准工具操作。
 
 ## 启动入口
 
-本地页面和 Langfuse Custom Experiment 回调进入同一个执行层：都按启动时刻固定数据集版本，读取数据集 metadata 的 `terminal` 与 `memorySnapshot`，共用并发上限、隔离目录、审批、超时和结果回传策略，因此“一次只允许一个 Experiment”的限制也是共享的，两条入口会互相阻塞。
+本地页面和 Langfuse remote experiment trigger（via Webhook 卡片）的回调进入同一个执行层：都按启动时刻固定数据集版本，读取数据集 metadata 的 `terminal` 与 `memorySnapshot`，共用并发上限、隔离目录、审批、超时和结果回传策略，因此“一次只允许一个 Experiment”的限制也是共享的，两条入口会互相阻塞。
 
 差别只在发起位置和结果归属：
 
 - 平台入口由 Langfuse 创建本次 Experiment，Experiment 记录、名称和版本留在平台；回调额外携带数据集 ID，运行时校验 ID 与名称一致。远程入口只能启动 Experiment，不能管理本地文件、修改运行时配置或批准工具操作，启动失败时平台只收到统一的 400 提示，看不到具体原因。
-- 本地入口（页面按钮「Run Experiment」）不创建平台 Experiment 记录，运行记录只保存在 `.evaluations/langfuse-v4/`，执行轨迹仍关联到对应数据集条目；本地只提交数据集名称，Experiment 名称使用默认前缀，失败原因直接显示在页面上。
+- 本地入口（页面按钮「Run Experiment」）不创建平台 Experiment 记录，运行记录只保存在 `.evaluations/langfuse-v4/`，执行轨迹仍关联到对应数据集条目；本地只提交数据集名称，Experiment 名称使用默认前缀而不是远程 Default config 中的名称，失败原因直接显示在页面上。
 
 ## 数据集输入
 
@@ -52,7 +55,7 @@ Docker 内部网关使用 80 端口，满足 Langfuse 的 Webhook 端口限制�
 ## 执行边界
 
 - 一次只运行一个 Experiment，默认最多 3 条用例并行，可通过后端环境变量 `EVERYTHING_EVALUATION_CONCURRENCY` 调整。启动时固定数据集版本以及本地配置、系统提示和 Skills；每条用例使用独立 Runtime、数据库和终端工作目录，多轮用例内部复用同一会话。
-- 本地启动与 Langfuse 回调启动统一读取数据集 metadata 的 `memorySnapshot`，例如 `{"memorySnapshot":true}`；不读取用例 metadata 或 Experiment payload 的同名字段。本地页面不再提供该开关。未设置或为 `false` 时使用空白评估记忆；非布尔值明确报错。运行读取数据集后固定本次配置。为 `true` 时用 SQLite 的 `VACUUM INTO` 生成日常事实、会话和索引的一致副本（同步执行，不使用 `node:sqlite` 的 `backup()`——它依赖线程池完成回调唤醒事件循环，进程空闲时可能延迟数十秒），并清除副本中旧的后台任务；每条用例从同一份快照开始，不回写日常 `.everything`。快照目标文件必须不存在，重复写入同一路径会明确失败而不是静默覆盖。
+- 本地启动与 Langfuse 回调启动统一读取数据集 metadata 的 `memorySnapshot`，例如 `{"memorySnapshot":true}`；不读取用例 metadata 或远程 Default config 的同名字段。本地页面不再提供该开关。未设置或为 `false` 时使用空白评估记忆；非布尔值明确报错。运行读取数据集后固定本次配置。为 `true` 时用 SQLite 的 `VACUUM INTO` 生成日常事实、会话和索引的一致副本（同步执行，不使用 `node:sqlite` 的 `backup()`——它依赖线程池完成回调唤醒事件循环，进程空闲时可能延迟数十秒），并清除副本中旧的后台任务；每条用例从同一份快照开始，不回写日常 `.everything`。快照目标文件必须不存在，重复写入同一路径会明确失败而不是静默覆盖。
 - 空白评估库会为已配置的 Embedding 初始化空索引，不改变日常的检索模式。记忆写入及其后台任务均在评估副本运行。
 - 使用真实模型、搜索和工具，产生真实费用。终端工作目录位于评估副本内，继续沿用原有沙箱、确认策略、迭代上限和每回合 5 分钟超时。每条用例另有 10 分钟总执行信号。
 - 需要确认时只暂停该用例，本地页面批准后继续。拒绝、超时、取消、工具错误或达到迭代上限均明确记录，不能当成完整执行成功。
@@ -60,7 +63,7 @@ Docker 内部网关使用 80 端口，满足 Langfuse 的 Webhook 端口限制�
 
 ## 页面和可观测性
 
-页面常驻展示平台启动步骤与两处配置入口：数据集 Metadata 示例为 `{"terminal":false,"memorySnapshot":false}`，两个开关默认均为 false；Custom Experiment 的 Default payload 示例为 `{"name":"Everything Agent"}`，默认名称前缀为 Everything Agent，最终名称附加运行 ID 短码。Experiment 详情展示本次读取的两个开关及最终 Experiment 名称，不区分未配置与显式 false。终端开关表示数据集授权，实际可用性仍取决于日常工具配置和沙箱。
+页面常驻展示平台启动步骤与两处配置入口：数据集 Metadata 示例为 `{"terminal":false,"memorySnapshot":false}`，两个开关默认均为 false；remote experiment trigger 的 Default config 示例为 `{"name":"Everything Agent"}`，默认名称前缀为 Everything Agent，最终名称附加运行 ID 短码。Experiment 详情展示本次读取的两个开关及最终 Experiment 名称，不区分未配置与显式 false。终端开关表示数据集授权，实际可用性仍取决于日常工具配置和沙箱。
 
 Experiment 记录每页 10 条，显示总数和页码，翻页与进度轮询保留选中的 Experiment；平台启动说明始终展开。
 
@@ -103,4 +106,4 @@ pnpm run test:coverage
 EVERYTHING_EVALUATION_CONCURRENCY=5 pnpm run dev:web
 ```
 
-未设置时默认 3，必须是正安全整数；空值、零、负数、小数及非数字会导致评估服务初始化失败，页面显示配置错误。实际 worker 数不超过用例数。本地页面和 Langfuse Custom Experiment 回调共享此配置，Experiment payload 不能覆盖；该变量不从 `.everything/.env` 或 `.langfuse/compose.env` 读取。直接使用公开接口时传入 `new EvaluationService({ directory, sourceHome, client, concurrency: 5 })`，省略 `concurrency` 同样默认 3。
+未设置时默认 3，必须是正安全整数；空值、零、负数、小数及非数字会导致评估服务初始化失败，页面显示配置错误。实际 worker 数不超过用例数。本地页面和 Langfuse remote experiment trigger 回调共享此配置，远程 Default config 不能覆盖；该变量不从 `.everything/.env` 或 `.langfuse/compose.env` 读取。直接使用公开接口时传入 `new EvaluationService({ directory, sourceHome, client, concurrency: 5 })`，省略 `concurrency` 同样默认 3。

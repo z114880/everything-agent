@@ -57,27 +57,30 @@ export function EvaluationPage() {
       <div className="flex flex-wrap items-center justify-between gap-4"><div><h2 className="font-semibold">Langfuse 连接</h2><p className="text-sm text-muted-foreground">{connected ? '平台连接正常' : data?.configured ? '本地入口已就绪，点击连接平台检查' : '等待配置'} · {data?.baseUrl}</p></div>
         <div className="flex gap-2"><Button variant="outline" disabled={busy || !data?.configured} onClick={() => void connect()}><RefreshCw size={14} />连接平台</Button>{data?.configured && <a className="text-sm underline flex items-center gap-1" href={projectUrl} target="_blank" rel="noreferrer">打开 Langfuse <ExternalLink size={14} /></a>}</div></div>
       <section className="border-t pt-4 text-sm"><h2 className="font-semibold">从 Langfuse 管理平台发起 Experiment</h2><div className="mt-3 space-y-3 text-muted-foreground">
-        <p>打开数据集 → Start Experiment → Custom Experiment → ⚡，填入回调地址：</p><code className="block break-all text-foreground">{data?.webhookUrl}</code>
-        <p>Advanced Options → Custom headers：名称填 authorization，值粘贴下方复制的内容，并标记 Secret。Default payload 填写 <code>{'{"name":"Everything Agent"}'}</code>，保存后点击 Run。</p>
+        <p>打开数据集 → 进入 <strong>Experiments</strong> 标签页 → 右上角 <strong>Run experiment</strong> → 在 Run Experiment 弹窗里选 <strong>via Webhook</strong> 卡片。</p>
+        <p>首次点击卡片上的 Configure，进入 <strong>Set up remote experiment trigger in UI</strong>：<strong>URL</strong> 填回调地址</p><code className="block break-all text-foreground">{data?.webhookUrl}</code>
+        <p className="text-xs">该地址是 Docker 内部网关（明文 HTTP），平台会提示 payload 与请求头未加密，这是预期提示；回调不映射宿主端口，只允许平台容器访问。</p>
+        <p><strong>Default config</strong> 填 <code>{'{"name":"Everything Agent"}'}</code>；<strong>Sign requests</strong> 保持关闭（我们的网关只校验 authorization，不校验 x-langfuse-signature）；<strong>Enabled</strong> 打开，否则实验无法触发。展开 <strong>Advanced Options</strong> → <strong>Custom headers</strong>，名称填 authorization，值粘贴下方复制的内容，并标记 Secret，最后保存。</p>
         <Button variant="outline" size="sm" onClick={() => void copyHeaders()} disabled={!data?.configured}><Copy size={14} />复制 authorization 值</Button>
+        <p>保存后卡片按钮变为 <strong>Run</strong>，点击它并在 <strong>Run remote dataset run</strong> 弹窗里确认或临时修改本次 config，再点击 Run 触发。</p>
         <p>本地 Web 服务需保持运行。平台评估器需在 Langfuse 中配置，目标为本次 Experiment 的根 Agent observation。未收到评分时显示等待评分，不推断通过。</p>
       </div></section>
     </section>
     <section className="rounded-xl border border-primary/30 bg-muted/20 p-5 space-y-4">
-      <div><h2 className="font-semibold">运行前配置</h2><p className="text-sm text-muted-foreground mt-1">在 Langfuse 对应位置填写以下配置。示例均为默认值。</p></div>
+      <div><h2 className="font-semibold">运行前配置</h2><p className="text-sm text-muted-foreground mt-1">在 Langfuse 以下位置填写配置，示例均为默认值。</p></div>
       <div className="grid md:grid-cols-2 gap-4">
         <div className="rounded-lg border bg-background p-4 space-y-3">
-          <h3 className="text-sm font-semibold">数据集 → Metadata</h3>
+          <h3 className="text-sm font-semibold">数据集 Metadata</h3>
           <code className="block rounded-md bg-muted p-3 text-xs break-all">{'{"terminal":false,"memorySnapshot":false}'}</code>
           <p className="text-sm"><strong>terminal</strong>：默认 false，全部用例关闭终端。设为 true 时，还需要日常工具配置启用终端且沙箱可用。</p>
           <p className="text-sm"><strong>memorySnapshot</strong>：默认 false，使用空白评估记忆；true 使用日常记忆快照。</p>
           <p className="text-xs text-muted-foreground">两项配置统一作用于该数据集的全部用例，本地与平台启动均读取；未填写等同于 false。</p>
         </div>
         <div className="rounded-lg border bg-background p-4 space-y-3">
-          <h3 className="text-sm font-semibold">Custom Experiment → Default payload</h3>
+          <h3 className="text-sm font-semibold">Remote experiment trigger → Default config</h3>
           <code className="block rounded-md bg-muted p-3 text-xs break-all">{'{"name":"Everything Agent"}'}</code>
-          <p className="text-sm"><strong>name</strong>：Experiment 名称前缀，默认 Everything Agent；最终名称自动附加运行 ID 短码。</p>
-          <p className="text-xs text-muted-foreground">此处仅配置名称，不填写 terminal 或 memorySnapshot。本地启动使用默认名称前缀。</p>
+          <p className="text-sm"><strong>name</strong>：Experiment 名称前缀，默认 Everything Agent；最终名称自动附加运行 ID 短码。留空表示不发送 config。</p>
+          <p className="text-xs text-muted-foreground">此处仅配置名称，不填写 terminal 或 memorySnapshot。每次点击 Run 时该 config 可在 Run remote dataset run 弹窗里临时修改；本地启动使用默认名称前缀。</p>
         </div>
       </div>
     </section>

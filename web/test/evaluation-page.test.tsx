@@ -60,7 +60,18 @@ it('配置入口常驻展示默认值，并展示 Experiment 采用的配置', a
   expect(container.textContent).toContain('terminal：true');
   expect(container.textContent).toContain('memorySnapshot：false');
   expect(container.textContent).toContain('名称填 authorization');
+  expect(container.textContent).toContain('via Webhook');
+  expect(container.textContent).toContain('Set up remote experiment trigger in UI');
   expect([...container.querySelectorAll('details')].some(item => item.textContent?.includes('从 Langfuse 管理平台发起 Experiment'))).toBe(false);
+});
+it('平台启动说明与 Langfuse v4 实际界面一致，不残留不存在的老文案', async () => {
+  await act(async () => root.render(<EvaluationPage />));
+  expect(container.textContent).toContain('Run experiment');
+  expect(container.textContent).toContain('Experiments');
+  expect(container.textContent).toContain('Default config');
+  expect(container.textContent).toContain('Sign requests');
+  expect(container.textContent).toContain('Run remote dataset run');
+  for (const outdated of ['Start Experiment', 'Custom Experiment', 'Default payload']) expect(container.textContent).not.toContain(outdated);
 });
 it('Experiment 记录每页十条，翻页及轮询保留选中 Experiment', async () => {
   const data = structuredClone(dashboard);
