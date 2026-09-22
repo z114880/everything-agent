@@ -9,7 +9,15 @@ const homes: string[] = [];
 afterEach(async () => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); await Promise.all(homes.splice(0).map((home) => rm(home, { recursive: true, force: true }))); });
 
 it.each([false, true])("Runtime 同时记录前台和后台，导出故障=%s 不改变任务结果", async (failExport) => {
+  // 配置读取是 { ...langfuse.env 文件, ...process.env }，process.env 优先。只 stub ENABLED 时，
+  // 宿主里真实的 BASE_URL 与密钥会覆盖下面文件里的 langfuse.invalid，导出请求会绕过 fetch stub
+  // 打向真实地址，在 5 秒网络超时与 5 秒退避之间耗尽用例超时。这里把整套变量固定住。
   vi.stubEnv("LANGFUSE_ENABLED", "true");
+  vi.stubEnv("LANGFUSE_BASE_URL", "http://langfuse.invalid");
+  vi.stubEnv("LANGFUSE_PUBLIC_KEY", "p");
+  vi.stubEnv("LANGFUSE_SECRET_KEY", "s");
+  vi.stubEnv("LANGFUSE_PROJECT_ID", undefined);
+  vi.stubEnv("LANGFUSE_CAPTURE_CONTENT", undefined);
   const home = await mkdtemp(join(tmpdir(), "runtime-langfuse-")); homes.push(home);
   const provider = await startMockProvider({ plan: () => ({ reply: "完成", toolCalls: [{ name: "read_skill", input: { name: "demo" } }, { name: "manage_memory", input: { action: "submit", intent: "remember", subject: "用户", attribute: "颜色", content: "喜欢蓝色" } }] }) });
   const requests: string[] = [];
