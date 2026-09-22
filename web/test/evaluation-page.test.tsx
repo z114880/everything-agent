@@ -18,13 +18,13 @@ it('保留本地启动但不提供或发送记忆快照开关', async () => {
   await act(async () => root.render(<EvaluationPage />));
   expect(container.querySelector('input[type="checkbox"]')).toBeNull();
   expect(container.querySelector('select[aria-label="评估数据集"]')).not.toBeNull();
-  expect([...container.querySelectorAll('button')].some(button => button.textContent?.includes('启动 Experiment'))).toBe(true);
+  expect([...container.querySelectorAll('button')].some(button => button.textContent?.includes('Run Experiment'))).toBe(true);
   expect(container.textContent).toContain('不创建 Langfuse Experiment 记录');
   expect(container.textContent).toContain('memorySnapshot');
   expect(container.querySelector('a')?.href).toBe('http://localhost:3300/project/p');
   request.mockResolvedValueOnce({ datasets: [{ id: 'dataset', name: '测试集' }] });
   await click('连接平台');
-  await click('启动 Experiment');
+  await click('Run Experiment');
   expect(request).toHaveBeenCalledWith('', { action: 'start', datasetName: '测试集' });
 });
 it('执行完成但没有评分时明确等待，不宣称质量通过', async () => {
