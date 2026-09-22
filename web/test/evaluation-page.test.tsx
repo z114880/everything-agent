@@ -14,6 +14,18 @@ const dashboard: EvaluationDashboard = { configured: true, error: '', baseUrl: '
 beforeEach(() => { vi.useFakeTimers(); vi.clearAllMocks(); Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true }); container = document.createElement('div'); document.body.append(container); root = createRoot(container); request.mockResolvedValue(structuredClone(dashboard)); });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); });
 async function click(label: string) { const button = [...container.querySelectorAll('button')].find(button => button.textContent?.includes(label)); expect(button).toBeDefined(); await act(async () => button!.click()); }
+it('保留本地启动但不提供或发送记忆快照开关', async () => {
+  await act(async () => root.render(<EvaluationPage />));
+  expect(container.querySelector('input[type="checkbox"]')).toBeNull();
+  expect(container.querySelector('select[aria-label="评估数据集"]')).not.toBeNull();
+  expect(container.textContent).toContain('运行真实 Agent');
+  expect(container.textContent).toContain('memorySnapshot');
+  expect(container.querySelector('a')?.href).toBe('http://localhost:3300/project/p');
+  request.mockResolvedValueOnce({ datasets: [{ id: 'dataset', name: '测试集' }] });
+  await click('连接平台');
+  await click('运行真实 Agent');
+  expect(request).toHaveBeenCalledWith('', { action: 'start', datasetName: '测试集' });
+});
 it('执行完成但没有评分时明确等待，不宣称质量通过', async () => {
   await act(async () => root.render(<EvaluationPage />));
   expect(container.textContent).toContain('执行完成不代表质量通过'); expect(container.textContent).toContain('等待平台评分');

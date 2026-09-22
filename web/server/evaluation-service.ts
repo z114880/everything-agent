@@ -28,6 +28,8 @@ export async function startEvaluation(): Promise<void> {
 
 async function initializeEvaluation(): Promise<void> {
   try {
+    const concurrency = Number(process.env.EVERYTHING_EVALUATION_CONCURRENCY ?? 3);
+    if (!Number.isSafeInteger(concurrency) || concurrency < 1) throw new Error('EVERYTHING_EVALUATION_CONCURRENCY 必须是正安全整数');
     let env: Record<string, string> = {};
     try { env = parseEnv(await readFile(join(root, '.langfuse', 'compose.env'), 'utf8')); }
     catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error; }
@@ -47,7 +49,7 @@ async function initializeEvaluation(): Promise<void> {
     }
     if (token.length < 32) throw new Error('实验入口令牌无效');
     client = new LangfuseEvaluationClient(configuration);
-    const next = new EvaluationService({ directory, sourceHome: join(root, '.everything'), client });
+    const next = new EvaluationService({ directory, sourceHome: join(root, '.everything'), client, concurrency });
     await next.initialize();
     listener = createServer((request, response) => { void evaluationWebhook({ token, projectId: configuration!.projectId, start: input => next.start(input) })(request, response); });
     listener.requestTimeout = 15_000;

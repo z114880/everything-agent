@@ -19,10 +19,10 @@ export function evaluationWebhook(options: { token: string; projectId: string; s
       const payload: unknown = typeof value.payload === 'string' ? JSON.parse(value.payload) : value.payload ?? {};
       if (!payload || typeof payload !== 'object' || Array.isArray(payload)) { send(400, { error: 'payload 必须为对象' }); return; }
       const config = payload as Record<string, unknown>;
-      if (Object.keys(config).some(key => !['name', 'memorySnapshot'].includes(key))) { send(400, { error: '不支持的实验配置字段' }); return; }
-      if ((config.name !== undefined && typeof config.name !== 'string') || (config.memorySnapshot !== undefined && typeof config.memorySnapshot !== 'boolean')) { send(400, { error: '实验配置类型不正确' }); return; }
+      if (Object.keys(config).some(key => !['name'].includes(key))) { send(400, { error: '不支持的实验配置字段' }); return; }
+      if (config.name !== undefined && typeof config.name !== 'string') { send(400, { error: '实验配置类型不正确' }); return; }
       const run = await options.start({ datasetId: value.datasetId, datasetName: value.datasetName,
-        ...(typeof config.name === 'string' ? { name: config.name } : {}), memorySnapshot: config.memorySnapshot === true });
+        ...(typeof config.name === 'string' ? { name: config.name } : {}) });
       send(202, { runId: run.id });
     } catch { send(400, { error: '无法启动实验，请检查配置或当前运行状态' }); }
   };

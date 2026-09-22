@@ -15,11 +15,14 @@ export interface EvaluationOptions {
   directory: string; sourceHome: string;
   client: Pick<LangfuseEvaluationClient, 'dataset' | 'publish' | 'scores'>;
   createRuntime?: (home: string) => Runtime;
+  /** 用例并发上限，默认 3；必须是正安全整数。 */
+  concurrency?: number;
 }
 
 /** 本地真实评估队列：独立数据、有限并发、取消、审批、持久化与同步重试。 */
 export class EvaluationService {
   private readonly options: EvaluationOptions;
+  private readonly concurrency: number;
   private readonly runs = new Map<string, EvaluationRun>();
   private readonly jobs = new Map<string, Promise<void>>();
   private readonly controllers = new Map<string, AbortController>();
@@ -28,7 +31,11 @@ export class EvaluationService {
   private readonly syncing = new Map<string, Promise<void>>();
   private secrets: string[] = [];
   private initialized = false;
-  constructor(options: EvaluationOptions) { this.options = options; }
+  constructor(options: EvaluationOptions) {
+    this.concurrency = options.concurrency ?? 3;
+    if (!Number.isSafeInteger(this.concurrency) || this.concurrency < 1) throw new Error('评估并发数必须是正安全整数');
+    this.options = options;
+  }
 
   /** 载入新模块自己的历史记录；进程中断不自动重跑真实操作。 */
   async initialize(): Promise<void> {
@@ -49,16 +56,15 @@ export class EvaluationService {
     }
     this.initialized = true;
   }
-  /** 入队后立即返回 ID；一次只接受一个实验，每次实验两条用例并行。 */
+  /** 入队后立即返回 ID；一次只接受一个实验，每次实验按配置限制用例并发，默认 3。 */
   async start(input: EvaluationInput): Promise<EvaluationRun> {
     if (!this.initialized) throw new Error('评估服务尚未初始化');
     if (this.controllers.size) throw new Error('已有评估运行，请等待完成或取消');
     const datasetName = text(input.datasetName, '数据集名称', 200);
-    if (input.memorySnapshot !== undefined && typeof input.memorySnapshot !== 'boolean') throw new Error('memorySnapshot 必须为布尔值');
     const createdAt = new Date().toISOString();
     const id = randomUUID();
     const run: EvaluationRun = { id, name: `${input.name ? text(input.name, '实验名称', 120) : 'Everything Agent'} ${id.slice(0, 8)}`,
-      datasetName, datasetId: input.datasetId ?? '', datasetVersion: createdAt, memorySnapshot: input.memorySnapshot === true,
+      datasetName, datasetId: input.datasetId ?? '', datasetVersion: createdAt, memorySnapshot: false,
       createdAt, status: 'queued', items: [] };
     const controller = new AbortController();
     this.controllers.set(id, controller); this.runs.set(id, run);
@@ -117,6 +123,8 @@ export class EvaluationService {
       const dataset = await this.options.client.dataset(run.datasetName, run.datasetVersion);
       if (run.datasetId && run.datasetId !== dataset.id) throw new Error('数据集 ID 与名称不匹配');
       run.datasetId = dataset.id;
+      // 两种启动入口使用同一份平台配置，在复制记忆前固定本次运行的选择。
+      run.memorySnapshot = dataset.memorySnapshot === true;
       if (!dataset.items.length) throw new Error('数据集没有启用的用例');
       if (dataset.items.length > 200) throw new Error('单次评估最多接受 200 条用例');
       signal.throwIfAborted();
@@ -134,7 +142,7 @@ export class EvaluationService {
           await this.executeItem(run, run.items[index]!, dataset.items[index]!.input, baseline, signal);
         }
       };
-      const workers = await Promise.allSettled([worker(), worker()]);
+      const workers = await Promise.allSettled(Array.from({ length: Math.min(this.concurrency, run.items.length) }, () => worker()));
       const failed = workers.find(result => result.status === 'rejected');
       if (failed?.status === 'rejected') throw failed.reason;
       run.status = signal.aborted ? 'cancelled' : run.items.some(item => item.status !== 'completed') ? 'failed' : 'completed';

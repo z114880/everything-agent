@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, mkdir, readFile, writeFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { Readable } from 'node:stream';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { EvaluationService, evaluationTurns, evaluationWebhook, LangfuseEvaluationClient, prepareEvaluationHome, redactEvaluation, createEvaluationRuntime } from '../index.ts';
@@ -15,7 +16,7 @@ async function setup(run?: ReturnType<NonNullable<EvaluationOptions['createRunti
   const sourceHome = join(directory, 'source'); await mkdir(sourceHome);
   await writeFile(join(sourceHome, 'config.json'), JSON.stringify({ sandbox: { workspaceRoot: '/original' } }));
   await writeFile(join(sourceHome, '.env'), 'EVERYTHING_AGENT_API_KEY=secret-actual-key');
-  const client = { dataset: vi.fn(async () => ({ id: 'dataset', items: [{ id: 'case', input: { turns: ['一', '二'] }, expectedOutput: '答案' }] })), publish: vi.fn(async () => {}), scores: vi.fn(async () => [{ id: 'score', name: '质量', value: 0.5 }]) };
+  const client = { dataset: vi.fn<EvaluationOptions['client']['dataset']>(async () => ({ id: 'dataset', items: [{ id: 'case', input: { turns: ['一', '二'] }, expectedOutput: '答案' }] })), publish: vi.fn(async () => {}), scores: vi.fn(async () => [{ id: 'score', name: '质量', value: 0.5 }]) };
   const execute = vi.fn<ReturnType<NonNullable<EvaluationOptions['createRuntime']>>['run']>(run ?? (async () => ({ reply: '答案', runId: 'agent-run', iterations: 1, stopReason: 'end_turn', toolCallCount: 0, failedToolCallCount: 0, derivedTaskIds: [], model: 'real-model', provider: 'anthropic' as const, ms: 1, retrievalMs: 0, modelMs: 1, toolMs: 0, contextWindow: 10000, contextSafetyTokens: 512, maxTokens: 100, availableInputTokens: 9388, peakEstimatedInputTokens: null, peakInputTokens: null })));
   const close = vi.fn(async () => {});
   const createRuntime: NonNullable<EvaluationOptions['createRuntime']> = () => ({ run: execute, close, createSession: async () => ({ id: 'session', title: '新会话', createdAt: '', updatedAt: '', messageCount: 0, completedRunCount: 0, incompleteRunCount: 0 }), listPendingApprovals: () => [], settleApproval: () => false });
@@ -24,6 +25,24 @@ async function setup(run?: ReturnType<NonNullable<EvaluationOptions['createRunti
 }
 
 describe('真实评估编排', () => {
+  it.each([true, false, undefined])('运行读取平台数据集的记忆快照配置：%s', async (memorySnapshot) => {
+    const { service, client, sourceHome, options } = await setup();
+    await mkdir(join(sourceHome, 'database'));
+    const db = new DatabaseSync(join(sourceHome, 'database', 'state.db'));
+    db.exec("PRAGMA journal_mode=WAL; CREATE TABLE memory_tasks (id TEXT); CREATE TABLE consolidation_days (id TEXT); CREATE TABLE facts (content TEXT); INSERT INTO facts VALUES ('快照事实');");
+    db.close();
+    client.dataset.mockResolvedValueOnce({ id: 'dataset', ...(memorySnapshot === undefined ? {} : { memorySnapshot }), items: [{ id: 'case', input: '测试' }] });
+    const { id } = await service.start({ datasetName: '测试集' });
+    await service.wait(id);
+    const record = service.list()[0]!;
+    expect(record).toMatchObject({ status: 'completed', memorySnapshot: memorySnapshot === true });
+    const path = join(options.directory, id, record.items[0]!.traceId, 'database', 'state.db');
+    if (memorySnapshot) {
+      const copy = new DatabaseSync(path, { readOnly: true });
+      try { expect(copy.prepare('SELECT content FROM facts').get()?.content).toBe('快照事实'); } finally { copy.close(); }
+    } else { await expect(readFile(path)).rejects.toMatchObject({ code: 'ENOENT' }); }
+  });
+
   it('多轮用例复用会话，固定数据集版本并分别回传与评分', async () => {
     const { service, client, execute, sourceHome, options } = await setup();
     const started = await service.start({ datasetName: '测试集' }); await service.wait(started.id);
@@ -176,13 +195,13 @@ async function webhook(body: unknown, token = 'secret', url = '/trigger') {
 }
 describe('平台回调边界', () => {
   it('仅接收正确项目和专用令牌，立即返回运行 ID', async () => {
-    const result = await webhook({ projectId: 'project', datasetId: 'dataset', datasetName: '测试', payload: JSON.stringify({ memorySnapshot: true }) });
-    expect(result.status).toBe(202); expect(result.start).toHaveBeenCalledWith({ datasetId: 'dataset', datasetName: '测试', memorySnapshot: true });
+    const result = await webhook({ projectId: 'project', datasetId: 'dataset', datasetName: '测试', payload: JSON.stringify({ name: '平台实验' }) });
+    expect(result.status).toBe(202); expect(result.start).toHaveBeenCalledWith({ datasetId: 'dataset', datasetName: '测试', name: '平台实验' });
     expect((await webhook({}, 'wrong')).status).toBe(401); expect((await webhook({}, 'secret', '/api/local-agent')).status).toBe(404);
   });
-  it('拒绝跨项目、路径覆盖和非布尔审批策略', async () => {
+  it('拒绝跨项目、路径覆盖和 payload 记忆快照覆盖', async () => {
     const base = { projectId: 'project', datasetId: 'dataset', datasetName: '测试' };
-    for (const body of [{ ...base, projectId: 'other' }, { ...base, payload: { home: '/private' } }, { ...base, payload: { memorySnapshot: 'yes' } }, { ...base, payload: [] }]) expect((await webhook(body)).status).toBe(400);
+    for (const body of [{ ...base, projectId: 'other' }, { ...base, payload: { home: '/private' } }, { ...base, payload: { memorySnapshot: true } }, { ...base, payload: [] }]) expect((await webhook(body)).status).toBe(400);
   });
 });
 
@@ -270,12 +289,22 @@ describe('Langfuse v4 协议', () => {
         { id: 'active', status: 'ACTIVE', input: '测试', expectedOutput: '答案', metadata: { terminal: true } },
         { id: 'archived', status: 'ARCHIVED', input: '旧测试' },
       ], meta: { totalPages: 1 } });
-      return Response.json({ id: 'dataset', name: '测试' });
+      return Response.json({ id: 'dataset', name: '测试', metadata: { memorySnapshot: true } });
     }); vi.stubGlobal('fetch', fetched);
     const client = new LangfuseEvaluationClient({ baseUrl: 'http://localhost:3300', publicKey: 'pk', secretKey: 'sk', projectId: 'p' });
     const version = '2026-09-20T00:00:00Z'; const result = await client.dataset('测试', version);
+    expect(result.memorySnapshot).toBe(true);
     expect(result.items).toEqual([{ id: 'active', input: '测试', expectedOutput: '答案', terminalEnabled: true }]);
     expect(fetched.mock.calls.some(([url]) => decodeURIComponent(String(url)).includes(version))).toBe(true);
+  });
+  it.each([false, undefined, 'true', null])('校验数据集快照配置并默认关闭：%s', async (memorySnapshot) => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string | URL | Request) => String(url).includes('/dataset-items')
+      ? Response.json({ data: [], meta: { totalPages: 1 } })
+      : Response.json({ id: 'dataset', name: '测试', metadata: { memorySnapshot } })));
+    const client = new LangfuseEvaluationClient({ baseUrl: 'http://localhost:3300', publicKey: 'pk', secretKey: 'sk', projectId: 'p' });
+    const result = client.dataset('测试', '2026-09-20T00:00:00Z');
+    if (memorySnapshot === false || memorySnapshot === undefined) await expect(result).resolves.toMatchObject({ memorySnapshot: false });
+    else await expect(result).rejects.toThrow('metadata.memorySnapshot 必须为布尔值');
   });
   it('平台数据集和评分完整分页，HTTP 失败不返回空结果', async () => {
     const client = new LangfuseEvaluationClient({ baseUrl: 'http://localhost:3300', publicKey: 'pk', secretKey: 'sk', projectId: 'p' });
@@ -285,4 +314,44 @@ describe('Langfuse v4 协议', () => {
     expect(await client.scores({ traceId: 't', observationId: 'o' } as EvaluationItem)).toHaveLength(1);
     mocked.mockResolvedValueOnce(new Response('', { status: 401 })); await expect(client.datasets()).rejects.toThrow('401');
   });
+});
+
+it.each([undefined, 1, 2, 5, 20])('用例按并发配置执行且每条只执行一次：%s', async (concurrency) => {
+  const count = 7;
+  const limit = Math.min(concurrency ?? 3, count);
+  const entered = Array.from({ length: count }, () => Promise.withResolvers<void>());
+  const releases = Array.from({ length: count }, () => Promise.withResolvers<void>());
+  const { options, execute, client } = await setup();
+  const result = await execute({ sessionId: 'fixture', prompt: 'fixture' }, { observer: () => {}, signal: new AbortController().signal });
+  execute.mockClear();
+  let active = 0; let peak = 0;
+  execute.mockImplementation(async ({ prompt }) => {
+    const index = Number(prompt);
+    active++; peak = Math.max(peak, active); entered[index]!.resolve();
+    await releases[index]!.promise;
+    active--; return result;
+  });
+  client.dataset.mockResolvedValue({ id: 'dataset', items: Array.from({ length: count }, (_, i) => ({ id: String(i), input: String(i) })) });
+  const service = new EvaluationService({ ...options, ...(concurrency === undefined ? {} : { concurrency }) });
+  await service.initialize();
+  const { id } = await service.start({ datasetName: '并发测试' });
+  try {
+    await Promise.all(entered.slice(0, limit).map(item => item.promise));
+    expect(active).toBe(limit);
+    for (let index = 0; index < count; index++) {
+      await entered[index]!.promise;
+      releases[index]!.resolve();
+    }
+    await service.wait(id);
+    expect(peak).toBe(limit);
+    expect(execute.mock.calls.map(([input]) => input.prompt).sort()).toEqual(['0', '1', '2', '3', '4', '5', '6']);
+    expect(service.list()[0]!.items.every(item => item.status === 'completed')).toBe(true);
+  } finally {
+    releases.forEach(item => item.resolve());
+    await service.close();
+  }
+});
+it.each([0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])('拒绝非法用例并发数：%s', async (concurrency) => {
+  const { options } = await setup();
+  expect(() => new EvaluationService({ ...options, concurrency })).toThrow('评估并发数必须是正安全整数');
 });

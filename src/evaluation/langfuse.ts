@@ -19,10 +19,13 @@ export class LangfuseEvaluationClient {
       if (page >= result.meta.totalPages) return items;
     }
   }
-  /** 数据集按时间点读取；归档项不参与运行。 */
-  async dataset(name: string, version: string): Promise<{ id: string; items: EvaluationCase[] }> {
+  /** 用例按时间点读取，归档项不参与运行；数据集 metadata.memorySnapshot 仅接受布尔值。 */
+  async dataset(name: string, version: string): Promise<{ id: string; memorySnapshot?: boolean; items: EvaluationCase[] }> {
     const data = await this.sdk.dataset.get(name, { version });
-    return { id: data.id, items: data.items.filter(item => item.status === 'ACTIVE').map(item => ({ id: item.id, input: item.input, expectedOutput: item.expectedOutput, terminalEnabled: Boolean(item.metadata && typeof item.metadata === 'object' && 'terminal' in item.metadata && item.metadata.terminal === true) })) };
+    const metadata = data.metadata;
+    const memorySnapshot: unknown = metadata && typeof metadata === 'object' && 'memorySnapshot' in metadata ? metadata.memorySnapshot : undefined;
+    if (memorySnapshot !== undefined && typeof memorySnapshot !== 'boolean') throw new Error('数据集 metadata.memorySnapshot 必须为布尔值');
+    return { id: data.id, memorySnapshot: memorySnapshot === true, items: data.items.filter(item => item.status === 'ACTIVE').map(item => ({ id: item.id, input: item.input, expectedOutput: item.expectedOutput, terminalEnabled: Boolean(item.metadata && typeof item.metadata === 'object' && 'terminal' in item.metadata && item.metadata.terminal === true) })) };
   }
   /** 按用例根 observation 拉取平台评分，完整消费游标。 */
   async scores(item: EvaluationItem): Promise<EvaluationScore[]> {

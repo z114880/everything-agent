@@ -1,7 +1,7 @@
 /** 一条平台数据集用例；input 支持字符串、{ prompt } 或 { turns: string[] }。 */
 export interface EvaluationCase { id: string; input: unknown; expectedOutput?: unknown; terminalEnabled?: boolean; }
 /** 一次评估启动参数；只接受固定选项，不接受远程路径或凭证覆盖。 */
-export interface EvaluationInput { datasetName: string; datasetId?: string; name?: string; memorySnapshot?: boolean; }
+export interface EvaluationInput { datasetName: string; datasetId?: string; name?: string; }
 /** 平台评分原值；没有配置质量阈值时不推断通过。 */
 export interface EvaluationScore { id: string; name: string; value: unknown; comment?: string; }
 /** 来自真实 Runtime 的有序、脱敏执行记录。 */

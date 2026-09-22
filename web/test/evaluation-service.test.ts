@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
+  construct: vi.fn(),
   missing: false, portBusy: false, listens: 0, closes: 0,
   start: vi.fn(async () => ({ id: 'run' })), refresh: vi.fn(async () => {}), approve: vi.fn(() => true),
 }));
@@ -24,6 +25,7 @@ vi.mock('node:http', () => ({ createServer: () => {
 } }));
 vi.mock('../../src/evaluation/index.ts', () => ({
   EvaluationService: class {
+    constructor(options: unknown) { state.construct(options); }
     async initialize() {} async close() {}
     list() { return []; } approvals() { return []; }
     start = state.start; refresh = state.refresh; approve = state.approve;
@@ -33,7 +35,7 @@ vi.mock('../../src/evaluation/index.ts', () => ({
   evaluationWebhook: vi.fn(() => vi.fn()),
 }));
 beforeEach(() => { vi.resetModules(); vi.clearAllMocks(); state.missing = false; state.portBusy = false; state.listens = 0; state.closes = 0;
-  for (const key of ['LANGFUSE_PUBLIC_KEY', 'LANGFUSE_SECRET_KEY', 'LANGFUSE_PROJECT_ID']) vi.stubEnv(key, undefined);
+  for (const key of ['EVERYTHING_EVALUATION_CONCURRENCY', 'LANGFUSE_PUBLIC_KEY', 'LANGFUSE_SECRET_KEY', 'LANGFUSE_PROJECT_ID']) vi.stubEnv(key, undefined);
 });
 afterEach(() => vi.unstubAllEnvs());
 it('并发初始化只绑定一次端口，关闭后可重新启动且不泄露平台凭证', async () => {
@@ -61,4 +63,20 @@ it('没有凭证时页面提供明确原因，不启动回调端口', async () =
   await service.startEvaluation(); expect(state.listens).toBe(0);
   expect(service.evaluationDashboard()).toMatchObject({ configured: false, error: '缺少 Langfuse 项目 ID 或 API 凭证' });
   await expect(service.evaluationAction({ action: 'start' })).rejects.toThrow('缺少');
+});
+
+it.each([[undefined, 3], ['1', 1], ['5', 5]] as const)('后端读取并发环境变量 %s，默认 3', async (value, expected) => {
+  vi.stubEnv('EVERYTHING_EVALUATION_CONCURRENCY', value);
+  const service = await import('../server/evaluation-service.ts');
+  await service.startEvaluation();
+  expect(state.construct).toHaveBeenCalledWith(expect.objectContaining({ concurrency: expected }));
+  await service.closeEvaluation();
+});
+it.each(['', ' ', '0', '-1', '1.5', 'abc', 'Infinity', '9007199254740992'])('非法并发配置阻止启动并显示错误：%s', async (value) => {
+  vi.stubEnv('EVERYTHING_EVALUATION_CONCURRENCY', value);
+  const service = await import('../server/evaluation-service.ts');
+  await service.startEvaluation();
+  expect(service.evaluationDashboard()).toMatchObject({ configured: false, error: 'EVERYTHING_EVALUATION_CONCURRENCY 必须是正安全整数' });
+  expect(state.listens).toBe(0);
+  expect(state.construct).not.toHaveBeenCalled();
 });
