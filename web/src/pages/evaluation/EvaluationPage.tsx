@@ -69,7 +69,7 @@ export function EvaluationPage() {
         <p><strong>Default config</strong> 填 <code className="inline-block rounded-md bg-muted p-3 text-xs break-all">{'{"name":"Everything Agent"}'}</code></p>
         <p><strong>Sign requests</strong> 保持关闭，我们的网关只校验 authorization，不校验 x-langfuse-signature。</p>
         <p><strong>Enabled</strong> 打开，否则实验无法触发。</p>
-        <p>展开 <strong>Advanced Options</strong> → <strong>Custom headers</strong>：名称填 <code>authorization</code>，值粘贴下方复制的内容，勾选 <strong>Secret</strong>，最后保存。</p>
+        <p>展开 <strong>Advanced Options</strong> → <strong>Custom headers</strong>：名称填 <code>authorization</code>，值粘贴下方复制的内容，最后保存。</p>
         <div><Button variant="outline" size="sm" onClick={() => void copyHeaders()} disabled={!data?.configured}><Copy size={14} />复制 authorization 值</Button></div>
         <p>本地 Web 服务需保持运行。平台评估器需在 Langfuse 中配置，目标为本次 Experiment 的根 Agent observation。未收到评分时显示等待评分，不推断通过。</p>
       </div></section>
