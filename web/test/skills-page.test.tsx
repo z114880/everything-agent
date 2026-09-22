@@ -25,6 +25,17 @@ describe("Skills 页面", () => {
     expect(html).toContain("新建 Skill");
   });
 
+  it("新建 Skill 按钮跟在页面描述后面，放置方式与刷新数据按钮一致", async () => {
+    const html = renderToStaticMarkup(<SkillsPage />);
+    const source = await readFile(new URL("../src/pages/skills/SkillsPage.tsx", import.meta.url), "utf8");
+    const databaseSource = await readFile(new URL("../src/pages/database/DatabasePage.tsx", import.meta.url), "utf8");
+
+    expect(source).toContain('description="管理 Agent 可发现并按需读取的本地技能。" descriptionActions={<Button size="sm" disabled={saving} onClick={create}>');
+    expect(databaseSource).toContain('descriptionActions={<Button size="sm"');
+    expect(html).toMatch(/<div class="page-heading-description"><p>管理 Agent 可发现并按需读取的本地技能。<\/p><div class="page-heading-description-actions">.*新建 Skill/);
+    expect(html).not.toContain('class="page-heading-actions"');
+  });
+
   it("初次读取时展示页面加载态，但按钮不闪现 loading 或禁用样式", () => {
     const html = renderToStaticMarkup(<SkillsPage />);
     const buttonTags = html.match(/<button[^>]*>/g) ?? [];

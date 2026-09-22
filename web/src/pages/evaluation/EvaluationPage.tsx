@@ -2,15 +2,22 @@ import { useEffect, useState } from 'react';
 import { RefreshCw, ExternalLink, Copy, Play, Square } from 'lucide-react';
 import { PageHeading } from '../../components/PageHeading';
 import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { evaluationRequest } from '../../evaluation-api';
 import type { EvaluationDashboard } from '../../evaluation-api';
 
 const labels: Record<string, string> = { queued: '排队中', running: '执行中', waiting_approval: '等待审批', completed: '执行完成', failed: '失败', cancelled: '已取消', interrupted: '进程中断', pending: '待同步', synced: '已同步' };
+/** Radix Select 不允许用空字符串作为选项值，未选择数据集时用该占位值表示“尚未选择”。 */
+const noDataset = 'none';
+/** 服务端对 Experiment 名称前缀的限制是 1–120 字符，这里同步限制输入长度。 */
+const maxNameLength = 120;
 /** 真实评估控制台；运行留在服务端，离开页面不会取消 Experiment。 */
 export function EvaluationPage() {
   const [data, setData] = useState<EvaluationDashboard>();
   const [datasets, setDatasets] = useState<{ id: string; name: string }[]>([]);
   const [dataset, setDataset] = useState('');
+  const [name, setName] = useState('');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState('');
   const [error, setError] = useState('');
@@ -58,11 +65,12 @@ export function EvaluationPage() {
         <div className="flex gap-2"><Button variant="outline" disabled={busy || !data?.configured} onClick={() => void connect()}><RefreshCw size={14} />连接平台</Button>{data?.configured && <a className="text-sm underline flex items-center gap-1" href={projectUrl} target="_blank" rel="noreferrer">打开 Langfuse <ExternalLink size={14} /></a>}</div></div>
       <section className="border-t pt-4 text-sm"><h2 className="font-semibold">从 Langfuse 管理平台发起 Experiment</h2><div className="mt-3 space-y-3 text-muted-foreground">
         <p>打开数据集 → 进入 <strong>Experiments</strong> 标签页 → 右上角 <strong>Run experiment</strong> → 在 Run Experiment 弹窗里选 <strong>via Webhook</strong> 卡片。</p>
-        <p>首次点击卡片上的 Configure，进入 <strong>Set up remote experiment trigger in UI</strong>：<strong>URL</strong> 填回调地址</p><code className="block break-all text-foreground">{data?.webhookUrl}</code>
-        <p className="text-xs">该地址是 Docker 内部网关（明文 HTTP），平台会提示 payload 与请求头未加密，这是预期提示；回调不映射宿主端口，只允许平台容器访问。</p>
-        <p><strong>Default config</strong> 填 <code>{'{"name":"Everything Agent"}'}</code>；<strong>Sign requests</strong> 保持关闭（我们的网关只校验 authorization，不校验 x-langfuse-signature）；<strong>Enabled</strong> 打开，否则实验无法触发。展开 <strong>Advanced Options</strong> → <strong>Custom headers</strong>，名称填 authorization，值粘贴下方复制的内容，并标记 Secret，最后保存。</p>
-        <Button variant="outline" size="sm" onClick={() => void copyHeaders()} disabled={!data?.configured}><Copy size={14} />复制 authorization 值</Button>
-        <p>保存后卡片按钮变为 <strong>Run</strong>，点击它并在 <strong>Run remote dataset run</strong> 弹窗里确认或临时修改本次 config，再点击 Run 触发。</p>
+        <p>首次点击卡片上的 Configure，进入 <strong>Set up remote experiment trigger in UI</strong>：<strong>URL</strong> 填回调地址 <code className="inline-block rounded-md bg-muted p-3 text-xs break-all">{data?.webhookUrl}</code></p>
+        <p><strong>Default config</strong> 填 <code className="inline-block rounded-md bg-muted p-3 text-xs break-all">{'{"name":"Everything Agent"}'}</code></p>
+        <p><strong>Sign requests</strong> 保持关闭，我们的网关只校验 authorization，不校验 x-langfuse-signature。</p>
+        <p><strong>Enabled</strong> 打开，否则实验无法触发。</p>
+        <p>展开 <strong>Advanced Options</strong> → <strong>Custom headers</strong>：名称填 <code>authorization</code>，值粘贴下方复制的内容，勾选 <strong>Secret</strong>，最后保存。</p>
+        <div><Button variant="outline" size="sm" onClick={() => void copyHeaders()} disabled={!data?.configured}><Copy size={14} />复制 authorization 值</Button></div>
         <p>本地 Web 服务需保持运行。平台评估器需在 Langfuse 中配置，目标为本次 Experiment 的根 Agent observation。未收到评分时显示等待评分，不推断通过。</p>
       </div></section>
     </section>
@@ -80,14 +88,28 @@ export function EvaluationPage() {
           <h3 className="text-sm font-semibold">Remote experiment trigger → Default config</h3>
           <code className="block rounded-md bg-muted p-3 text-xs break-all">{'{"name":"Everything Agent"}'}</code>
           <p className="text-sm"><strong>name</strong>：Experiment 名称前缀，默认 Everything Agent；最终名称自动附加运行 ID 短码。留空表示不发送 config。</p>
-          <p className="text-xs text-muted-foreground">此处仅配置名称，不填写 terminal 或 memorySnapshot。每次点击 Run 时该 config 可在 Run remote dataset run 弹窗里临时修改；本地启动使用默认名称前缀。</p>
+          <p className="text-xs text-muted-foreground">此处仅配置名称，不填写 terminal 或 memorySnapshot。每次点击 Run 时该 config 可在 Run remote dataset run 弹窗里临时修改；本地启动在下方「数据集与实验」里填写同一个名称前缀，留空时同样使用默认值。</p>
         </div>
       </div>
     </section>
-    <section className="rounded-xl border p-5 space-y-3"><h2 className="font-semibold">数据集与实验</h2><div className="flex flex-wrap items-center gap-3">
-      <select aria-label="评估数据集" className="rounded-md border bg-background p-2 w-full sm:w-auto sm:min-w-64 max-w-full" value={dataset} onChange={event => setDataset(event.target.value)}><option value="">选择 Langfuse 数据集</option>{datasets.map(item => <option key={item.id} value={item.name}>{item.name}</option>)}</select>
-      <Button disabled={busy || active || !dataset} onClick={() => void act({ action: 'start', datasetName: dataset })}><Play size={14} />Run Experiment</Button>
-    </div><p className="text-xs text-muted-foreground">与平台入口共用同一执行过程，但不创建 Langfuse Experiment 记录，只把执行轨迹回传到对应数据集条目；需要在平台留下 Experiment 记录时用上方入口。每条用例独立会话和工作目录，并行数由服务端配置；需要审批时暂停该用例。输入支持字符串、{'{ prompt }'} 或 {'{ turns: ["第一轮", "第二轮"] }'}。</p></section>
+    <section className="rounded-xl border p-5 space-y-3"><h2 className="font-semibold">数据集与实验</h2><div className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+      <div className="flex min-w-0 w-full flex-col gap-1.5 sm:max-w-96"><span id="evaluation-dataset-label" className="text-xs font-medium">Langfuse 数据集</span>
+        <Select value={dataset || noDataset} onValueChange={value => setDataset(value === noDataset ? '' : value)}>
+          <SelectTrigger aria-labelledby="evaluation-dataset-label" className="w-full min-w-0"><SelectValue placeholder="选择数据集" /></SelectTrigger>
+          <SelectContent><SelectItem value={noDataset}><span className="text-muted-foreground">选择数据集</span></SelectItem>{datasets.map(item => <SelectItem key={item.id} value={item.name}>{item.name}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
+      <div className="flex min-w-0 w-full flex-col gap-1.5 sm:max-w-96"><span id="evaluation-name-label" className="text-xs font-medium">Experiment 名称前缀（可选）</span>
+        <Input aria-labelledby="evaluation-name-label" className="w-full min-w-0" value={name} maxLength={maxNameLength} spellCheck={false} placeholder="留空时使用 Everything Agent" onChange={event => setName(event.target.value)} />
+      </div>
+      <Button disabled={busy || active || !dataset} onClick={() => void act({ action: 'start', datasetName: dataset, ...(name.trim() ? { name: name.trim() } : {}) })}><Play size={14} />Run Experiment</Button>
+    </div>
+    <p className="text-xs text-muted-foreground">
+      1. 与平台入口共用同一执行过程，但不创建 Langfuse Experiment 记录，只把执行轨迹回传到对应数据集条目；需要审批时暂停该用例。
+      <br />
+      2. 输入支持字符串、{'{ prompt }'} 或 {'{ turns: ["第一轮", "第二轮"] }'}。
+    </p>
+    </section>
     {Boolean(data?.approvals.length) && <section className="rounded-xl border border-amber-500 p-5 space-y-3"><h2 className="font-semibold">待确认操作</h2>{data!.approvals.map(approval => <div key={approval.id} className="rounded-lg border p-4 space-y-2"><p className="text-xs text-muted-foreground">Experiment {approval.runId.slice(0, 8)} · 用例 {approval.itemId}</p><p>{approval.reason}</p><pre className="whitespace-pre-wrap break-all text-sm">{approval.command}</pre>{approval.detail && <p className="text-sm">{approval.detail}</p>}<div className="flex gap-2">{[true, false].map(approved => <Button key={String(approved)} variant={approved ? 'default' : 'outline'} disabled={busy} onClick={() => void act({ action: 'approve', runId: approval.runId, itemId: approval.itemId, approvalId: approval.id, approved })}>{approved ? '批准本次操作' : '拒绝'}</Button>)}</div></div>)}</section>}
     <div className="grid lg:grid-cols-[280px_minmax(0,1fr)] items-start gap-5"><section aria-label="Experiment 记录" className="rounded-xl border p-4 space-y-3"><div className="flex items-center justify-between"><h2 className="font-semibold">Experiment 记录</h2><span className="text-xs text-muted-foreground">共 {data?.runs.length ?? 0} 条</span></div>{!data?.runs.length && <p className="text-sm text-muted-foreground">尚无 Experiment。从平台或本页启动后，记录会显示在这里。</p>}{visibleRuns.map(item => <button aria-pressed={run?.id === item.id} key={item.id} className={`w-full rounded-lg border p-3 text-left space-y-1 ${run?.id === item.id ? 'border-primary bg-muted' : 'hover:bg-muted/50'}`} onClick={() => setSelected(item.id)}><strong className="block text-sm break-all">{item.name}</strong><span className="block text-xs">{item.datasetName} · {labels[item.status]}</span><span className="block text-xs text-muted-foreground">{new Date(item.createdAt).toLocaleString()}</span></button>)}
       <nav aria-label="Experiment 记录分页" className="flex items-center justify-between gap-2 border-t pt-3">

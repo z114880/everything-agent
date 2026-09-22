@@ -11,21 +11,66 @@ let container: HTMLDivElement; let root: ReturnType<typeof createRoot>;
 const dashboard: EvaluationDashboard = { configured: true, error: '', baseUrl: 'http://localhost:3300', projectId: 'p', webhookUrl: 'http://evaluation-gateway/trigger', approvals: [], runs: [{
   id: 'run', name: '真实 Experiment', datasetId: 'dataset', datasetName: '测试集', datasetVersion: '2026-09-20T00:00:00Z', memorySnapshot: false, terminalEnabled: false, createdAt: '2026-09-20T00:00:00Z', status: 'completed', items: [{ id: 'item', input: '问题', expectedOutput: '期望', output: ['回答'], traceId: 'trace', observationId: 'span', status: 'completed', sync: 'synced', events: [], scores: [], toolCalls: 1, inputTokens: null, outputTokens: null, approvalDenied: false }],
 }] };
-beforeEach(() => { vi.useFakeTimers(); vi.resetAllMocks(); Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true }); container = document.createElement('div'); document.body.append(container); root = createRoot(container); request.mockResolvedValue(structuredClone(dashboard)); });
+beforeEach(() => {
+  vi.useFakeTimers(); vi.resetAllMocks();
+  // Radix Select 依赖指针捕获与滚动 API，happy-dom 未实现，这里补最小组件桩
+  const proto = globalThis.Element.prototype as unknown as Record<string, unknown>;
+  proto.hasPointerCapture = () => false;
+  proto.setPointerCapture = () => {};
+  proto.releasePointerCapture = () => {};
+  proto.scrollIntoView = () => {};
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  container = document.createElement('div'); document.body.append(container); root = createRoot(container); request.mockResolvedValue(structuredClone(dashboard));
+});
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); });
 async function click(label: string) { const button = [...container.querySelectorAll('button')].find(button => button.textContent?.includes(label)); expect(button).toBeDefined(); await act(async () => button!.click()); }
-it('保留本地启动但不提供或发送记忆快照开关', async () => {
+/** 打开数据集下拉框并选中指定项；选项渲染在 portal 中，因此从 document 查找。 */
+async function pickDataset(name: string) {
+  const trigger = container.querySelector<HTMLElement>('[role="combobox"]'); expect(trigger).not.toBeNull();
+  await act(async () => { trigger!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, pointerType: 'mouse' })); trigger!.click(); });
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(item => item.textContent?.includes(name)); expect(option).toBeDefined();
+  await act(async () => { option!.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true })); option!.click(); });
+}
+/** 通过原生 setter 更新受控输入，确保 React 收到 input 事件。 */
+async function enterName(value: string) {
+  const input = container.querySelector('input');
+  expect(input).not.toBeNull();
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+    input!.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+it('本地启动可临时填写 Experiment 名称前缀，留空时不提交名称', async () => {
   await act(async () => root.render(<EvaluationPage />));
-  expect(container.querySelector('input[type="checkbox"]')).toBeNull();
-  expect(container.querySelector('select[aria-label="评估数据集"]')).not.toBeNull();
+  const trigger = container.querySelector('[role="combobox"]');
+  expect(trigger).not.toBeNull();
+  expect(trigger!.textContent).toContain('选择数据集');
+  expect(container.textContent).toContain('Langfuse 数据集');
   expect([...container.querySelectorAll('button')].some(button => button.textContent?.includes('Run Experiment'))).toBe(true);
   expect(container.textContent).toContain('不创建 Langfuse Experiment 记录');
-  expect(container.textContent).toContain('memorySnapshot');
+  expect(container.querySelector('input')?.placeholder).toBe('留空时使用 Everything Agent');
   expect(container.querySelector('a')?.href).toBe('http://localhost:3300/project/p');
   request.mockResolvedValueOnce({ datasets: [{ id: 'dataset', name: '测试集' }] });
   await click('连接平台');
+  await pickDataset('测试集');
+  expect(trigger!.textContent).toContain('测试集');
+  const starts = () => request.mock.calls.filter(([, body]) => (body as { action?: string } | undefined)?.action === 'start').map(([, body]) => body);
   await click('Run Experiment');
-  expect(request).toHaveBeenCalledWith('', { action: 'start', datasetName: '测试集' });
+  expect(starts()).toEqual([{ action: 'start', datasetName: '测试集' }]);
+  await enterName('本地临时前缀');
+  await click('Run Experiment');
+  expect(starts().at(-1)).toEqual({ action: 'start', datasetName: '测试集', name: '本地临时前缀' });
+  // 只输入空格等同于未填写，仍走默认名称前缀
+  await enterName('   ');
+  await click('Run Experiment');
+  expect(starts().at(-1)).toEqual({ action: 'start', datasetName: '测试集' });
+});
+it('本地启动只提供名称输入，不提供 terminal 与 memorySnapshot 开关', async () => {
+  await act(async () => root.render(<EvaluationPage />));
+  expect(container.querySelector('input[type="checkbox"]')).toBeNull();
+  expect(container.querySelectorAll('input').length).toBe(1);
+  expect(container.textContent).toContain('memorySnapshot');
+  expect(container.textContent).toContain('terminal');
 });
 it('执行完成但没有评分时明确等待，不宣称质量通过', async () => {
   await act(async () => root.render(<EvaluationPage />));
@@ -59,10 +104,42 @@ it('配置入口常驻展示默认值，并展示 Experiment 采用的配置', a
   expect(container.textContent).toContain('{"name":"Everything Agent"}');
   expect(container.textContent).toContain('terminal：true');
   expect(container.textContent).toContain('memorySnapshot：false');
-  expect(container.textContent).toContain('名称填 authorization');
+  expect([...container.querySelectorAll('code')].some(code => code.textContent === 'authorization')).toBe(true);
   expect(container.textContent).toContain('via Webhook');
   expect(container.textContent).toContain('Set up remote experiment trigger in UI');
   expect([...container.querySelectorAll('details')].some(item => item.textContent?.includes('从 Langfuse 管理平台发起 Experiment'))).toBe(false);
+});
+it('需要填写的回调地址与 Default config 不占整行，且内边距与数据集 Metadata 示例一致', async () => {
+  await act(async () => root.render(<EvaluationPage />));
+  const blocks = [...container.querySelectorAll('code')].map(code => ({ text: code.textContent ?? '', classes: code.className }));
+  const metadata = blocks.find(block => block.text === '{"terminal":false,"memorySnapshot":false}');
+  expect(metadata?.classes).toContain('block');
+  expect(metadata?.classes).toContain('p-3');
+  const webhook = [...container.querySelectorAll('code')].find(code => code.textContent === dashboard.webhookUrl);
+  expect(webhook).toBeDefined();
+  // 回调地址紧跟在“URL 填回调地址”之后，同一段落内不另起一行
+  expect(webhook!.previousSibling?.nodeType).toBe(Node.TEXT_NODE);
+  expect(webhook!.closest('p')?.textContent).toContain('URL 填回调地址');
+  expect(webhook!.closest('p')?.querySelector('br')).toBeNull();
+  for (const text of [dashboard.webhookUrl, '{"name":"Everything Agent"}']) {
+    const block = blocks.find(item => item.text === text);
+    expect(block).toBeDefined();
+    // 内联框不能拉满整行（不能是 block），但垂直内边距要和块级示例一致，避免两种代码框高度不同
+    expect(block!.classes.split(' ')).not.toContain('block');
+    expect(block!.classes).toContain('inline-block');
+    expect(block!.classes).toContain('bg-muted');
+    expect(block!.classes).toContain('p-3');
+  }
+});
+it('运行区说明用换行分隔用例边界与输入格式', async () => {
+  await act(async () => root.render(<EvaluationPage />));
+  const note = [...container.querySelectorAll('p')].find(item => item.textContent?.includes('与平台入口共用同一执行过程'));
+  expect(note).toBeDefined();
+  const br = note!.querySelector('br');
+  // JSX 源码里的换行会被折叠成空格，这一处换行必须由 <br /> 产生
+  expect(br).not.toBeNull();
+  expect(br!.previousSibling?.textContent).toContain('需要审批时暂停该用例。');
+  expect(br!.nextSibling?.textContent).toContain('输入支持字符串');
 });
 it('平台启动说明与 Langfuse v4 实际界面一致，不残留不存在的老文案', async () => {
   await act(async () => root.render(<EvaluationPage />));

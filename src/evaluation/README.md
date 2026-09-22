@@ -11,12 +11,12 @@ pnpm run dev:web
 
 首次部署自动生成 `.langfuse/compose.env`，包含项目 API 凭证和管理员随机密码。Langfuse 地址为 `http://localhost:3300`。后端读取该文件中的 `LANGFUSE_INIT_PROJECT_*`，不把平台密钥发送给浏览器。详见 [Docker 部署说明](../../deploy/langfuse/README.md)。
 
-打开 Evaluation → 连接平台，选择数据集，点击「Run Experiment」即可从本地发起运行。
+打开 Evaluation → 连接平台，选择数据集，可按需填写 Experiment 名称前缀，点击「Run Experiment」即可从本地发起运行。
 
 在 Langfuse 中选择数据集 → 进入 **Experiments** 标签页 → 右上角 **Run experiment** → 在 **Run Experiment** 弹窗里选 **via Webhook** 卡片：
 
 - 首次点击卡片上的 Configure，进入 **Set up remote experiment trigger in UI**。URL 填回调地址 `http://evaluation-gateway/trigger`。该地址是 Docker 内部网关，平台会提示明文 HTTP，属预期提示。
-- Default config：`{}`，或填写 `{"name":"Everything Agent"}` 指定 Experiment 名称前缀。仅在远程回调时生效，不承载 terminal、memorySnapshot 等运行开关。
+- Default config：`{}`，或填写 `{"name":"Everything Agent"}` 指定 Experiment 名称前缀。本地入口在运行区提供同名字段，两条入口的 config 都只承载名称，不承载 terminal、memorySnapshot 等运行开关。
 - Sign requests：保持关闭。开启后平台只额外发送 `x-langfuse-signature`，本地网关不校验它；鉴权始终由下方 authorization header 承担。
 - Enabled：打开，否则平台不允许触发并提示 enable webhook。
 - Advanced Options → Custom headers：名称填 `authorization`，值为 Evaluation 页面“复制 authorization 值”获得的内容，标记为 Secret。Langfuse 会拒绝覆盖 `content-type`、`user-agent`、`x-langfuse-signature` 等由它自己添加的保留头。
@@ -32,7 +32,7 @@ Docker 内部网关使用 80 端口，满足 Langfuse 的 Webhook 端口限制�
 差别只在发起位置和结果归属：
 
 - 平台入口由 Langfuse 创建本次 Experiment，Experiment 记录、名称和版本留在平台；回调额外携带数据集 ID，运行时校验 ID 与名称一致。远程入口只能启动 Experiment，不能管理本地文件、修改运行时配置或批准工具操作，启动失败时平台只收到统一的 400 提示，看不到具体原因。
-- 本地入口（页面按钮「Run Experiment」）不创建平台 Experiment 记录，运行记录只保存在 `.evaluations/langfuse-v4/`，执行轨迹仍关联到对应数据集条目；本地只提交数据集名称，Experiment 名称使用默认前缀而不是远程 Default config 中的名称，失败原因直接显示在页面上。
+- 本地入口（页面按钮「Run Experiment」）不创建平台 Experiment 记录，运行记录只保存在 `.evaluations/langfuse-v4/`，执行轨迹仍关联到对应数据集条目；本地在运行区填写 Experiment 名称前缀，留空或只填空白字符时使用默认前缀 Everything Agent，与平台 Default config 的 `name` 语义一致，失败原因直接显示在页面上。
 
 ## 数据集输入
 
@@ -63,7 +63,7 @@ Docker 内部网关使用 80 端口，满足 Langfuse 的 Webhook 端口限制�
 
 ## 页面和可观测性
 
-页面常驻展示平台启动步骤与两处配置入口：数据集 Metadata 示例为 `{"terminal":false,"memorySnapshot":false}`，两个开关默认均为 false；remote experiment trigger 的 Default config 示例为 `{"name":"Everything Agent"}`，默认名称前缀为 Everything Agent，最终名称附加运行 ID 短码。Experiment 详情展示本次读取的两个开关及最终 Experiment 名称，不区分未配置与显式 false。终端开关表示数据集授权，实际可用性仍取决于日常工具配置和沙箱。
+页面常驻展示平台启动步骤与两处配置入口：数据集 Metadata 示例为 `{"terminal":false,"memorySnapshot":false}`，两个开关默认均为 false；remote experiment trigger 的 Default config 示例为 `{"name":"Everything Agent"}`，默认名称前缀为 Everything Agent，最终名称附加运行 ID 短码。本地运行区的名称前缀输入框使用同一默认值，最长 120 字符，留空时提交的启动参数不含名称；本地页面不提供 terminal 与 memorySnapshot 开关，两者只从数据集 metadata 读取。Experiment 详情展示本次读取的两个开关及最终 Experiment 名称，不区分未配置与显式 false。终端开关表示数据集授权，实际可用性仍取决于日常工具配置和沙箱。
 
 Experiment 记录每页 10 条，显示总数和页码，翻页与进度轮询保留选中的 Experiment；平台启动说明始终展开。
 
