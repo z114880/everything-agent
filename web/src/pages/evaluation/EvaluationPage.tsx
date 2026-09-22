@@ -81,7 +81,7 @@ export function EvaluationPage() {
         </div>
       </div>
     </section>
-    <section className="rounded-xl border p-5 space-y-3"><h2 className="font-semibold">数据集与启动</h2><div className="flex flex-wrap items-center gap-3">
+    <section className="rounded-xl border p-5 space-y-3"><h2 className="font-semibold">数据集与实验</h2><div className="flex flex-wrap items-center gap-3">
       <select aria-label="评估数据集" className="rounded-md border bg-background p-2 w-full sm:w-auto sm:min-w-64 max-w-full" value={dataset} onChange={event => setDataset(event.target.value)}><option value="">选择 Langfuse 数据集</option>{datasets.map(item => <option key={item.id} value={item.name}>{item.name}</option>)}</select>
       <Button disabled={busy || active || !dataset} onClick={() => void act({ action: 'start', datasetName: dataset })}><Play size={14} />Run Experiment</Button>
     </div><p className="text-xs text-muted-foreground">与平台入口共用同一执行过程，但不创建 Langfuse Experiment 记录，只把执行轨迹回传到对应数据集条目；需要在平台留下 Experiment 记录时用上方入口。每条用例独立会话和工作目录，并行数由服务端配置；需要审批时暂停该用例。输入支持字符串、{'{ prompt }'} 或 {'{ turns: ["第一轮", "第二轮"] }'}。</p></section>
