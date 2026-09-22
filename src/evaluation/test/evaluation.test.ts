@@ -25,9 +25,7 @@ async function setup(run?: ReturnType<NonNullable<EvaluationOptions['createRunti
 }
 
 describe('真实评估编排', () => {
-  // memorySnapshot=true 会走 node:sqlite 的 backup()，在 vitest worker 内单次可能阻塞约 30 秒；
-  // 这是环境层面的抖动，不是断言问题，因此只放宽超时，快照内容仍被完整校验。
-  it.each([true, false, undefined])('运行读取平台数据集的记忆快照配置：%s', { timeout: 60_000 }, async (memorySnapshot) => {
+  it.each([true, false, undefined])('运行读取平台数据集的记忆快照配置：%s', async (memorySnapshot) => {
     const { service, client, sourceHome, options } = await setup();
     await mkdir(join(sourceHome, 'database'));
     const db = new DatabaseSync(join(sourceHome, 'database', 'state.db'));
@@ -184,6 +182,20 @@ describe('真实评估编排', () => {
     const copy = createAgentRuntime({ home: target, defaultSystemPromptPath: join(target, 'EVERYTHING.md') });
     expect(copy.memory.listSemantic()[0]?.content).toBe('上海'); copy.memory.createSemantic('评估', '新事实', 'ui');
     expect(original.memory.listSemantic()).toHaveLength(1); await copy.close(); await original.close();
+  });
+  it('快照路径含单引号时仍能生成副本', async () => {
+    // VACUUM INTO 的目标路径是 SQL 字符串字面量，路径里的引号必须被正确转义。
+    const directory = await mkdtemp(join(tmpdir(), 'evaluation-quote-')); dirs.push(directory);
+    const sourceHome = join(directory, "source'quote"); await mkdir(sourceHome);
+    await writeFile(join(sourceHome, 'config.json'), JSON.stringify({ sandbox: { workspaceRoot: '/original' } }));
+    await mkdir(join(sourceHome, 'database'));
+    const db = new DatabaseSync(join(sourceHome, 'database', 'state.db'));
+    db.exec("CREATE TABLE memory_tasks (id TEXT); CREATE TABLE consolidation_days (id TEXT); CREATE TABLE facts (content TEXT); INSERT INTO facts VALUES ('引号路径');");
+    db.close();
+    const target = join(directory, "target'quote");
+    await prepareEvaluationHome(sourceHome, target, true);
+    const copy = new DatabaseSync(join(target, 'database', 'state.db'), { readOnly: true });
+    try { expect(copy.prepare('SELECT content FROM facts').get()?.content).toBe('引号路径'); } finally { copy.close(); }
   });
 });
 

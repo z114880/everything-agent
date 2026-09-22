@@ -1,9 +1,9 @@
 import { cp, mkdir, writeFile, lstat, rename } from 'node:fs/promises';
 import { join } from 'node:path';
-import { DatabaseSync, backup } from 'node:sqlite';
+import { DatabaseSync } from 'node:sqlite';
 import { createLocalConfig } from '../agent-runtime/index.ts';
 
-/** 固定配置与可选记忆快照；备份 SQLite 而非复制 WAL 文件，清除待执行后台任务。 */
+/** 固定配置与可选记忆快照；用 SQLite 生成一致副本，不复制 WAL 文件，并清除待执行后台任务。 */
 export async function prepareEvaluationHome(source: string, target: string, memorySnapshot: boolean): Promise<void> {
   await mkdir(target, { recursive: true, mode: 0o700 });
   for (const name of ['config.json', '.env', 'EVERYTHING.md', 'skills']) {
@@ -28,7 +28,14 @@ export async function prepareEvaluationHome(source: string, target: string, memo
   await lstat(databasePath);
   await mkdir(join(target, 'database'), { recursive: true });
   const sourceDb = new DatabaseSync(databasePath, { readOnly: true });
-  try { await backup(sourceDb, join(target, 'database', 'state.db')); } finally { sourceDb.close(); }
+  try {
+    // 用 VACUUM INTO 而不是 node:sqlite 的 backup()：两者都产出内容一致的副本，但 backup()
+    // 是 libuv 线程池任务，其完成回调依赖事件循环被唤醒；进程空闲时这个唤醒可能延迟数十秒
+    // （实测在 Vitest 里第 2 次备份稳定卡 30 秒，加任意定时器则立刻恢复）。VACUUM INTO 是
+    // 同步 SQL，不经过线程池。代价是复制期间阻塞事件循环，评估属于离线场景，可以接受。
+    // 目标文件必须不存在，VACUUM INTO 不会覆盖已有文件。
+    sourceDb.exec(`VACUUM INTO ${sqlString(join(target, 'database', 'state.db'))}`);
+  } finally { sourceDb.close(); }
   const snapshot = new DatabaseSync(join(target, 'database', 'state.db'));
   try { snapshot.exec('DELETE FROM memory_tasks; DELETE FROM consolidation_days;'); } finally { snapshot.close(); }
 }
@@ -46,3 +53,6 @@ export async function writeEvaluationJson(path: string, value: unknown): Promise
 }
 
 function isMissing(error: unknown): boolean { return error instanceof Error && 'code' in error && error.code === 'ENOENT'; }
+
+/** VACUUM INTO 的文件名是 SQL 字符串字面量，路径里的单引号必须成对转义。 */
+function sqlString(value: string): string { return `'${value.replaceAll("'", "''")}'`; }
