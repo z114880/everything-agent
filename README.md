@@ -34,7 +34,7 @@ pnpm run langfuse:up
 pnpm run dev:web
 ```
 
-完整 Docker Compose 会启动 Langfuse v4 及数据库、对象存储和实验回调网关，首次自动生成本地凭证。管理平台地址为 `http://localhost:3300`，账号在 `.langfuse/compose.env` 中。详见 [一键部署说明](deploy/langfuse/README.md)。
+完整 Docker Compose 会启动 Langfuse v4 及数据库、对象存储和 Experiment 回调网关，首次自动生成本地凭证。管理平台地址为 `http://localhost:3300`，账号在 `.langfuse/compose.env` 中。详见 [一键部署说明](deploy/langfuse/README.md)。
 
 新增 **Evaluation** 页面，支持从本地或 Langfuse Custom Experiment 启动真实 Agent，使用独立评估会话、由 Langfuse 数据集 metadata.memorySnapshot 统一配置的可选日常记忆快照、真实模型与工具，保留工具审批和取消能力；展示进度、结果、用量、平台评分与同步错误。用例默认最多 3 条并发，可通过后端环境变量 `EVERYTHING_EVALUATION_CONCURRENCY` 调整。执行轨迹回传 Langfuse v4，执行完成不代表质量通过。评估器在 Langfuse 管理，尚未配置时不生成虚假评分。详见 [Evaluation 使用说明](src/evaluation/README.md)。
 

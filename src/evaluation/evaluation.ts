@@ -56,14 +56,14 @@ export class EvaluationService {
     }
     this.initialized = true;
   }
-  /** 入队后立即返回 ID；一次只接受一个实验，每次实验按配置限制用例并发，默认 3。 */
+  /** 入队后立即返回 ID；一次只接受一个 Experiment，每次 Experiment 按配置限制用例并发，默认 3。 */
   async start(input: EvaluationInput): Promise<EvaluationRun> {
     if (!this.initialized) throw new Error('评估服务尚未初始化');
     if (this.controllers.size) throw new Error('已有评估运行，请等待完成或取消');
     const datasetName = text(input.datasetName, '数据集名称', 200);
     const createdAt = new Date().toISOString();
     const id = randomUUID();
-    const run: EvaluationRun = { id, name: `${input.name ? text(input.name, '实验名称', 120) : 'Everything Agent'} ${id.slice(0, 8)}`,
+    const run: EvaluationRun = { id, name: `${input.name ? text(input.name, 'Experiment 名称', 120) : 'Everything Agent'} ${id.slice(0, 8)}`,
       datasetName, datasetId: input.datasetId ?? '', datasetVersion: createdAt, memorySnapshot: false, terminalEnabled: false,
       createdAt, status: 'queued', items: [] };
     const controller = new AbortController();
@@ -77,11 +77,11 @@ export class EvaluationService {
   }
   /** 返回独立快照，调用方不能修改内部状态。 */
   list(): EvaluationRun[] { return structuredClone([...this.runs.values()].sort((left, right) => right.createdAt.localeCompare(left.createdAt))); }
-  /** 等待一个已入队实验及其最终状态写盘。 */
+  /** 等待一个已入队 Experiment 及其最终状态写盘。 */
   async wait(id: string): Promise<void> { await this.jobs.get(id); }
   /** 取消所有未完成用例；已产生的真实操作不回滚。 */
   cancel(id: string): boolean { const controller = this.controllers.get(id); controller?.abort(new Error('用户取消评估')); return Boolean(controller); }
-  /** 返回与实验、用例关联的待审批项。 */
+  /** 返回与 Experiment、用例关联的待审批项。 */
   approvals() {
     return [...this.runtimes.values()].flatMap(({ runId, itemId, runtime }) => runtime.listPendingApprovals().map(approval => ({
       ...approval, command: redactEvaluation(approval.command, this.secrets) as string,
@@ -89,7 +89,7 @@ export class EvaluationService {
       ...(approval.detail ? { detail: redactEvaluation(approval.detail, this.secrets) as string } : {}), runId, itemId,
     })));
   }
-  /** 审批必须与当前实验和用例匹配，不能批准过期请求。 */
+  /** 审批必须与当前 Experiment 和用例匹配，不能批准过期请求。 */
   approve(runId: string, itemId: string, approvalId: string, approved: boolean): boolean {
     if (typeof approved !== 'boolean') throw new Error('approved 必须为布尔值');
     const active = this.runtimes.get(`${runId}:${itemId}`);

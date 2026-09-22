@@ -47,7 +47,7 @@ async function initializeEvaluation(): Promise<void> {
       if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
       token = randomBytes(32).toString('hex'); await writeFile(tokenFile, token, { mode: 0o600, flag: 'wx' });
     }
-    if (token.length < 32) throw new Error('实验入口令牌无效');
+    if (token.length < 32) throw new Error('Experiment 入口令牌无效');
     client = new LangfuseEvaluationClient(configuration);
     const next = new EvaluationService({ directory, sourceHome: join(root, '.everything'), client, concurrency });
     await next.initialize();

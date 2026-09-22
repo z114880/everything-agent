@@ -76,7 +76,7 @@ describe('真实评估编排', () => {
     expect(run.items[0]?.events.map(event => event.sequence)).toEqual([1, 2]);
     expect(JSON.stringify(run)).not.toContain('私人记忆'); expect(JSON.stringify(run)).not.toContain('secret-actual-key');
   });
-  it('取消信号中止正在等待的用例，拒绝同时启动第二个实验', async () => {
+  it('取消信号中止正在等待的用例，拒绝同时启动第二个 Experiment', async () => {
     let ready!: () => void; const started = new Promise<void>(resolve => { ready = resolve; });
     const { service } = await setup(async (_, { signal }) => { ready(); await new Promise<void>((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })); throw new Error('不应继续'); });
     const { id } = await service.start({ datasetName: '测试集' }); await started;
@@ -217,8 +217,8 @@ async function webhook(body: unknown, token = 'secret', url = '/trigger') {
 }
 describe('平台回调边界', () => {
   it('仅接收正确项目和专用令牌，立即返回运行 ID', async () => {
-    const result = await webhook({ projectId: 'project', datasetId: 'dataset', datasetName: '测试', payload: JSON.stringify({ name: '平台实验' }) });
-    expect(result.status).toBe(202); expect(result.start).toHaveBeenCalledWith({ datasetId: 'dataset', datasetName: '测试', name: '平台实验' });
+    const result = await webhook({ projectId: 'project', datasetId: 'dataset', datasetName: '测试', payload: JSON.stringify({ name: '平台 Experiment' }) });
+    expect(result.status).toBe(202); expect(result.start).toHaveBeenCalledWith({ datasetId: 'dataset', datasetName: '测试', name: '平台 Experiment' });
     expect((await webhook({}, 'wrong')).status).toBe(401); expect((await webhook({}, 'secret', '/api/local-agent')).status).toBe(404);
   });
   it('拒绝跨项目、路径覆盖和 payload 记忆快照覆盖', async () => {
@@ -228,7 +228,7 @@ describe('平台回调边界', () => {
 });
 
 describe('Langfuse v4 协议', () => {
-  it('OTLP 根节点关联实验与用例，部分拒收必须失败', async () => {
+  it('OTLP 根节点关联 Experiment 与用例，部分拒收必须失败', async () => {
     const { service } = await setup(); const { id } = await service.start({ datasetName: '测试' }); await service.wait(id);
     const run = service.list()[0]!; const item = run.items[0]!;
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ partialSuccess: { rejectedSpans: '1' } }), { status: 200 })); vi.stubGlobal('fetch', fetchMock);

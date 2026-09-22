@@ -6,7 +6,7 @@ import { evaluationRequest } from '../../evaluation-api';
 import type { EvaluationDashboard } from '../../evaluation-api';
 
 const labels: Record<string, string> = { queued: '排队中', running: '执行中', waiting_approval: '等待审批', completed: '执行完成', failed: '失败', cancelled: '已取消', interrupted: '进程中断', pending: '待同步', synced: '已同步' };
-/** 真实评估控制台；运行留在服务端，离开页面不会取消实验。 */
+/** 真实评估控制台；运行留在服务端，离开页面不会取消 Experiment。 */
 export function EvaluationPage() {
   const [data, setData] = useState<EvaluationDashboard>();
   const [datasets, setDatasets] = useState<{ id: string; name: string }[]>([]);
@@ -56,11 +56,11 @@ export function EvaluationPage() {
     <section className="rounded-xl border p-5 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-4"><div><h2 className="font-semibold">Langfuse 连接</h2><p className="text-sm text-muted-foreground">{connected ? '平台连接正常' : data?.configured ? '本地入口已就绪，点击连接平台检查' : '等待配置'} · {data?.baseUrl}</p></div>
         <div className="flex gap-2"><Button variant="outline" disabled={busy || !data?.configured} onClick={() => void connect()}><RefreshCw size={14} />连接平台</Button>{data?.configured && <a className="text-sm underline flex items-center gap-1" href={projectUrl} target="_blank" rel="noreferrer">打开 Langfuse <ExternalLink size={14} /></a>}</div></div>
-      <section className="border-t pt-4 text-sm"><h2 className="font-semibold">从 Langfuse 管理平台发起实验</h2><div className="mt-3 space-y-3 text-muted-foreground">
+      <section className="border-t pt-4 text-sm"><h2 className="font-semibold">从 Langfuse 管理平台发起 Experiment</h2><div className="mt-3 space-y-3 text-muted-foreground">
         <p>打开数据集 → Start Experiment → Custom Experiment → ⚡，填入回调地址：</p><code className="block break-all text-foreground">{data?.webhookUrl}</code>
         <p>Advanced Options → Custom headers：名称填 authorization，值粘贴下方复制的内容，并标记 Secret。Default payload 填写 <code>{'{"name":"Everything Agent"}'}</code>，保存后点击 Run。</p>
         <Button variant="outline" size="sm" onClick={() => void copyHeaders()} disabled={!data?.configured}><Copy size={14} />复制 authorization 值</Button>
-        <p>本地 Web 服务需保持运行。平台评估器需在 Langfuse 中配置，目标为本实验的根 Agent observation。未收到评分时显示等待评分，不推断通过。</p>
+        <p>本地 Web 服务需保持运行。平台评估器需在 Langfuse 中配置，目标为本次 Experiment 的根 Agent observation。未收到评分时显示等待评分，不推断通过。</p>
       </div></section>
     </section>
     <section className="rounded-xl border border-primary/30 bg-muted/20 p-5 space-y-4">
@@ -76,28 +76,28 @@ export function EvaluationPage() {
         <div className="rounded-lg border bg-background p-4 space-y-3">
           <h3 className="text-sm font-semibold">Custom Experiment → Default payload</h3>
           <code className="block rounded-md bg-muted p-3 text-xs break-all">{'{"name":"Everything Agent"}'}</code>
-          <p className="text-sm"><strong>name</strong>：实验名称前缀，默认 Everything Agent；最终名称自动附加运行 ID 短码。</p>
+          <p className="text-sm"><strong>name</strong>：Experiment 名称前缀，默认 Everything Agent；最终名称自动附加运行 ID 短码。</p>
           <p className="text-xs text-muted-foreground">此处仅配置名称，不填写 terminal 或 memorySnapshot。本地启动使用默认名称前缀。</p>
         </div>
       </div>
     </section>
-    <section className="rounded-xl border p-5 space-y-3"><h2 className="font-semibold">本地启动实验</h2><div className="flex flex-wrap items-center gap-3">
+    <section className="rounded-xl border p-5 space-y-3"><h2 className="font-semibold">本地启动 Experiment</h2><div className="flex flex-wrap items-center gap-3">
       <select aria-label="评估数据集" className="rounded-md border bg-background p-2 w-full sm:w-auto sm:min-w-64 max-w-full" value={dataset} onChange={event => setDataset(event.target.value)}><option value="">选择 Langfuse 数据集</option>{datasets.map(item => <option key={item.id} value={item.name}>{item.name}</option>)}</select>
-      <Button disabled={busy || active || !dataset} onClick={() => void act({ action: 'start', datasetName: dataset })}><Play size={14} />本地直接启动</Button>
-    </div><p className="text-xs text-muted-foreground">与平台入口共用同一执行过程，但不创建 Langfuse 实验记录，只把执行轨迹回传到对应数据集条目；需要在平台留下实验记录时用上方入口。每条用例独立会话和工作目录，并行数由服务端配置；需要审批时暂停该用例。输入支持字符串、{'{ prompt }'} 或 {'{ turns: ["第一轮", "第二轮"] }'}。</p></section>
-    {Boolean(data?.approvals.length) && <section className="rounded-xl border border-amber-500 p-5 space-y-3"><h2 className="font-semibold">待确认操作</h2>{data!.approvals.map(approval => <div key={approval.id} className="rounded-lg border p-4 space-y-2"><p className="text-xs text-muted-foreground">实验 {approval.runId.slice(0, 8)} · 用例 {approval.itemId}</p><p>{approval.reason}</p><pre className="whitespace-pre-wrap break-all text-sm">{approval.command}</pre>{approval.detail && <p className="text-sm">{approval.detail}</p>}<div className="flex gap-2">{[true, false].map(approved => <Button key={String(approved)} variant={approved ? 'default' : 'outline'} disabled={busy} onClick={() => void act({ action: 'approve', runId: approval.runId, itemId: approval.itemId, approvalId: approval.id, approved })}>{approved ? '批准本次操作' : '拒绝'}</Button>)}</div></div>)}</section>}
-    <div className="grid lg:grid-cols-[280px_minmax(0,1fr)] items-start gap-5"><section aria-label="实验记录" className="rounded-xl border p-4 space-y-3"><div className="flex items-center justify-between"><h2 className="font-semibold">实验记录</h2><span className="text-xs text-muted-foreground">共 {data?.runs.length ?? 0} 条</span></div>{!data?.runs.length && <p className="text-sm text-muted-foreground">尚无实验。从平台或本页启动后，记录会显示在这里。</p>}{visibleRuns.map(item => <button aria-pressed={run?.id === item.id} key={item.id} className={`w-full rounded-lg border p-3 text-left space-y-1 ${run?.id === item.id ? 'border-primary bg-muted' : 'hover:bg-muted/50'}`} onClick={() => setSelected(item.id)}><strong className="block text-sm break-all">{item.name}</strong><span className="block text-xs">{item.datasetName} · {labels[item.status]}</span><span className="block text-xs text-muted-foreground">{new Date(item.createdAt).toLocaleString()}</span></button>)}
-      <nav aria-label="实验记录分页" className="flex items-center justify-between gap-2 border-t pt-3">
+      <Button disabled={busy || active || !dataset} onClick={() => void act({ action: 'start', datasetName: dataset })}><Play size={14} />启动 Experiment</Button>
+    </div><p className="text-xs text-muted-foreground">与平台入口共用同一执行过程，但不创建 Langfuse Experiment 记录，只把执行轨迹回传到对应数据集条目；需要在平台留下 Experiment 记录时用上方入口。每条用例独立会话和工作目录，并行数由服务端配置；需要审批时暂停该用例。输入支持字符串、{'{ prompt }'} 或 {'{ turns: ["第一轮", "第二轮"] }'}。</p></section>
+    {Boolean(data?.approvals.length) && <section className="rounded-xl border border-amber-500 p-5 space-y-3"><h2 className="font-semibold">待确认操作</h2>{data!.approvals.map(approval => <div key={approval.id} className="rounded-lg border p-4 space-y-2"><p className="text-xs text-muted-foreground">Experiment {approval.runId.slice(0, 8)} · 用例 {approval.itemId}</p><p>{approval.reason}</p><pre className="whitespace-pre-wrap break-all text-sm">{approval.command}</pre>{approval.detail && <p className="text-sm">{approval.detail}</p>}<div className="flex gap-2">{[true, false].map(approved => <Button key={String(approved)} variant={approved ? 'default' : 'outline'} disabled={busy} onClick={() => void act({ action: 'approve', runId: approval.runId, itemId: approval.itemId, approvalId: approval.id, approved })}>{approved ? '批准本次操作' : '拒绝'}</Button>)}</div></div>)}</section>}
+    <div className="grid lg:grid-cols-[280px_minmax(0,1fr)] items-start gap-5"><section aria-label="Experiment 记录" className="rounded-xl border p-4 space-y-3"><div className="flex items-center justify-between"><h2 className="font-semibold">Experiment 记录</h2><span className="text-xs text-muted-foreground">共 {data?.runs.length ?? 0} 条</span></div>{!data?.runs.length && <p className="text-sm text-muted-foreground">尚无 Experiment。从平台或本页启动后，记录会显示在这里。</p>}{visibleRuns.map(item => <button aria-pressed={run?.id === item.id} key={item.id} className={`w-full rounded-lg border p-3 text-left space-y-1 ${run?.id === item.id ? 'border-primary bg-muted' : 'hover:bg-muted/50'}`} onClick={() => setSelected(item.id)}><strong className="block text-sm break-all">{item.name}</strong><span className="block text-xs">{item.datasetName} · {labels[item.status]}</span><span className="block text-xs text-muted-foreground">{new Date(item.createdAt).toLocaleString()}</span></button>)}
+      <nav aria-label="Experiment 记录分页" className="flex items-center justify-between gap-2 border-t pt-3">
         <Button variant="outline" size="sm" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>上一页</Button>
         <span className="text-xs text-muted-foreground">第 {currentPage} / {pageCount} 页</span>
         <Button variant="outline" size="sm" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>下一页</Button>
       </nav>
     </section>
-    <section aria-label="实验详情" className="min-w-0 rounded-xl border p-5 space-y-4">{!run ? <p className="text-sm text-muted-foreground">选择实验查看用例详情。</p> : <>
+    <section aria-label="Experiment 详情" className="min-w-0 rounded-xl border p-5 space-y-4">{!run ? <p className="text-sm text-muted-foreground">选择 Experiment 查看用例详情。</p> : <>
       <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold">{run.name}</h2><p className="text-sm text-muted-foreground">{labels[run.status]} · {run.items.filter(item => ['completed', 'failed', 'cancelled'].includes(item.status)).length} / {run.items.length} 条 · {run.memorySnapshot ? '日常记忆快照' : '空白评估记忆'}</p></div><div className="flex gap-2">{['queued', 'running'].includes(run.status) ? <Button variant="outline" disabled={busy} onClick={() => void act({ action: 'cancel', runId: run.id })}><Square size={14} />取消运行</Button> : <Button variant="outline" disabled={busy} onClick={() => void act({ action: 'refresh', runId: run.id })}><RefreshCw size={14} />刷新评分／重试同步</Button>}</div></div>
       <div className="rounded-lg bg-muted/50 p-3 space-y-2 text-sm">
-        <h3 className="font-medium">本次实验配置</h3>
-        <p className="break-all">实验名称：{run.name}</p>
+        <h3 className="font-medium">本次 Experiment 配置</h3>
+        <p className="break-all">Experiment 名称：{run.name}</p>
         <div className="flex flex-wrap gap-x-6 gap-y-2"><span>terminal：{String(run.terminalEnabled)}</span><span>memorySnapshot：{String(run.memorySnapshot)}</span></div>
         <p className="text-xs text-muted-foreground">开关为本次运行读取的数据集配置；terminal 为 true 表示数据集允许终端，实际可用性取决于日常配置与沙箱。</p>
       </div>
