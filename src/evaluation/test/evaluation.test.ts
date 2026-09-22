@@ -161,18 +161,26 @@ describe('真实评估编排', () => {
     await symlink(join(sourceHome, '.env'), join(sourceHome, 'skills', 'secret-link'));
     await expect(prepareEvaluationHome(sourceHome, join(options.directory, 'blocked'), false)).rejects.toThrow('符号链接');
   });
-  it('终端默认关闭，只有显式标记的用例保留日常终端开关', async () => {
-    const { service, sourceHome, options, client } = await setup();
-    await writeFile(join(sourceHome, 'config.json'), JSON.stringify({ tools: { runTerminalEnabled: true } }));
-    const { id } = await service.start({ datasetName: '工具边界' }); await service.wait(id);
-    let record = service.list().find(run => run.id === id)!;
-    let config = JSON.parse(await readFile(join(options.directory, id, record.items[0]!.traceId, 'config.json'), 'utf8'));
-    expect(config.tools.runTerminalEnabled).toBe(false);
-    client.dataset.mockResolvedValueOnce({ id: 'dataset', items: [{ id: 'case', input: { turns: ['运行命令'] }, expectedOutput: '结果', terminalEnabled: true } as { id: string; input: { turns: string[] }; expectedOutput: string }] });
-    const next = await service.start({ datasetName: '工具边界' }); await service.wait(next.id);
-    record = service.list().find(run => run.id === next.id)!;
-    config = JSON.parse(await readFile(join(options.directory, next.id, record.items[0]!.traceId, 'config.json'), 'utf8'));
-    expect(config.tools.runTerminalEnabled).toBe(true);
+  it.each([true, false, undefined])('数据集终端开关统一应用于所有用例且保留日常开关：%s', async (terminalEnabled) => {
+    for (const dailyEnabled of [true, false]) {
+      const { service, sourceHome, options, client } = await setup();
+      await writeFile(join(sourceHome, 'config.json'), JSON.stringify({ tools: { runTerminalEnabled: dailyEnabled } }));
+      client.dataset.mockResolvedValueOnce({ id: 'dataset', ...(terminalEnabled === undefined ? {} : { terminalEnabled }), items: [{ id: 'one', input: '命令一' }, { id: 'two', input: '命令二' }] });
+      const { id } = await service.start({ datasetName: '工具边界' }); await service.wait(id);
+      const record = service.list()[0]!;
+      expect(record).toMatchObject({ status: 'completed', terminalEnabled: terminalEnabled === true });
+      for (const item of record.items) {
+        const config = JSON.parse(await readFile(join(options.directory, id, item.traceId, 'config.json'), 'utf8'));
+        expect(config.tools.runTerminalEnabled).toBe(terminalEnabled === true && dailyEnabled);
+        const fetched = vi.fn(async (_url: unknown, _init: RequestInit) => Response.json({})); vi.stubGlobal('fetch', fetched);
+        const publisher = new LangfuseEvaluationClient({ baseUrl: 'http://localhost:3300', publicKey: 'pk', secretKey: 'sk', projectId: 'p' });
+        await publisher.publish(record, item);
+        const request = fetched.mock.calls[0]![1];
+        const attributes = JSON.parse(String(request.body)).resourceSpans[0].scopeSpans[0].spans[0].attributes;
+        expect(attributes).toContainEqual({ key: 'langfuse.experiment.metadata.terminal', value: { stringValue: String(terminalEnabled === true) } });
+
+      }
+    }
   });
   it('SQLite 快照保留事实但不会写回日常数据库', async () => {
     const { sourceHome, options } = await setup();
@@ -297,19 +305,31 @@ describe('Langfuse v4 协议', () => {
     expect(body).not.toContain('私人文件正文'); expect(body).not.toContain('私密查询');
     expect(body).not.toContain('先列出三件要事'); expect(body).not.toContain('sk-lf-abcdefghijkl');
   });
-  it('SDK 读取固定版本并排除归档用例，保留显式终端标记', async () => {
+  it('SDK 读取固定版本并排除归档用例，读取数据集终端开关', async () => {
     const fetched = vi.fn(async (url: string | URL | Request) => {
       if (String(url).includes('/dataset-items')) return Response.json({ data: [
-        { id: 'active', status: 'ACTIVE', input: '测试', expectedOutput: '答案', metadata: { terminal: true } },
+        { id: 'active', status: 'ACTIVE', input: '测试', expectedOutput: '答案', metadata: { terminal: false } },
         { id: 'archived', status: 'ARCHIVED', input: '旧测试' },
       ], meta: { totalPages: 1 } });
-      return Response.json({ id: 'dataset', name: '测试', metadata: { memorySnapshot: true } });
+      return Response.json({ id: 'dataset', name: '测试', metadata: { memorySnapshot: true, terminal: true } });
     }); vi.stubGlobal('fetch', fetched);
     const client = new LangfuseEvaluationClient({ baseUrl: 'http://localhost:3300', publicKey: 'pk', secretKey: 'sk', projectId: 'p' });
     const version = '2026-09-20T00:00:00Z'; const result = await client.dataset('测试', version);
     expect(result.memorySnapshot).toBe(true);
-    expect(result.items).toEqual([{ id: 'active', input: '测试', expectedOutput: '答案', terminalEnabled: true }]);
+    expect(result.items).toEqual([{ id: 'active', input: '测试', expectedOutput: '答案' }]);
+    expect(result.terminalEnabled).toBe(true);
     expect(fetched.mock.calls.some(([url]) => decodeURIComponent(String(url)).includes(version))).toBe(true);
+  });
+  it.each([true, false, undefined, 'true', null, 1])('只读取数据集终端配置并校验布尔值：%s', async (terminal) => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string | URL | Request) => String(url).includes('/dataset-items')
+      ? Response.json({ data: [{ id: 'case', status: 'ACTIVE', input: '测试', metadata: { terminal: true } }], meta: { totalPages: 1 } })
+      : Response.json({ id: 'dataset', name: '测试', metadata: { terminal } })));
+    const client = new LangfuseEvaluationClient({ baseUrl: 'http://localhost:3300', publicKey: 'pk', secretKey: 'sk', projectId: 'p' });
+    const result = client.dataset('测试', '2026-09-20T00:00:00Z');
+    if (typeof terminal === 'boolean' || terminal === undefined) {
+      await expect(result).resolves.toMatchObject({ terminalEnabled: terminal === true, items: [{ id: 'case' }] });
+      expect((await result).items[0]).not.toHaveProperty('terminalEnabled');
+    } else await expect(result).rejects.toThrow('metadata.terminal 必须为布尔值');
   });
   it.each([false, undefined, 'true', null])('校验数据集快照配置并默认关闭：%s', async (memorySnapshot) => {
     vi.stubGlobal('fetch', vi.fn(async (url: string | URL | Request) => String(url).includes('/dataset-items')

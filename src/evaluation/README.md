@@ -38,7 +38,7 @@ Docker 内部网关使用 80 端口，满足 Langfuse 的 Webhook 端口限制�
 {"turns":["本次对话代号是青禾，不要写入长期记忆。","本次对话的代号是什么？"]}
 ```
 
-最多 20 轮，每轮最多 40000 字符；单次实验最多 200 条启用的用例。预期输出使用 Langfuse 的 `expectedOutput` 字段。用例不支持任意路径、工具定义、模型配置覆盖或 fixture；始终调用实际 Runtime。终端工具额外要求该用例的 Langfuse metadata 显式设置 `{"terminal":true}`，同时日常配置已启用终端；未标记的用例不会获得终端工具。
+最多 20 轮，每轮最多 40000 字符；单次实验最多 200 条启用的用例。预期输出使用 Langfuse 的 `expectedOutput` 字段。用例不支持任意路径、工具定义、模型配置覆盖或 fixture；始终调用实际 Runtime。终端工具额外要求数据集的 Langfuse metadata 显式设置 `{"terminal":true}`，同时日常配置已启用终端。数据集开关统一应用于全部用例，不读取单个 dataset item 的同名字段；未设置或为 `false` 时关闭终端，非布尔值明确报错。运行开始后固定本次开关，并在运行摘要的 `terminalEnabled` 和 trace 的 `langfuse.experiment.metadata.terminal` 中记录数据集授权值（实际可用性仍取决于日常配置与沙箱）。例如数据集 metadata 可设置为 `{"memorySnapshot":false,"terminal":true}`。
 
 ## 执行边界
 

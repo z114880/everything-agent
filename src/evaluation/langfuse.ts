@@ -19,13 +19,15 @@ export class LangfuseEvaluationClient {
       if (page >= result.meta.totalPages) return items;
     }
   }
-  /** 用例按时间点读取，归档项不参与运行；数据集 metadata.memorySnapshot 仅接受布尔值。 */
-  async dataset(name: string, version: string): Promise<{ id: string; memorySnapshot?: boolean; items: EvaluationCase[] }> {
+  /** 用例按时间点读取，归档项不参与运行；数据集 metadata 的记忆快照与终端开关仅接受布尔值。 */
+  async dataset(name: string, version: string): Promise<{ id: string; memorySnapshot?: boolean; terminalEnabled?: boolean; items: EvaluationCase[] }> {
     const data = await this.sdk.dataset.get(name, { version });
     const metadata = data.metadata;
     const memorySnapshot: unknown = metadata && typeof metadata === 'object' && 'memorySnapshot' in metadata ? metadata.memorySnapshot : undefined;
     if (memorySnapshot !== undefined && typeof memorySnapshot !== 'boolean') throw new Error('数据集 metadata.memorySnapshot 必须为布尔值');
-    return { id: data.id, memorySnapshot: memorySnapshot === true, items: data.items.filter(item => item.status === 'ACTIVE').map(item => ({ id: item.id, input: item.input, expectedOutput: item.expectedOutput, terminalEnabled: Boolean(item.metadata && typeof item.metadata === 'object' && 'terminal' in item.metadata && item.metadata.terminal === true) })) };
+    const terminal: unknown = metadata && typeof metadata === 'object' && 'terminal' in metadata ? metadata.terminal : undefined;
+    if (terminal !== undefined && typeof terminal !== 'boolean') throw new Error('数据集 metadata.terminal 必须为布尔值');
+    return { id: data.id, terminalEnabled: terminal === true, memorySnapshot: memorySnapshot === true, items: data.items.filter(item => item.status === 'ACTIVE').map(item => ({ id: item.id, input: item.input, expectedOutput: item.expectedOutput })) };
   }
   /** 按用例根 observation 拉取平台评分，完整消费游标。 */
   async scores(item: EvaluationItem): Promise<EvaluationScore[]> {
@@ -54,6 +56,7 @@ export class LangfuseEvaluationClient {
       'langfuse.experiment.item.version': run.datasetVersion,
       'langfuse.experiment.item.root_observation_id': item.observationId,
       'langfuse.experiment.metadata.memory_snapshot': String(run.memorySnapshot),
+      'langfuse.experiment.metadata.terminal': String(run.terminalEnabled),
     };
     const trace = executionTrace(item);
     const root = span(item.traceId, item.observationId, undefined, 'Everything Agent', item.startedAt!, item.finishedAt!, {

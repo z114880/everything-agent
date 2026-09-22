@@ -1,5 +1,5 @@
 /** 一条平台数据集用例；input 支持字符串、{ prompt } 或 { turns: string[] }。 */
-export interface EvaluationCase { id: string; input: unknown; expectedOutput?: unknown; terminalEnabled?: boolean; }
+export interface EvaluationCase { id: string; input: unknown; expectedOutput?: unknown; }
 /** 一次评估启动参数；只接受固定选项，不接受远程路径或凭证覆盖。 */
 export interface EvaluationInput { datasetName: string; datasetId?: string; name?: string; }
 /** 平台评分原值；没有配置质量阈值时不推断通过。 */
@@ -19,7 +19,7 @@ export interface EvaluationItem extends EvaluationCase {
 /** 可持久化的评估运行摘要及用例详情。 */
 export interface EvaluationRun {
   id: string; name: string; datasetName: string; datasetId: string; datasetVersion: string;
-  memorySnapshot: boolean; createdAt: string; finishedAt?: string;
+  memorySnapshot: boolean; terminalEnabled: boolean; createdAt: string; finishedAt?: string;
   status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
   items: EvaluationItem[]; error?: string; scoreError?: string;
 }

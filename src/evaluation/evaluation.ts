@@ -64,7 +64,7 @@ export class EvaluationService {
     const createdAt = new Date().toISOString();
     const id = randomUUID();
     const run: EvaluationRun = { id, name: `${input.name ? text(input.name, '实验名称', 120) : 'Everything Agent'} ${id.slice(0, 8)}`,
-      datasetName, datasetId: input.datasetId ?? '', datasetVersion: createdAt, memorySnapshot: false,
+      datasetName, datasetId: input.datasetId ?? '', datasetVersion: createdAt, memorySnapshot: false, terminalEnabled: false,
       createdAt, status: 'queued', items: [] };
     const controller = new AbortController();
     this.controllers.set(id, controller); this.runs.set(id, run);
@@ -125,6 +125,7 @@ export class EvaluationService {
       run.datasetId = dataset.id;
       // 两种启动入口使用同一份平台配置，在复制记忆前固定本次运行的选择。
       run.memorySnapshot = dataset.memorySnapshot === true;
+      run.terminalEnabled = dataset.terminalEnabled === true;
       if (!dataset.items.length) throw new Error('数据集没有启用的用例');
       if (dataset.items.length > 200) throw new Error('单次评估最多接受 200 条用例');
       signal.throwIfAborted();
@@ -158,7 +159,7 @@ export class EvaluationService {
     try {
       const turns = evaluationTurns(input);
       await prepareEvaluationHome(baseline, home, run.memorySnapshot);
-      if (item.terminalEnabled !== true) await createLocalConfig({ home, defaultSystemPromptPath: join(home, 'EVERYTHING.md') }).updateConfigFile({ EVERYTHING_TOOL_RUN_TERMINAL_ENABLED: 'false' });
+      if (!run.terminalEnabled) await createLocalConfig({ home, defaultSystemPromptPath: join(home, 'EVERYTHING.md') }).updateConfigFile({ EVERYTHING_TOOL_RUN_TERMINAL_ENABLED: 'false' });
       itemSignal.throwIfAborted();
       runtime = this.options.createRuntime ? this.options.createRuntime(home) : await createEvaluationRuntime(home, itemSignal);
       this.runtimes.set(`${run.id}:${item.id}`, { runId: run.id, itemId: item.id, runtime });
