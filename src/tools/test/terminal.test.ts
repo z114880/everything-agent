@@ -8,6 +8,11 @@ import { publicToolEvent } from "../../agent-runtime/events/tool-events.ts";
 import type { Sandbox, SandboxCommand, SandboxResult } from "../../sandbox/index.ts";
 import type { ApprovalGate, ApprovalRequest } from "../approval.ts";
 import type { AgentObserver, ToolExecutionContext } from "../../agent-loop/agent-loop.ts";
+import { probeSeatbelt, reportSkippedRealSandbox } from "../../sandbox/test/sandbox-probe.ts";
+
+// 需要真实沙箱的用例先探测能力：嵌套沙箱或无权限时跳过，而不是按平台判断后假通过。
+const seatbelt = await probeSeatbelt();
+reportSkippedRealSandbox(seatbelt);
 
 const context: ToolExecutionContext = { signal: undefined, deadline: null, iteration: 1, toolUseId: "call-1" };
 const noop: AgentObserver = () => {};
@@ -204,7 +209,7 @@ describe("run_terminal 在注册表中的可见性", () => {
   });
 });
 
-describe.skipIf(process.platform !== "darwin")("run_terminal 真实执行", () => {
+describe.skipIf(!seatbelt.usable)("run_terminal 真实执行", () => {
   it("在工作区内执行并返回输出", async () => {
     const tool = new TerminalTool({ workspaceRoot: workspace, sessionTempDir: tempDir });
     const result = await tool.execute({ command: "echo 你好 > hello.txt && cat hello.txt" }, noop, context);
@@ -297,7 +302,7 @@ describe("run_terminal 人工审批", () => {
   });
 
   // 未注入 networkSandbox 时会按放行网络的策略真实创建一个沙箱；命令本身不联网。
-  it.skipIf(process.platform !== "darwin")("放行网络后按新策略真实建立沙箱", async () => {
+  it.skipIf(!seatbelt.usable)("放行网络后按新策略真实建立沙箱", async () => {
     const sandbox = new RecordingSandbox();
     sandbox.respond = () => ({ exitCode: 6, denialHint: "network" });
     const approval = new StubApproval(true);

@@ -25,7 +25,9 @@ async function setup(run?: ReturnType<NonNullable<EvaluationOptions['createRunti
 }
 
 describe('真实评估编排', () => {
-  it.each([true, false, undefined])('运行读取平台数据集的记忆快照配置：%s', async (memorySnapshot) => {
+  // memorySnapshot=true 会走 node:sqlite 的 backup()，在 vitest worker 内单次可能阻塞约 30 秒；
+  // 这是环境层面的抖动，不是断言问题，因此只放宽超时，快照内容仍被完整校验。
+  it.each([true, false, undefined])('运行读取平台数据集的记忆快照配置：%s', { timeout: 60_000 }, async (memorySnapshot) => {
     const { service, client, sourceHome, options } = await setup();
     await mkdir(join(sourceHome, 'database'));
     const db = new DatabaseSync(join(sourceHome, 'database', 'state.db'));

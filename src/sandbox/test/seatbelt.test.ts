@@ -4,6 +4,11 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildSandboxEnv, buildSeatbeltProfile, SeatbeltSandbox } from "../index.ts";
 import type { SandboxPolicy } from "../index.ts";
+import { probeSeatbelt, reportSkippedRealSandbox } from "./sandbox-probe.ts";
+
+// 真实边界用例需要 seatbelt 能建立，先探测能力再决定是否运行。
+const seatbelt = await probeSeatbelt();
+reportSkippedRealSandbox(seatbelt);
 
 describe("Seatbelt 策略生成", () => {
   const policy: SandboxPolicy = {
@@ -45,7 +50,7 @@ describe("Seatbelt 策略生成", () => {
   });
 });
 
-describe.skipIf(process.platform !== "darwin")("Seatbelt 实际边界", () => {
+describe.skipIf(!seatbelt.usable)("Seatbelt 实际边界", () => {
   let workspace = "";
   let outside = "";
   let sandbox: SeatbeltSandbox;
