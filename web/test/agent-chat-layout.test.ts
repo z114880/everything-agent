@@ -22,13 +22,23 @@ describe("Agent 会话窗口布局", () => {
 
   it("聊天区保持 420px 宽度且历史列表浮层不占据消息布局", async () => {
     const css = await readFile(stylePath, "utf8");
-    expect(ruleFor(css, ".agent-page-layout")).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\) 420px/);
+    expect(ruleFor(css, ".agent-page-layout")).toMatch(/grid-template-columns:\s*minmax\(var\(--agent-main-min-width\), 1fr\) 420px/);
     expect(ruleFor(css, ".agent-page-layout")).toMatch(/transition:\s*grid-template-columns 180ms ease/);
     expect(ruleFor(css, ".agent-chat-dock")).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\)/);
     expect(ruleFor(css, ".session-rail")).toMatch(/max-height:\s*220px/);
     expect(ruleFor(css, ".session-rail")).toMatch(/position:\s*absolute/);
     expect(css).not.toContain(".session-rail-collapsed");
     expect(ruleFor(css, ".session-rail[hidden]")).toMatch(/display:\s*none/);
+  });
+
+  it("主画布保持最小宽度，窗口更窄时改为布局整体横向滚动", async () => {
+    const css = await readFile(stylePath, "utf8");
+
+    expect(ruleFor(css, ".agent-page-layout")).toMatch(/--agent-main-min-width:\s*calc\(var\(--agent-canvas-min-width\) \+ 2 \* var\(--page-padding-inline\)\)/);
+    expect(ruleFor(css, ".agent-page-layout")).toMatch(/overflow-x:\s*auto/);
+    expect(ruleFor(css, ".agent-harness-svg")).toMatch(/min-width:\s*var\(--agent-canvas-min-width, 850px\)/);
+    // 窄屏改为单列堆叠，最小宽度不再生效，画布沿用自身滚动容器。
+    expect(css).toContain(".agent-page-layout { height: auto; min-height: 100vh; grid-template-columns: minmax(0, 1fr); }");
   });
 
   it("提供始终可用且标明展开状态的对话列表切换按钮", async () => {
@@ -87,7 +97,7 @@ describe("Agent 会话窗口布局", () => {
     expect(source).toContain('hidden={chatCollapsed}');
     expect(source).toContain('setChatCollapsed((collapsed) => !collapsed)');
     expect(ruleFor(css, '.agent-chat-content[hidden]')).toMatch(/display:\s*none/);
-    expect(ruleFor(css, '.agent-page-layout[data-chat-collapsed="true"]')).toMatch(/grid-template-columns:\s*minmax\(0, 1fr\) 0/);
+    expect(ruleFor(css, '.agent-page-layout[data-chat-collapsed="true"]')).toMatch(/grid-template-columns:\s*minmax\(var\(--agent-main-min-width\), 1fr\) 0/);
     expect(ruleFor(css, '.agent-page-layout[data-chat-collapsed="true"] .agent-chat-dock')).toMatch(/border-left:\s*0/);
     expect(ruleFor(css, '.agent-page-layout[data-chat-collapsed="true"] .agent-dock-header')).toMatch(/right:\s*8px/);
   });

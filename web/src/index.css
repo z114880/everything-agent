@@ -186,9 +186,10 @@ button:disabled { cursor: not-allowed; }
 .result-icon { display: grid; width: 31px; height: 31px; flex: 0 0 auto; place-items: center; border-radius: 9px; background: var(--good-soft); color: #2b8a5d; }
 .state-output { max-height: 260px; overflow: auto; margin-top: 8px; border: 1px solid var(--line); border-radius: 8px; background: #f8f9fa; padding: 10px; color: #525965; font-family: var(--font-mono); font-size: 10px; line-height: 1.6; white-space: pre-wrap; }
 
-/* Agent Harness：主画布与右侧持久化会话 Dock。 */
+/* Agent Harness：主画布与右侧持久化会话 Dock。
+   主画布的最小宽度按画布自身宽度加两侧页面留白推导，窗口再窄就由布局容器横向滚动，而不是压扁画布。 */
 .agent-main-content { height: 100vh; overflow: hidden; }
-.agent-page-layout { display: grid; height: 100vh; grid-template-columns: minmax(0, 1fr) 420px; background: transparent; transition: grid-template-columns 180ms ease; }
+.agent-page-layout { --agent-canvas-min-width: 850px; --agent-main-min-width: calc(var(--agent-canvas-min-width) + 2 * var(--page-padding-inline)); display: grid; height: 100vh; grid-template-columns: minmax(var(--agent-main-min-width), 1fr) 420px; overflow-x: auto; background: transparent; transition: grid-template-columns 180ms ease; }
 .agent-main-column { min-width: 0; overflow-y: auto; padding: var(--page-padding-top) var(--page-padding-inline) var(--page-padding-bottom); }
 .agent-intro-actions { display: flex; flex: 0 0 auto; align-items: center; flex-direction: row; gap: 10px; }
 .consolidation-action { display: inline-flex; min-height: 40px; align-items: center; justify-content: flex-end; gap: 10px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); padding: 4px; box-shadow: 0 1px 2px #1a1f2c08; }
@@ -206,7 +207,7 @@ button:disabled { cursor: not-allowed; }
 .consolidation-action[data-status="error"] .consolidation-status { color: #a9463e; }
 .consolidation-action[data-status="error"] .consolidation-status i { background: #d4574c; box-shadow: 0 0 0 3px #d4574c1c; }
 .config-warning { font-size: 11px; }
-.agent-harness-svg { display: block; width: 100%; height: auto; }
+.agent-harness-svg { display: block; width: 100%; min-width: var(--agent-canvas-min-width, 850px); height: auto; }
 .agent-loop-box { fill: #edf4ff; stroke: #bcd1f7; stroke-width: 1.4; }
 .agent-loop-label { fill: #3c68b6; font-size: 10px; font-weight: 750; letter-spacing: .13em; }
 .agent-edge { fill: none; stroke: #c7cbd4; stroke-width: 1.5; transition: stroke 160ms ease, stroke-width 160ms ease; }
@@ -741,7 +742,6 @@ button:disabled { cursor: not-allowed; }
   .workspace-grid { grid-template-columns: 1fr; }
   .analysis-grid { --analysis-height: 518px; grid-template-columns: 1fr; }
   .graph-scroll { height: 500px; }
-  .agent-page-layout { grid-template-columns: minmax(0, 1fr) 420px; }
   .config-grid { grid-template-columns: 1fr; }
   .config-model-card, .config-retrieval-card, .config-runtime-card { grid-column: 1; grid-row: auto; }
   .config-runtime-card { position: static; }
@@ -838,7 +838,7 @@ button:disabled { cursor: not-allowed; }
 /* 收起时仅隐藏聊天内容，保留会话、草稿及正在执行的请求。 */
 .agent-chat-content { display: flex; flex: 1; min-height: 0; flex-direction: column; }
 .agent-chat-content[hidden] { display: none; }
-.agent-page-layout[data-chat-collapsed="true"] { grid-template-columns: minmax(0, 1fr) 0; }
+.agent-page-layout[data-chat-collapsed="true"] { grid-template-columns: minmax(var(--agent-main-min-width), 1fr) 0; }
 .agent-page-layout[data-chat-collapsed="true"] .agent-chat-dock { overflow: visible; border-left: 0; background: transparent; }
 .agent-page-layout[data-chat-collapsed="true"] .agent-dock-header { position: fixed; top: 18px; right: 8px; z-index: 40; min-height: 0; justify-content: center; margin: 0; border-bottom: 0; padding: 0; }
 .agent-page-layout[data-chat-collapsed="true"] .chat-collapse-toggle { margin-left: 0; border-color: var(--line); border-radius: 9px; background: var(--panel); color: var(--muted); box-shadow: 0 4px 16px #2222; }

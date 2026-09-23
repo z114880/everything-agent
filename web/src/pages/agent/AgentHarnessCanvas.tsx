@@ -14,7 +14,7 @@ export function AgentHarnessCanvas({ workflow, nodeStates, activeEdges }: AgentH
   const nodes = workflow.nodes.filter((node) => node.id !== "START" && node.id !== "END");
   const positions = new Map(nodes.map((node, index) => [node.id, node.presentation ?? { x: 24 + index % 5 * 220, y: 85 + Math.floor(index / 5) * 105 }]));
   return <div className="business-graph-scroll">
-      <svg viewBox="0 19 1110 872" style={{ width: "100%", minWidth: 850 }} className="agent-harness-svg" role="img" aria-label="Agent 与 Memory 业务流程图">
+      <svg viewBox="0 19 1110 872" className="agent-harness-svg" role="img" aria-label="Agent 与 Memory 业务流程图">
         <defs><marker id={markerId} viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" className="arrow-head" /></marker></defs>
         <rect x="1" y="20" width="1108" height="527" rx="16" className="agent-loop-box" />
         <text x="17" y="47" className="agent-loop-label">Memory Retrieval &amp; Agent Loop</text>
