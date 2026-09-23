@@ -576,8 +576,9 @@ button:disabled { cursor: not-allowed; }
 .eval-panel-heading h2 { margin: 0; color: var(--ink); font-size: 15px; font-weight: 680; letter-spacing: -.01em; line-height: 1.35; }
 .eval-panel-heading p { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 3px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .eval-panel-heading code { min-width: 0; color: var(--accent-foreground); font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
-/* 分区说明末尾的操作入口，跟在描述文字下面而不是挤在头部右侧。 */
-.eval-panel-heading-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; }
+/* 分区说明与操作左右排列，与页面头部的 page-heading-description 保持同一种读法。 */
+.eval-panel-description { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; }
+.eval-panel-description-actions { display: flex; align-items: center; flex: 0 0 auto; }
 .eval-panel-heading > h2:only-child { align-self: center; }
 .eval-panel-actions, .eval-detail-actions, .eval-approval-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .eval-panel-actions { justify-content: flex-end; }

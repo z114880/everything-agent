@@ -191,14 +191,14 @@ it('页面常驻展示数据集 Metadata 默认值与 Experiment 采用的配置
   const guideButton = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('从 Langfuse 管理平台触发 Experiment'));
   expect(guideButton).toBeDefined();
   expect(guideButton!.closest('[aria-label="数据集与实验"]')).not.toBeNull();
-  // 入口挂在分区描述文字之后（同一个 heading 内、描述下方），按钮文案不再与描述重复
+  // 入口与分区说明左右排列（同 page-heading-description），按钮文案不再与描述重复
   const heading = guideButton!.closest('.eval-panel-heading');
   expect(heading).not.toBeNull();
   expect(heading!.querySelector('h2')?.textContent).toBe('数据集与实验');
-  expect(heading!.querySelector('p')?.textContent).toBe('选择 Langfuse 数据集后在本机启动 Experiment，执行过程与平台入口共用。');
-  const entry = guideButton!.closest('.eval-panel-heading-actions');
-  expect(entry).not.toBeNull();
-  expect(heading!.querySelector('p')?.nextElementSibling).toBe(entry);
+  const description = heading!.querySelector('p');
+  expect(description?.textContent).toBe('选择 Langfuse 数据集后在本机启动 Experiment，执行过程与平台入口共用。');
+  expect(description?.parentElement?.className).toBe('eval-panel-description');
+  expect(description?.nextElementSibling?.contains(guideButton!)).toBe(true);
   await openGuide();
   expect(document.body.textContent).toContain('via Webhook');
   expect(document.body.textContent).toContain('Set up remote experiment trigger in UI');
