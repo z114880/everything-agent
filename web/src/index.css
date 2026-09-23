@@ -659,22 +659,23 @@ button:disabled { cursor: not-allowed; }
 .eval-detail > .eval-panel-body { padding: 20px 24px 22px; }
 .eval-detail > .eval-panel-body > * + * { margin-top: 16px; }
 /* 配置事实按标签列对齐，数值用等宽数字，长名称换行而不是撑破卡片。
-   列数只取决于卡片自身宽度：详情卡片会被 232px 侧栏和页面内边距压缩，
-   按视口宽度切换列数会让值列在窄卡片里被 max-content 标签挤成逐字换行。
-   因此这里用容器查询分档：单列 → 两列 → 三列，每档都保证值列仍有约 240px，
-   「tttools 92e7169c」这类名称和数据集版本不必被压成逐字换行。 */
-.eval-facts { display: grid; container-type: inline-size; margin: 0; border: 1px solid var(--line); border-radius: 11px; background: var(--panel-soft); padding: 14px 16px; gap: 10px 20px; }
-.eval-facts > p { display: grid; min-width: 0; grid-template-columns: minmax(96px, max-content) minmax(0, 1fr); align-items: start; gap: 10px; margin: 0; color: var(--ink); font-size: 13px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+   默认（窄屏）每条事实竖向排列：标签在上、值在下，一行只读一条。
+   分档用媒体查询，因此门槛要按详情卡片的真实可用宽度倒推：1180px 以上
+   侧栏占 232px、「Experiment 记录」占 380px，再加页面与面板内边距，
+   两列、三列分别在 1400px、1760px 生效，每档的值列都留得下
+   「tttools 92e7169c」和「2026-09-23T02:55:46.632Z」，不会被拆成逐字换行。 */
+.eval-facts { display: grid; grid-template-columns: minmax(0, 1fr); margin: 0; border: 1px solid var(--line); border-radius: 11px; background: var(--panel-soft); padding: 14px 16px; gap: 10px 20px; }
+.eval-facts > p { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 2px; margin: 0; color: var(--ink); font-size: 13px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .eval-facts > p > span { min-width: 0; color: var(--muted); font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
-@container eval-facts (width >= 680px) {
+/* 560px 起标签回到值的左侧，一条事实仍占一行，但不必再占两行。 */
+@media (min-width: 560px) {
+  .eval-facts > p { grid-template-columns: minmax(96px, max-content) minmax(0, 1fr); align-items: baseline; gap: 10px; }
+}
+@media (min-width: 1400px) {
   .eval-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@container eval-facts (width >= 1120px) {
+@media (min-width: 1760px) {
   .eval-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
-/* 卡片过窄时标签退到值上方，避免值列只剩几十像素。 */
-@container eval-facts (width < 340px) {
-  .eval-facts > p { grid-template-columns: minmax(0, 1fr); gap: 2px; }
 }
 .eval-error-text { margin: 0; color: #be4035; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
 .eval-items { display: grid; gap: 12px; }
