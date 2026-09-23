@@ -579,7 +579,10 @@ button:disabled { cursor: not-allowed; }
 /* 分区说明与操作左右排列，与页面头部的 page-heading-description 保持同一种读法。 */
 .eval-panel-description { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; margin-top: 3px; }
 .eval-panel-description > p { margin: 0; }
-.eval-panel-description-actions { display: flex; align-items: center; flex: 0 0 auto; }
+/* 入口是次要操作：靠右并压到与说明文字同高，行高由描述决定，不被按钮撑开。 */
+.eval-panel-description-actions { display: flex; align-items: center; flex: 0 0 auto; margin-left: auto; }
+.eval-guide-trigger { height: 26px; border-color: transparent; background: transparent; padding: 0 8px; color: var(--eval-label); font-size: 12px; font-weight: 550; box-shadow: none; }
+.eval-guide-trigger:enabled:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-foreground); }
 .eval-panel-heading > h2:only-child { align-self: center; }
 .eval-panel-actions, .eval-detail-actions, .eval-approval-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .eval-panel-actions { justify-content: flex-end; }

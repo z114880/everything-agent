@@ -190,6 +190,8 @@ it('页面常驻展示数据集 Metadata 默认值与 Experiment 采用的配置
   expect(container.textContent).not.toContain('Set up remote experiment trigger in UI');
   const guideButton = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('Langfuse Experiment 配置说明'));
   expect(guideButton).toBeDefined();
+  // 紧凑的次要入口：高度由样式压到与说明文字同级，不再把这一行撑高
+  expect(guideButton!.className).toContain('eval-guide-trigger');
   expect(guideButton!.closest('[aria-label="数据集与实验"]')).not.toBeNull();
   // 入口与分区说明左右排列（同 page-heading-description），按钮文案不再与描述重复
   const heading = guideButton!.closest('.eval-panel-heading');
