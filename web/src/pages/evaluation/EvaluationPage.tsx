@@ -144,7 +144,7 @@ export function EvaluationPage() {
             <div className="eval-panel-description-actions">
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="eval-guide-trigger">Langfuse Experiment 配置说明</Button>
+                  <Button variant="outline" size="sm"><BookOpen size={14} />从 Langfuse 管理平台触发 Experiment</Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent className="eval-guide-dialog">
                   <AlertDialogHeader>
