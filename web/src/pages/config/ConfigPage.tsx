@@ -652,7 +652,6 @@ export function ConfigPage() {
                 />
               </ConfigField>
               <ConfigField
-                className="config-field-wide"
                 label="Embedding API Key"
                 help={
                   embeddingKeyKnown && settings?.embeddingKeyConfigured

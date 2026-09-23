@@ -10,14 +10,16 @@
 
 ### 1. 准备环境并启动
 
-需要 **Node.js 24.12 或更高版本**、**pnpm**，以及支持 Anthropic Messages、OpenAI Compatible 或 Google Gemini 原生协议的模型服务。
+需要 **Node.js 24.12 或更高版本**，以及支持 Anthropic Messages、OpenAI Compatible 或 Google Gemini 原生协议的模型服务。
 
-clone 仓库后，在项目根目录执行：
+开发推荐使用 **pnpm**，启动支持 Node.js 自带的 **npm**，无需额外安装 pnpm。clone 仓库后，在项目根目录执行：
 
 ```bash
-pnpm install
-pnpm start
+npm install
+npm start
 ```
+
+如果已经安装 pnpm，也可以执行 `pnpm install`、`pnpm start`。
 
 按终端输出打开本地地址。此命令同时启动 Web 控制台与本地后端，使用期间保持终端运行；按 `Ctrl+C` 停止。
 
@@ -160,7 +162,7 @@ flowchart TD
 
 **启动时提示 Node.js、SQLite 或原生模块错误？**
 
-先用 `node --version` 确认运行版本不低于 24.12，再执行 `pnpm install`。项目使用 Node.js 内置 SQLite 和 nodejieba 原生分词模块；如果 nodejieba 安装失败，请根据安装日志检查当前平台的编译环境和依赖构建是否被阻止。
+先用 `node --version` 确认运行版本不低于 24.12，再执行 `npm install` 或 `pnpm install`。项目使用 Node.js 内置 SQLite 和 nodejieba 原生分词模块；如果 nodejieba 安装失败，请根据安装日志检查当前平台的编译环境和依赖构建是否被阻止。
 
 **能打开页面，但无法发送消息？**
 
@@ -180,7 +182,7 @@ flowchart TD
 
 ## 开发与检查
 
-项目使用 pnpm、ESM 和严格模式 TypeScript。后端由 Node.js 原生类型擦除直接运行，不生成 JavaScript 构建目录；前端由 Vite 构建。
+项目推荐使用 pnpm 开发，同时支持 npm；仓库同时维护 `pnpm-lock.yaml` 和 `package-lock.json`，变更依赖时应同步更新两份锁文件。项目使用 ESM 和严格模式 TypeScript。后端由 Node.js 原生类型擦除直接运行，不生成 JavaScript 构建目录；前端由 Vite 构建。
 
 ```bash
 pnpm run typecheck      # 后端类型检查
