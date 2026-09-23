@@ -751,7 +751,7 @@ button:disabled { cursor: not-allowed; }
   .sidebar { transform: translateX(-100%); }
   .sidebar.open { transform: translateX(0); box-shadow: 10px 0 30px #252a3d1a; }
   .main-content, .sidebar.closed ~ .main-content { margin-left: 0; }
-  .content-wrap, .agent-main-column { padding: 64px 14px 36px; }
+  .content-wrap, .agent-main-column { padding: 64px 14px 26px; }
   .page-heading { min-height: 0; align-items: flex-start; flex-direction: column; gap: 14px; }
   .page-heading-actions { align-self: flex-start; padding-bottom: 0; }
   .workspace-grid { grid-template-columns: minmax(0, 1fr); }
