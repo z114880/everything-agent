@@ -26,11 +26,11 @@ beforeEach(() => {
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); });
 async function click(label: string) { const button = [...container.querySelectorAll('button')].find(button => button.textContent?.includes(label)); expect(button).toBeDefined(); await act(async () => button!.click()); }
 /**
- * 打开「从 Langfuse 管理平台触发 Experiment」弹窗（位于「数据集与实验」分区的描述之后）。
+ * 打开「Langfuse Experiment 配置说明」弹窗（入口与「数据集与实验」的说明左右排列）。
  * 弹窗内容渲染在 portal 里，因此断言与按钮查找都走 document。
  */
 async function openGuide() {
-  await click('从 Langfuse 管理平台触发 Experiment');
+  await click('Langfuse Experiment 配置说明');
   expect(document.body.textContent).toContain('按下面的顺序在 Langfuse 界面完成一次性配置');
 }
 /** 点击弹窗内的按钮：校验它确实挂在页面根节点之外的 portal 容器里。 */
@@ -188,7 +188,7 @@ it('页面常驻展示数据集 Metadata 默认值与 Experiment 采用的配置
   // 长说明不再常驻页面，入口放在「数据集与实验」分区里
   expect(container.textContent).not.toContain('via Webhook');
   expect(container.textContent).not.toContain('Set up remote experiment trigger in UI');
-  const guideButton = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('从 Langfuse 管理平台触发 Experiment'));
+  const guideButton = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('Langfuse Experiment 配置说明'));
   expect(guideButton).toBeDefined();
   expect(guideButton!.closest('[aria-label="数据集与实验"]')).not.toBeNull();
   // 入口与分区说明左右排列（同 page-heading-description），按钮文案不再与描述重复
