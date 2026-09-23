@@ -100,5 +100,8 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.6.0"
+  },
+  "allowScripts": {
+    "fsevents@2.3.3": true
   }
 }
