@@ -1,3 +1,4 @@
+import { AlertMessage } from "../../components/AlertMessage";
 import { CheckCircle2, Clock3, Info, KeyRound, LockKeyhole, Search, Terminal, Wrench } from "lucide-react";
 import { Alert, AlertDescription } from "../../components/ui/alert";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -193,7 +194,7 @@ export function ToolsPage() {
     <PageHeading eyebrow="Agent 能力 / 受控执行" title="Tools" description="查看 Agent 当前可用的工具，并配置允许修改的能力。" />
     <div className="intro-note"><Wrench size={16} /><p><strong>工具注册表是运行时事实来源。</strong> 固定内置工具始终可用；开关保存在 <code>.everything/config.json</code>，Tavily 凭证保存在 <code>.everything/.env</code>，密钥不会返回浏览器。</p></div>
     {message && <div className="tools-toast" role="status" aria-live="polite"><CheckCircle2 size={15} />{message}</div>}
-    {error && <div className="error-message" role="alert">{error}</div>}
+    <AlertMessage message={error} />
     {loading ? <div className="panel tools-loading">正在读取工具目录…</div> : <>
       {groups.map((group) => <section className="tools-section" key={group.name}>
         <div className="tools-section-heading"><div><h2>{group.name}</h2><p>{group.description}</p></div><Badge variant="outline">{group.tools.length} tools</Badge></div>
@@ -246,7 +247,6 @@ export function ToolsPage() {
                 <dd>{catalog?.terminal.sandboxKind || "未配置"}</dd>
               </div>
             </dl>
-            {error && <div className="error-message" role="alert">{error}</div>}
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={saving}>关闭</AlertDialogCancel>
@@ -268,7 +268,6 @@ export function ToolsPage() {
           </AlertDialogHeader>
           <div className="tavily-config-body">
             <label className="config-field"><span className="config-field-label">Tavily API Key</span><Input type="password" value={tavilyApiKey} onChange={(event) => setTavilyApiKey(event.target.value)} placeholder={catalog?.tavily.keyConfigured ? `已配置 ····${catalog.tavily.keyLast4}` : "tvly-…"} autoComplete="off" spellCheck={false} /><span className="field-help"><KeyRound size={13} />留空会保留已保存的密钥。</span></label>
-            {error && <div className="error-message" role="alert">{error}</div>}
             <div className="tavily-config-actions"><a href="https://app.tavily.com" target="_blank" rel="noreferrer">获取 API Key</a>{catalog?.tavily.keyConfigured && <Button variant="destructive-outline" size="sm" disabled={saving} onClick={() => void persist({ clearTavilyApiKey: true, closeDialog: true })}>清除密钥</Button>}</div>
           </div>
           <AlertDialogFooter>

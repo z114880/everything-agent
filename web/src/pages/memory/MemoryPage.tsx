@@ -1,3 +1,4 @@
+import { AlertMessage } from "../../components/AlertMessage";
 import { RUNTIME_SYSTEM_PROMPT } from "../../../../src/agent-runtime/system-prompt.ts";
 import { Database, FileText, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -109,7 +110,7 @@ export function MemoryPage() {
   return <div className="content-wrap memory-page">
     <PageHeading eyebrow="SQLite / Lexical + Dense" title="Memory" description="Semantic Memory、Session Recall、会话日志与整理状态。" descriptionActions={<Button size="sm" className="memory-refresh" loading={loading} onClick={() => void refresh()}><RefreshCw size={14} /> 刷新数据</Button>} />
     <SaveMessage message={saveMessage} setMessage={setSaveMessage} />
-    {error && <div className="error-message" role="alert">{error}</div>}
+    <AlertMessage message={error} />
     <div className="memory-tabs">{tabs.map((item) => <Button variant="ghost" size="sm" key={item.id} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)}>{item.label}</Button>)}</div>
     {tab === "overview" && <div className="metric-grid">
       <Metric label="Semantic" value={data.overview.semanticCount} />

@@ -20,7 +20,7 @@ export interface ContextUsage {
   contextSafetyTokens: number;
   availableInputTokens: number;
   /**
-   * 系统提示、Skill 目录、工具 schema 与该 Session 全部工作记忆的估算之和。
+   * 系统提示、Skill 目录、工具 schema 与该 Session 当前工作记忆（压缩检查点与后续消息）的估算之和。
    * 不含本轮检索注入的记忆——检索内容取决于尚未输入的那句话，事前不可知，
    * 因此这是下限而非精确值。
    */

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { RefreshCw, ExternalLink, Copy, Play, Square, FlaskConical, PlugZap, ListChecks, SlidersHorizontal, BookOpen, ChevronRight } from 'lucide-react';
 import { PageHeading } from '../../components/PageHeading';
 import { SaveMessage } from '../../components/SaveMessage';
@@ -32,8 +32,6 @@ export function EvaluationPage() {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState('');
   const [error, setError] = useState('');
-  /** 操作失败提示，留在页面内常驻展示，与轮询错误合并显示。 */
-  const [actError, setActError] = useState('');
   /** 操作反馈，交给 SaveMessage 浮层展示并在 2.5 秒后消失，不在页面里占位。 */
   const [message, setMessage] = useState('');
   /** 浮层提示类型：成功默认绿色，错误使用与页面 alert 一致的红色警告样式。 */
@@ -44,6 +42,17 @@ export function EvaluationPage() {
   /** 按运行标识绑定刷新动画，切换记录时不会误显示在其他 Experiment 上。 */
   const [refreshingRunId, setRefreshingRunId] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
+  const lastBackgroundError = useRef('');
+  const backgroundError = error || data?.error || '';
+  // 轮询只提示新错误；操作期间或已有反馈时不抢占浮层，也不在反馈消失后补弹旧错误。
+  useEffect(() => {
+    if (lastBackgroundError.current === backgroundError) return;
+    lastBackgroundError.current = backgroundError;
+    if (backgroundError && !busy && !message) {
+      setMessageVariant('error');
+      setMessage(backgroundError);
+    }
+  }, [backgroundError, busy, message]);
   /** 设置浮层提示并同步其类型，避免上一次错误样式残留到下一次成功反馈上。 */
   const showMessage = (text: string, variant: 'success' | 'error' = 'success') => { setMessageVariant(variant); setMessage(text); };
   useEffect(() => {
@@ -60,20 +69,20 @@ export function EvaluationPage() {
   const act = async (body: Record<string, unknown>) => {
     if (busy) return;
     const refreshing = body.action === 'refresh';
-    setBusy(true); setMessage(''); setActError('');
+    setBusy(true); setMessage('');
     if (refreshing) setRefreshingRunId(String(body.runId));
     try {
       const execute = async () => { await evaluationRequest('', body); return evaluationRequest<EvaluationDashboard>(); };
       setData(await (refreshing ? withMinimumDuration(execute) : execute()));
       if (refreshing) showMessage('评分刷新／同步重试已完成，请查看最新评分与同步状态。');
     }
-    catch (cause) { setActError(errorText(cause)); }
+    catch (cause) { showMessage(errorText(cause), 'error'); }
     finally { setBusy(false); if (refreshing) setRefreshingRunId(null); }
   };
   /** 连接平台：最短反馈时长保证旋转动画可见，成功后给出已发现的数据集数量。 */
   const connect = async () => {
     if (busy || connecting) return;
-    setBusy(true); setConnecting(true); setActError('');
+    setBusy(true); setConnecting(true); setMessage('');
     try {
       const result = await withMinimumDuration(() => evaluationRequest<{ datasets: typeof datasets }>('/datasets'));
       setDatasets(result.datasets); setDataset(result.datasets[0]?.name ?? ''); setConnected(true);
@@ -81,17 +90,15 @@ export function EvaluationPage() {
     }
     catch (cause) {
       setConnected(false);
-      const text = errorText(cause);
-      // 轮询已在 alert 区常驻展示同一个连接错误时，不再改写 alert（避免文案跳动与页面漂移），改为浮层再提示一次。
-      if (text && text === (error || data?.error)) showMessage(text, 'error');
-      else setActError(text);
+      setDatasets([]); setDataset('');
+      showMessage(errorText(cause), 'error');
     }
     finally { setBusy(false); setConnecting(false); }
   };
   const copyHeaders = async () => {
-    setActError('');
+    setMessage('');
     try { const headers = await evaluationRequest<{ Authorization: string }>('/webhook-headers', {}); await navigator.clipboard.writeText(headers.Authorization); showMessage('authorization 值已复制，请在 Langfuse 添加请求头。'); }
-    catch (cause) { setMessage(''); setActError(errorText(cause)); }
+    catch (cause) { showMessage(errorText(cause), 'error'); }
   };
   const run = data?.runs.find(item => item.id === selected) ?? data?.runs[0];
   const pageCount = Math.max(1, Math.ceil((data?.runs.length ?? 0) / 10));
@@ -99,14 +106,11 @@ export function EvaluationPage() {
   const visibleRuns = data?.runs.slice((currentPage - 1) * 10, currentPage * 10) ?? [];
   const active = data?.runs.some(item => ['queued', 'running'].includes(item.status));
   const projectUrl = data ? `${data.baseUrl}/project/${encodeURIComponent(data.projectId)}` : '';
-  /** 轮询错误与操作错误合并展示；两者同时存在时优先展示操作失败原因。 */
-  const alert = actError || error || data?.error || '';
   const finishedCount = run ? run.items.filter(item => ['completed', 'failed', 'cancelled'].includes(item.status)).length : 0;
   const syncedCount = run ? run.items.filter(item => item.sync === 'synced').length : 0;
   return <div className="content-wrap evaluation-page">
     <PageHeading eyebrow="真实环境评估" title="Evaluation" description="用真实 Everything Agent 执行 Langfuse 数据集，独立保存评估会话和记忆。" />
     <SaveMessage message={message} setMessage={setMessage} variant={messageVariant} />
-    {alert && <div className="error-message" role="alert">{alert}</div>}
 
     <section className="eval-panel" aria-label="Langfuse 连接">
       <header className="eval-panel-header">
@@ -206,7 +210,7 @@ export function EvaluationPage() {
             <span id="evaluation-name-label" className="eval-field-label">Experiment 名称前缀（可选）</span>
             <Input aria-labelledby="evaluation-name-label" className="eval-control" value={name} maxLength={maxNameLength} spellCheck={false} placeholder="留空时使用 Everything Agent" onChange={event => setName(event.target.value)} />
           </div>
-          <Button className="h-10" disabled={busy || active || !dataset} onClick={() => void act({ action: 'start', datasetName: dataset, ...(name.trim() ? { name: name.trim() } : {}) })}><Play size={14} />Run Experiment</Button>
+          <Button className="h-10" disabled={busy || active || !connected || !dataset} onClick={() => void act({ action: 'start', datasetName: dataset, ...(name.trim() ? { name: name.trim() } : {}) })}><Play size={14} />Run Experiment</Button>
         </div>
         <p className="eval-note pt-2">输入支持字符串、{'{ prompt }'} 或 {'{ turns: ["第一轮", "第二轮"] }'}。</p>
       </div>

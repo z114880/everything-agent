@@ -24,7 +24,7 @@ describe("Agent 业务画布", () => {
     expect(html).toContain("Current Session");
     expect(html).toContain("当前会话");
     expect(html).toContain("最近 3 个已完成回合");
-    expect(html).toContain("全部已完成回合");
+    expect(html).toContain("摘要与后续工作记忆");
     expect(html).toContain("EVERYTHING.md");
     expect(html).toContain("Skills Catalog");
     expect(html).toContain("Procedural Memory");

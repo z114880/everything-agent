@@ -1,3 +1,4 @@
+import { AlertMessage } from "../../components/AlertMessage";
 import { ArrowLeft, Database, Play, RefreshCw, Table2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
@@ -106,7 +107,7 @@ export function DatabasePage() {
       <button className={tab === "overview" ? "active" : ""} onClick={() => { setTab("overview"); setSelectedTableName(null); }}>Overview</button>
       <button className={tab === "query" ? "active" : ""} onClick={() => { setTab("query"); setSelectedTableName(null); }}>SQL Console</button>
     </div>}
-    {error && <div className="error-message" role="alert">{error}</div>}
+    <AlertMessage message={error} />
     {loading && !dashboard && <div className="panel loading-panel">正在读取 Database…</div>}
     {dashboard && tab === "overview" && !selectedTable && <DatabaseOverview dashboard={dashboard} onSelect={setSelectedTableName} />}
     {tab === "overview" && selectedTable && <DatabaseTableView table={selectedTable} onBack={() => setSelectedTableName(null)} />}

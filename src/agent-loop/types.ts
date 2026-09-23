@@ -103,6 +103,19 @@ export interface ToolCallRecord {
   isError: boolean;
 }
 
+/** 已验证的压缩检查点；消息包含摘要、当前请求和最近完整交互。 */
+export interface ContextCompaction {
+  compactionId: string;
+  iteration: number;
+  beforeTokens: number;
+  afterTokens: number;
+  targetTokens: number;
+  availableInputTokens: number;
+  targetReached: boolean;
+  ms: number;
+  messages: AgentMessage[];
+}
+
 /** Agent Loop 的运行参数。 */
 export interface AgentLoopOptions {
   client: AgentModelClient;
@@ -116,6 +129,8 @@ export interface AgentLoopOptions {
   modelContextWindow?: number;
   /** 配置 Context Window 时必须注入的 token 估算器。 */
   tokenEstimator?: TokenEstimator;
+  /** 同步原子保存压缩检查点；抛错时本轮不切换上下文，也不重试压缩。 */
+  onCompacted?: (compaction: ContextCompaction) => void;
   observer?: AgentObserver;
   stream?: boolean;
   signal?: AbortSignal;

@@ -83,6 +83,14 @@ describe("本地记忆工具", () => {
     const read = await registry.execute("session_read", { sessionId: historical.id }, async () => {}, context) as { entries: unknown[] };
     expect(read.entries).not.toHaveLength(0);
     await expect(registry.execute("session_read", { sessionId: current.id }, async () => {}, context)).rejects.toThrow("当前 Session");
+    runtime.startRun(current.id, "compact-run", "继续");
+    runtime.saveCompaction(current.id, "compact-run", [], {
+      compactionId: "c", iteration: 1, beforeTokens: 700, afterTokens: 200, targetTokens: 300,
+      availableInputTokens: 1000, targetReached: true, ms: 10,
+      messages: [{ role: "user", content: "方案摘要", contextSummary: true }],
+    });
+    const compactedRead = await registry.execute("session_read", { sessionId: "current" }, async () => {}, context) as { entries: unknown[] };
+    expect(JSON.stringify(compactedRead.entries)).toContain("当前方案");
     expect(() => registry.execute("session_search", null, async () => {}, context)).toThrow("参数必须是对象");
   });
 

@@ -1,4 +1,4 @@
-import type { AgentMessage } from "../../agent-loop/agent-loop.ts";
+import type { AgentMessage, ContextCompaction } from "../../agent-loop/agent-loop.ts";
 import { toSearchText } from "../retrieve/index.ts";
 import type { ChatLogEntry, SessionSummary } from "../types.ts";
 import type { Row } from "./records.ts";
@@ -71,22 +71,44 @@ export class SessionStore {
     const finalMessage = [...messages].reverse().find((message) => messageKind(message) === "assistant_message");
     if (!finalMessage) throw new Error("成功 Run 必须包含最终 Assistant 回复");
     const prompt = plainText(parseJson(String(promptRow.content_json)));
+    this.storage.transaction(() => {
+      this.storage.connection.prepare("UPDATE chat_log SET search_text = ? WHERE id = ?")
+        .run(toSearchText(prompt), Number(promptRow.id));
+      this.appendRunMessages(sessionId, runId, messages);
+      this.storage.connection.prepare("UPDATE sessions SET updated_at = ? WHERE id = ?").run(nowUtc(), sessionId);
+    });
+  }
+
+  /** 原始新增消息与压缩检查点一并提交；失败时不会改变旧检查点。 */
+  saveCompaction(sessionId: string, runId: string, messages: AgentMessage[], compaction: ContextCompaction): void {
+    this.requireSession(sessionId);
+    this.storage.transaction(() => {
+      this.appendRunMessages(sessionId, runId, messages);
+      const coveredId = Number(this.storage.connection.prepare("SELECT MAX(id) AS id FROM chat_log WHERE session_id = ?").get(sessionId)!.id);
+      this.storage.connection.prepare(`INSERT INTO session_context VALUES (?, ?, ?)
+        ON CONFLICT(session_id) DO UPDATE SET covered_id=excluded.covered_id, messages_json=excluded.messages_json`)
+        .run(sessionId, coveredId, JSON.stringify(removeCredentials(compaction.messages)));
+      const { messages: _messages, ...metadata } = compaction;
+      this.storage.connection.prepare("INSERT INTO context_compactions VALUES (?, ?, ?, ?)")
+        .run(compaction.compactionId, sessionId, runId, JSON.stringify(metadata));
+    });
+  }
+
+  // compact 已经保存的中间工具消息不能在 completeRun 时重复插入。
+  private appendRunMessages(sessionId: string, runId: string, messages: AgentMessage[]): void {
+    const rows = this.storage.connection.prepare("SELECT id FROM chat_log WHERE session_id = ? AND run_id = ? ORDER BY id").all(sessionId, runId);
+    if (!rows.length) throw new Error("Run 的用户消息不存在");
     const insert = this.storage.connection.prepare(`
       INSERT INTO chat_log(session_id, run_id, role, kind, content_json, search_text, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
-    this.storage.transaction(() => {
-      this.storage.connection.prepare("UPDATE chat_log SET search_text = ? WHERE id = ?")
-        .run(toSearchText(prompt), Number(promptRow.id));
-      for (const message of messages) {
-        const role = message.role === "assistant" ? "assistant" : "user";
-        const kind = messageKind(message);
-        const content = removeCredentials(message.content);
-        const searchText = kind === "user_message" || kind === "assistant_message" ? toSearchText(plainText(content)) : "";
-        insert.run(sessionId, runId, role, kind, JSON.stringify(content), searchText, nowUtc());
-      }
-      this.storage.connection.prepare("UPDATE sessions SET updated_at = ? WHERE id = ?").run(nowUtc(), sessionId);
-    });
+    for (const message of messages.slice(rows.length - 1)) {
+      const role = message.role === "assistant" ? "assistant" : "user";
+      const kind = messageKind(message);
+      const content = removeCredentials(message.content);
+      const searchText = kind === "user_message" || kind === "assistant_message" ? toSearchText(plainText(content)) : "";
+      insert.run(sessionId, runId, role, kind, JSON.stringify(content), searchText, nowUtc());
+    }
   }
 
   /** 返回 Session 的全部持久化消息，供聊天界面读取。 */
@@ -95,11 +117,21 @@ export class SessionStore {
     const rows = sessionId
       ? this.storage.connection.prepare("SELECT * FROM chat_log WHERE session_id = ? ORDER BY id LIMIT ?").all(sessionId, safeLimit)
       : this.storage.connection.prepare("SELECT * FROM chat_log ORDER BY id DESC LIMIT ?").all(safeLimit).reverse();
-    return this.decorateEntries(rows as Row[]);
+    return this.decorateEntries(rows as Row[]).map((entry) => ({
+      ...entry,
+      ...(entry.kind === "user_message" ? {
+        compactions: this.storage.connection.prepare("SELECT metadata_json FROM context_compactions WHERE session_id = ? AND run_id = ? ORDER BY rowid")
+          .all(entry.sessionId, entry.runId).map((row) => parseJson(String(row.metadata_json)) as Omit<ContextCompaction, "messages">),
+      } : {}),
+    }));
   }
 
-  /** 返回全部已完成回合；turns 仅供 Gate 读取少量近期上下文。 */
+  /** 返回压缩检查点与后续已完成消息；turns 供 Gate 读取最近原始回合。 */
   getWorkingMemory(sessionId: string, turns?: number): AgentMessage[] {
+    const checkpoint = turns === undefined
+      ? this.storage.connection.prepare("SELECT * FROM session_context WHERE session_id = ?").get(sessionId) as Row | undefined
+      : undefined;
+    const prefix: AgentMessage[] = checkpoint ? parseJson(String(checkpoint.messages_json)) as AgentMessage[] : [];
     let runRows: Row[];
     if (turns === undefined) {
       runRows = this.storage.connection.prepare(`
@@ -114,11 +146,12 @@ export class SessionStore {
       `).all(sessionId, turns) as Row[]).reverse();
     }
     const runIds = runRows.map((row) => String(row.run_id));
-    if (!runIds.length) return [];
+    if (!runIds.length) return prefix;
     const placeholders = runIds.map(() => "?").join(",");
-    return (this.storage.connection.prepare(`SELECT * FROM chat_log WHERE session_id = ? AND run_id IN (${placeholders}) ORDER BY id`)
-      .all(sessionId, ...runIds) as Row[])
+    const suffix = (this.storage.connection.prepare(`SELECT * FROM chat_log WHERE session_id = ? AND run_id IN (${placeholders}) AND id > ? ORDER BY id`)
+      .all(sessionId, ...runIds, checkpoint ? Number(checkpoint.covered_id) : 0) as Row[])
       .map((row) => ({ role: String(row.role), content: parseJson(String(row.content_json)) }));
+    return [...prefix, ...suffix];
   }
 
   private getSession(id: string): SessionSummary | null {
@@ -131,6 +164,16 @@ export class SessionStore {
   }
 
   getSessionRow(id: string): Row | undefined { return this.storage.connection.prepare("SELECT * FROM sessions WHERE id = ?").get(id) as Row | undefined }
+
+  /** 当前 Session 仅回查检查点覆盖的原始记录，不将新执行结果重复召回。 */
+  compactedRows(sessionId: string): Row[] | null {
+    const checkpoint = this.storage.connection.prepare("SELECT covered_id FROM session_context WHERE session_id = ?").get(sessionId);
+    if (!checkpoint) return null;
+    return this.storage.connection.prepare(`SELECT c.* FROM chat_log c WHERE c.session_id = ? AND c.id <= ?
+      AND (EXISTS (SELECT 1 FROM chat_log done WHERE done.session_id=c.session_id AND done.run_id=c.run_id AND done.kind='assistant_message')
+        OR EXISTS (SELECT 1 FROM context_compactions compact WHERE compact.session_id=c.session_id AND compact.run_id=c.run_id)) ORDER BY c.id`)
+      .all(sessionId, Number(checkpoint.covered_id)) as Row[];
+  }
 
   completedRunRows(sessionId: string): Row[] {
     return this.storage.connection.prepare(`

@@ -5,6 +5,13 @@ import type { VisualNodeState } from "./visual-node-state";
 export function advanceHarnessMemory(kind: string, event: AgentEvent, states: Record<string, VisualNodeState>): { states: Record<string, VisualNodeState>; edges: string[] } {
   const next = { ...states };
   const edges: string[] = [];
+  if (kind === "compact_started") {
+    next.compact = "running";
+    edges.push("working_memory->compact");
+  }
+  if (kind === "compact_completed") next.compact = "done";
+  if (kind === "compact_failed") next.compact = "error";
+  if (kind === "model_request" && event.compactionId) edges.push("compact->llm");
   if (kind === "gate_start") {
     next.retrieval_gate = "running";
     edges.push("user_prompt->retrieval_gate", "session_chat_history->retrieval_gate");

@@ -1,3 +1,4 @@
+import { AlertMessage } from "../../components/AlertMessage";
 import { ChevronRight, FileJson, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { loadTraces, loadTraceRun, type TraceFile, type TraceDashboard } from "../../agent-api";
@@ -72,7 +73,7 @@ export function TracePage() {
   return <div className="content-wrap trace-page">
     <PageHeading eyebrow="JSONL traces" title="Traces" description="按文件查看已脱敏的 JSONL 事件。" descriptionActions={<Button size="sm" loading={refreshing} onClick={() => void refresh()}><RefreshCw size={14} /> 刷新数据</Button>} />
     <SaveMessage message={saveMessage} setMessage={setSaveMessage} />
-    {error && <div className="error-message" role="alert">{error}</div>}
+    <AlertMessage message={error} />
     {!loading && !error && dashboard.runs.length === 0 && <div className="panel trace-empty">No traces yet.</div>}
     <div className="trace-file-list" aria-busy={loading}>
       {files.map((file) => <details className="panel trace-file" open key={file.path}>

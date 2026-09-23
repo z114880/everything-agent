@@ -30,6 +30,20 @@ CREATE TABLE IF NOT EXISTS chat_log (
 CREATE INDEX IF NOT EXISTS chat_log_session_id_id ON chat_log(session_id, id);
 CREATE INDEX IF NOT EXISTS chat_log_run_id ON chat_log(run_id);
 
+CREATE TABLE IF NOT EXISTS session_context (
+  session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+  covered_id INTEGER NOT NULL,
+  messages_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS context_compactions (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  run_id TEXT NOT NULL,
+  metadata_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS context_compactions_run ON context_compactions(run_id);
+
+
 CREATE VIRTUAL TABLE IF NOT EXISTS chat_log_fts USING fts5(
   search_text, content='chat_log', content_rowid='id', tokenize="unicode61 remove_diacritics 0 tokenchars '_-.+#@/'"
 );

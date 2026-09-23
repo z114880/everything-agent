@@ -45,6 +45,7 @@ export interface SessionSummary {
   createdAt: string; updatedAt: string;
 }
 export interface ChatLogEntry {
+  compactions?: Omit<import("../agent-loop/agent-loop.ts").ContextCompaction, "messages">[];
   id: number; sessionId: string; runId: string; role: string; kind: string; content: unknown; createdAt: string;
   runComplete?: boolean; contentTruncated?: boolean; contentFragment?: boolean; contentOffset?: number;
   /** 正文被截断时给出原文总长与「继续读这一条」的 cursor。 */

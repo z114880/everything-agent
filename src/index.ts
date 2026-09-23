@@ -6,6 +6,7 @@ export {
 } from "./agent-loop/agent-loop.ts";
 export type {
   AgentLoopOptions,
+  ContextCompaction,
   AgentLoopResult,
   AgentMessage,
   AgentModelClient,

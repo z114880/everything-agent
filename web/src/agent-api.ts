@@ -57,6 +57,7 @@ export interface SessionSummary {
 }
 
 export interface ChatLogEntry {
+  compactions?: CompactionRecord[];
   id: number;
   sessionId: string;
   runId: string;
@@ -196,7 +197,24 @@ export interface ClientHistoryMessage {
   content: string;
 }
 
+export interface CompactionRecord {
+  compactionId: string;
+  beforeTokens: number;
+  afterTokens: number;
+  targetTokens: number;
+  availableInputTokens: number;
+  targetReached: boolean;
+  ms: number;
+}
+
 export interface AgentEvent {
+  reasonCode?: string;
+  compactionId?: string;
+  beforeTokens?: number;
+  afterTokens?: number;
+  targetTokens?: number;
+  availableInputTokens?: number;
+  targetReached?: boolean;
   completedBatches?: number;
   totalBatches?: number;
   taskKind?: string;

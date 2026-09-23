@@ -152,12 +152,17 @@ export class MemoryRuntime {
     return this.sessions.completeRun(sessionId, runId, messages);
   }
 
+  /** 原子保存压缩检查点与本轮原始消息，不写入长期记忆。 */
+  saveCompaction(sessionId: string, runId: string, messages: AgentMessage[], compaction: import("../agent-loop/agent-loop.ts").ContextCompaction): void {
+    this.sessions.saveCompaction(sessionId, runId, messages, compaction);
+  }
+
   /** 返回 Session 的全部持久化消息，供聊天界面读取。 */
   getChatLog(sessionId?: string, limit = 2_000): ChatLogEntry[] {
     return this.sessions.getChatLog(sessionId, limit);
   }
 
-  /** 返回全部已完成回合；turns 仅供 Gate 读取少量近期上下文。 */
+  /** 返回压缩检查点与后续已完成消息；turns 供 Gate 读取最近原始回合。 */
   getWorkingMemory(sessionId: string, turns?: number): AgentMessage[] {
     return this.sessions.getWorkingMemory(sessionId, turns);
   }

@@ -13,6 +13,7 @@ export default defineConfig({
         "src/evaluation/**/*.ts",
         "deploy/langfuse/configuration.ts",
         "src/agent-loop/agent-loop.ts",
+        "src/agent-loop/compaction.ts",
         "src/agent-runtime/**/*.ts",
         "src/memory/**/*.ts",
         "src/skills/**/*.ts",

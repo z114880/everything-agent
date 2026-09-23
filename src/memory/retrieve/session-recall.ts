@@ -77,7 +77,9 @@ export class SessionRecall {
       version: 1, sessionId: input.sessionId!, afterId: 0, contentOffset: 0,
     };
     if (input.currentSessionId && cursor.sessionId === input.currentSessionId) {
-      throw new Error("当前 Session 不参与 Session Recall");
+      const rows = this.sessions.compactedRows(cursor.sessionId);
+      if (!rows) throw new Error("当前 Session 尚无压缩历史，不参与 Session Recall");
+      return this.readSequential(cursor, settings, rows);
     }
     return this.readSequential(cursor, settings);
   }
@@ -156,9 +158,9 @@ export class SessionRecall {
     };
   }
 
-  private async readSequential(cursor: Cursor, settings: SessionRecallSettings): Promise<SessionReadResult> {
+  private async readSequential(cursor: Cursor, settings: SessionRecallSettings, compactedRows?: Row[]): Promise<SessionReadResult> {
     const session = this.sessions.requireSession(cursor.sessionId);
-    const allRows = this.sessions.completedRunRows(cursor.sessionId);
+    const allRows = compactedRows ?? this.sessions.completedRunRows(cursor.sessionId);
     const startIndex = cursor.afterId === 0 ? 0 : Math.max(0, allRows.findIndex((row) => Number(row.id) === cursor.afterId));
     const selected: ChatLogEntry[] = []; let next: Cursor | null = null;
     for (let index = startIndex; index < allRows.length; index += 1) {

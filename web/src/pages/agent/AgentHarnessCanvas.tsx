@@ -34,7 +34,7 @@ export function AgentHarnessCanvas({ workflow, nodeStates, activeEdges }: AgentH
           if (edge.source === "tools" && edge.target === "llm") { y1 += 12; y2 += 12; }
           if (source.x === target.x) {
             x1 = source.x + 82; x2 = x1; y1 = source.y + 50; y2 = target.y;
-            path = `M ${x1} ${y1} L ${x2} ${y2}`; lx = x1 + 40; ly = (y1 + y2) / 2;
+            path = `M ${x1} ${y1} L ${x2} ${y2}`; lx = x1; ly = (y1 + y2) / 2;
           } else if (edge.source === "tool_schemas" && edge.target === "working_memory") {
             // 从节点顶部进入中间空隙，再向上接入 Working Memory 底部。
             x1 = source.x + 82; y1 = source.y; x2 = target.x + 45; y2 = target.y + 50;
@@ -46,6 +46,10 @@ export function AgentHarnessCanvas({ workflow, nodeStates, activeEdges }: AgentH
             y1 = edge.source === "session_chat_history" ? source.y + 50 : source.y;
             x2 = target.x + (edge.source === "user_prompt" ? 119 : edge.source === "retrieval_gate" ? 82 : 45); y2 = target.y;
             path = `M ${x1} ${y1} V ${lane} H ${x2} V ${y2}`; lx = (x1 + x2) / 2; ly = lane - 7;
+          } else if (edge.source === "compact" && edge.target === "llm") {
+            // 从 Compact 底部向下，横穿到 LLM 上方，再向下接入 LLM 顶部；入口偏右以避开 Working Memory 的中心连线。
+            x1 = source.x + 82; y1 = source.y + 50; x2 = target.x + 120; y2 = target.y;
+            path = `M ${x1} ${y1} V 427.5 H ${x2} V ${y2}`; lx = (x1 + x2) / 2; ly = 420.5;
           } else if (edge.target === "memory_queue") {
             x1 = source.x + 82; y1 = source.y + 50; x2 = target.x + 82; y2 = target.y;
             path = `M ${x1} ${y1} V 535 H ${x2} V ${y2}`; lx = (x1 + x2) / 2; ly = 528;

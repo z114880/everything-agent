@@ -1,3 +1,5 @@
+import { AlertMessage } from "../../components/AlertMessage";
+import { CompactionNotice, updateCompactionViews, type CompactionView } from "./CompactionNotice";
 import { advanceHarnessMemory } from "../../harness-playback";
 import {
   Bot,
@@ -72,6 +74,7 @@ interface AssistantChatMessage {
   startedAt: number;
   result?: AgentRunResult;
   streamFallback?: boolean;
+  compactions?: CompactionView[];
 }
 type ChatMessage = UserChatMessage | AssistantChatMessage;
 
@@ -100,6 +103,7 @@ const idleStates: Record<string, VisualNodeState> = {
   procedural_memory: "idle",
   tool_schemas: "idle",
   working_memory: "idle",
+  compact: "idle",
   llm: "idle",
   tools: "idle",
   reply: "idle",
@@ -627,7 +631,7 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
   return (
     <div className="agent-page-layout" data-chat-collapsed={chatCollapsed}>
       <div className="agent-main-column">
-        {refreshError && <div role="alert">配置刷新失败：{refreshError}</div>}
+        {active && <AlertMessage message={refreshError ? `配置刷新失败：${refreshError}` : ""} />}
         <PageHeading
           eyebrow="个人助理 / 实时执行"
           title="Agent"
@@ -963,6 +967,7 @@ function AssistantCard({
           reply
         </Badge>
       </div>
+      {message.compactions?.map((item) => <CompactionNotice key={item.compactionId} item={item} />)}
       {message.streamFallback && (
         <div className="agent-inline-note">
           流式响应失败，已降级为普通请求。
@@ -1017,6 +1022,11 @@ function applyAgentEvent(
   >,
   showActiveEdges: (edges: Iterable<string>) => void,
 ) {
+  if (["compact_started", "compact_completed", "compact_failed"].includes(kind)) {
+    setMessages((current) => updateAssistant(current, assistantId, (message) => ({
+      ...message, compactions: updateCompactionViews(message.compactions ?? [], kind, event),
+    })));
+  }
   if (kind === "model_request") {
     setNodeStates((states) => ({
       ...states,
@@ -1024,7 +1034,7 @@ function applyAgentEvent(
       tools: states.tools === "running" ? "done" : states.tools,
     }));
     showActiveEdges(
-      (event.iteration ?? 1) > 1 ? ["tools->llm"] : ["working_memory->llm"],
+      event.compactionId ? ["compact->llm"] : (event.iteration ?? 1) > 1 ? ["tools->llm"] : ["working_memory->llm"],
     );
   }
   if (kind === "model_response")
@@ -1137,6 +1147,7 @@ function toChatMessages(entries: ChatLogEntry[]): ChatMessage[] {
       id: `${runId}-assistant`,
       role: "assistant",
       content: final ? plainText(final.content) : "",
+      compactions: user.compactions?.map((item) => ({ ...item, status: "done" })),
       pending: false,
       ...(final ? {} : { error: "此回合未完成" }),
       startedAt: performance.now(),

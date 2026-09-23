@@ -42,7 +42,11 @@ Schema v5 新增语义语料单调版本、来源引用和变更审计表；保�
 
 sessionId 标识一段聊天，runId 标识一次用户提交触发的 Agent Loop。完整 run 的用户输入、Assistant 工具请求、工具结果和最终回复以结构化消息写入 chat_log。失败 run 可以只有用户输入，但只保留在 Chat Log，不进入 FTS5、Dense或 Session Recall。
 
-当前 Session 的全部已完成回合进入 Working Memory，不再按最近回合数裁剪。当前 Session 完全排除在 Session Recall 之外。完整模型输入受到 `modelContextWindow` token 限制；输入量使用统一启发式规则估算，超过预算时明确失败，不静默删除旧消息。真实消耗只采用供应商响应中的 usage。
+未压缩时，当前 Session 的全部已完成回合进入 Working Memory；自动 compact 后读取 `session_context` 中的工作检查点，加上覆盖位置之后已完成的原始消息。`context_compactions` 仅保存压缩统计和所属 run，供聊天标记使用。原始 `chat_log` 不删除，摘要不进入 FTS 或 Semantic Memory。保存检查点与本轮中间工具原文使用同一事务，失败全部回滚；删除 Session 时检查点和标记级联删除。
+
+每次主模型调用前，输入达到可用额度（窗口减输出预留及 512 安全余量）的 70% 时使用主模型摘要，30% 为总输入软目标。当前请求与最近完整工具交互优先保留。压缩失败时保留原上下文，仍超模型硬限制则明确失败。真实消耗只采用供应商响应中的 usage。
+
+当前 Session 仍排除在自动召回和 `session_search` 之外；有压缩检查点时，`session_read` 可以分页回查检查点覆盖的原文，包含 compact 已保存的本轮工具结果。其余会话仍只读取已完成回合。Gate 读取最近 3 个已完成原始回合，不使用摘要。
 
 ## Gate
 
@@ -101,7 +105,7 @@ cursor 有三种来源，语义相同（都是「从这里往后连续读」）�
 
 1. **单条正文上限**（`sessionRecallEntryTokenLimit`）。这是唯一压得住成本的一层：个别超长记录（如大段工具结果）被截断到上限内，窗口结构与 Session 数完全不受影响，全文通过 `contentCursor` 交给 session_read 读取。
 2. **单次调用的 token 总额**，由 `modelContextWindow` 派生。只有第 1 层压完仍超额时才触发，裁剪单位是整个 Session：从最低排名开始丢弃，绝不切碎已经给出的窗口，并在结果中如实上报 `droppedSessionCount` 与 `droppedReason: "token_budget"`。排名第一的 Session 不能空手返回，按 run 粒度从尾部、首部交替向命中所在 run 收缩；只剩命中 run 仍超额时在 run 内围绕命中消息收缩，保证总额是硬上界。
-3. **`modelContextWindow` 硬失败**，由 Agent Loop 在请求前判定，不静默裁剪。
+3. **自动 compact 与 `modelContextWindow` 硬限制**，由 Agent Loop 在请求前检查 70% 阈值；压缩后仍超硬限制才停止，不静默截断必要内容。
 
 `estimatedTokens`、`droppedReason` 与每个 Session 的 `truncatedEntryCount` 都进入检索事件，预算去向可在 trace 中解释。
 
@@ -183,7 +187,7 @@ Agent 页面每日首次进入时调用 `runtime.consolidate("daily")`，按服�
 
 - Dense 目前使用 SQLite 中的精确 cosine 全扫描；个人助理数据规模增大后可评估 ANN，但首版不做。
 - 不索引工具结果可能漏掉仅存在于工具输出、且邻近对话没有关键词的事实。
-- 当前 Session 全量 Working Memory 会持续增加费用与延迟，最终可能触发 Context Limit。
+- 自动 compact 会增加摘要调用成本；必要输入本身过大时仍可能触发 Context Limit，摘要语义完整性仍取决于主模型。
 - session_read 只能向后连续读；锚点之前的内容需要用 sessionId 从头分页，人工检索场景下比双向扩窗多几步。
 - 固定首尾锚点会占用返回预算；不足时低排名候选被省略。
 - 当前不做时间衰减或 recency boost；它可能在未来作为明确的排序信号加入。

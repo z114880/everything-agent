@@ -1,3 +1,4 @@
+import { AlertMessage } from "../../components/AlertMessage";
 import { BookOpen, CheckCircle2, FileCode2, LoaderCircle, Plus, RefreshCw, Save, Sparkles, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { deleteSkill, loadSkills, saveSkill, type AgentSkill } from "../../agent-api";
@@ -138,7 +139,7 @@ export function SkillsPage() {
     <PageHeading eyebrow="Agent 能力 / 按需加载" title="Skills" description="管理 Agent 可发现并按需读取的本地技能。" descriptionActions={<Button size="sm" disabled={saving} onClick={create}><Plus size={14} /> 新建 Skill</Button>} />
     <div className="intro-note"><BookOpen size={16} /><p><strong>Skill 文件是唯一事实来源。</strong> 页面直接读写 <code>.everything/skills/&lt;skill-name&gt;/SKILL.md</code>；Agent 只接收名称和描述，决定使用后通过 <code>read_skill</code> 读取完整指令。</p></div>
     {message && (messageIsError
-      ? <div className="error-message" role="alert">{message}</div>
+      ? <AlertMessage message={message} />
       : <div className="skills-message" role="status" aria-live="polite"><CheckCircle2 size={15} />{message}</div>)}
     <div className="skills-layout">
       <aside className="panel skills-list-panel">

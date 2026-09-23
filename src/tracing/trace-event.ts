@@ -30,6 +30,12 @@ function traceEventFields(type: string, event: Record<string, unknown>): Record<
   const payloadFields: Record<string, string[]> = {
     run_started: ["userInput", "provider", "model", "settings", "runtime"],
     context_assembled: ["messageCount", "historyMessageCount", "hasSystemPrompt", "semanticMemoryIds", "sessionRecallSessionIds", "sessionRecallRanges", "sessionRecallEntryCount", "sessionRecallEstimatedTokens", "sessionRecallTruncated"],
+    compact_started: ["beforeTokens", "targetTokens", "availableInputTokens"],
+    compact_completed: ["beforeTokens", "afterTokens", "targetTokens", "availableInputTokens", "targetReached", "ms"],
+    compact_failed: ["beforeTokens", "targetTokens", "availableInputTokens", "ms", "errorType", "reasonCode"],
+    compact_model_started: ["model", "batchIndex"],
+    compact_model_completed: ["model", "batchIndex", "ms", "tokenUsage"],
+    compact_model_failed: ["model", "batchIndex", "ms", "errorType"],
     skills_discovered: ["skills", "count"],
     skill_loaded: ["skill", "contentHash", "instructionLength"],
     gate_start: ["model"],
@@ -100,7 +106,7 @@ function traceEventFields(type: string, event: Record<string, unknown>): Record<
     langfuse_export_failed: ["message"],
   };
   const output: Record<string, unknown> = {};
-  for (const key of ["taskId", "taskKind", "taskCreatedAt", "sourceRunId", "operationId", "parentOperationId"]) if (typeof event[key] === "string") output[key] = event[key];
+  for (const key of ["compactionId", "taskId", "taskKind", "taskCreatedAt", "sourceRunId", "operationId", "parentOperationId"]) if (typeof event[key] === "string") output[key] = event[key];
   if (typeof event.sessionId === "string") output.sessionId = event.sessionId;
   if (typeof event.iteration === "number") output.iteration = event.iteration;
   if (typeof event.modelCallId === "string") output.modelCallId = event.modelCallId;

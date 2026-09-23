@@ -19,6 +19,7 @@ export const harnessPresentation: Record<string, { title: string; subtitle: stri
   session_recall: { title: "Session Recall", subtitle: "FTS5 + BM25", x: 464, y: 240 },
   tool_schemas: { title: "Tool Schemas", subtitle: "可用工具与参数", x: 244, y: 460 },
   working_memory: { title: "Working Memory", subtitle: "assembled per turn", x: 684, y: 345 },
+  compact: { title: "Compact", subtitle: "70% 触发 · 30% 软目标", x: 904, y: 345 },
   llm: { title: "LLM", subtitle: "理解需求 · 决定下一步", x: 684, y: 460 },
   tools: { title: "Tools", subtitle: "受控调用 · 参数验证", x: 464, y: 460 },
   reply: { title: "Reply", subtitle: "流式输出", x: 904, y: 460 },
@@ -40,8 +41,8 @@ export const harnessEdgeLabels: Record<string, string> = {};
 export const agentHarnessGraph = new Graph<StateRecord>("agent-harness");
 for (const id of Object.keys(harnessPresentation)) {
   agentHarnessGraph.addNode(node(id, () => ({}), {
-    kind: ["llm", "retrieval_gate", "memory_review", "consolidation"].includes(id) ? "llm" : id === "tools" ? "tool" : "fn",
-    maxVisits: ["llm", "tools"].includes(id) ? 10 : 1,
+    kind: ["llm", "compact", "retrieval_gate", "memory_review", "consolidation"].includes(id) ? "llm" : id === "tools" ? "tool" : "fn",
+    maxVisits: ["llm", "tools", "compact"].includes(id) ? 10 : 1,
   }));
 }
 const connections = [
@@ -49,7 +50,7 @@ const connections = [
   ["user_prompt", "retrieval_gate", "当前问题"],
   ["session_chat_history", "retrieval_gate", "最近 3 个已完成回合"],
   ["user_prompt", "working_memory", "本轮输入"],
-  ["session_chat_history", "working_memory", "全部已完成回合"],
+  ["session_chat_history", "working_memory", "摘要与后续工作记忆"],
   ["everything_md", "procedural_memory", "常驻规则"],
   ["skills_catalog", "procedural_memory", "可用 Skills"],
   ["procedural_memory", "system_prompt", "程序性知识"],
@@ -61,6 +62,8 @@ const connections = [
   ["semantic_recall", "working_memory", "长期事实"],
   ["session_recall", "working_memory", "历史证据"],
   ["working_memory", "llm", "上下文就绪"],
+  ["working_memory", "compact", "达到 70%"],
+  ["compact", "llm", "压缩完成 / 安全降级"],
   ["llm", "tools", "调用工具"],
   ["tools", "llm", "工具结果"],
   ["llm", "reply", "生成回复"],

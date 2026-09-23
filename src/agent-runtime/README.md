@@ -54,7 +54,7 @@ try {
 路径由宿主提供。实例独立持有 Memory、Tracer、工具和会话锁；不同实例应使用不同数据目录。同一目录的多实例并发协调尚未实现。
 
 - `run(input, options)`：检索记忆、组装上下文、调用 Loop、保存完整回合及 trace，返回类型化结果。
-- `contextUsage(sessionId)`：估算下一轮回合起步就会占用的上下文，用于在超限之前展示水位。与 Loop 的硬限制共用估算器和额度公式（`availableInputTokens = modelContextWindow - maxTokens - 512`），统计系统提示、Skill 目录、工具 schema 与该会话全部工作记忆；不含本轮检索注入的记忆，因此是下限。
+- `contextUsage(sessionId)`：估算下一轮回合起步就会占用的上下文，用于在超限之前展示水位。与 Loop 的硬限制共用估算器和额度公式（`availableInputTokens = modelContextWindow - maxTokens - 512`），统计系统提示、Skill 目录、工具 schema 与该会话当前工作记忆（压缩检查点与后续消息）；不含本轮检索注入的记忆，因此是下限。
 - `await createSession(previousSessionId?)`：复用空会话或创建新会话，不触发整理。
 - `await consolidate("daily" | "manual")`：每日首次进入 Agent 页面自动检查或手动全量事实整理；Semantic Memory 为空时返回 skipped 且不创建任务，未配置模型时自动返回 null、手动报错。
 - `memory`：现有 MemoryRuntime 的公开操作；`prepareMemory()` 根据当前配置准备检索，并返回 Session Recall 预算。Web 用这些接口组装列表、检索结果等页面响应。
@@ -115,3 +115,11 @@ Memory 页在 Consolidation 后提供只读 System Prompt 标签页，直接展�
 日常 observer 事件经 `createRuntimeTracer` 统一生成时间、ID、顺序并脱敏，分别交给 JSONL 写入队列和异步 OTLP exporter。导出不读取 JSONL，也不等待聊天结束。`createAgentRuntime(paths, { langfuse: false })` 可由隔离评估宿主显式禁用日常导出。配置、内容边界和分页接口见 [Tracing](../tracing/README.md)。`readTraces()` 完整读取，不再截断到最近 2,000 条。清除操作只清除本地数据，并保留 `langfuse.env`；关闭和清理前会结束导出队列，不删除远端 traces。
 
 Embedding Provider 保存在 `.everything/config.json` 的 `retrieval.embedding.provider`，默认 `openai-compatible`，也可通过 `EVERYTHING_EMBEDDING_PROVIDER` 配置。切换 Provider 后未输入新密钥时清除旧密钥；Dense/Hybrid 配置不完整则拒绝保存。Provider 参与索引身份，切换后必须重建，不能使用新密钥继续访问旧 Provider 或 Base URL。Gemini 原生向量协议与事件见 [检索文档](../memory/retrieve/README.md#embedding-协议与配置)。
+
+## 自动 Compact
+
+每次主 Agent 请求前按可用输入额度检查：70% 触发，30% 为压缩后总输入软目标，比例目前固定，无手动入口。摘要使用当前 `agentModel`，不使用小模型。系统指令、工具定义、Skill 目录及本轮召回证据都计入总输入预算；它们不通过历史摘要压缩。摘要保留目标、约束、纠正、关键结论、已完成及待办事项；当前请求保留原文，最近交互按工具协议完整保留。
+
+Runtime 在同步 `onCompacted` 回调中把本轮尚未保存的原始工具消息与新检查点一起提交 SQLite。Session 重启后从检查点续接；完成回合只追加尚未落盘的原文，避免重复。若压缩成功后主任务失败，已提交的有效检查点仍保留；如果压缩本身取消、超时、生成或保存失败，则不覆盖旧检查点。完整 Chat Log 不被摘要替换，compact 不写 Semantic Memory。
+
+摘要遗漏时可以用 `session_read` 的 `sessionId: "current"` 分页核对已压缩原文。当前会话仍不参与 `session_search` 或 Gate 自动召回。Web 的 Compact 节点显示真实开始、成功与失败；聊天内显示前后 token 水位、耗时及软目标达成情况，成功标记随聊天记录持久化。JSONL 和 Langfuse 使用 `compact_*` 事件，摘要 generation 嵌套在 compact 步骤下，默认事件只包含身份与统计数据。

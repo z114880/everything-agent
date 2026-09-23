@@ -159,3 +159,24 @@ it("并发 Gate 和 Embedding 按 operationId 配对，并保留模型与真实�
   expect(embeddings.map(span => span.status.code)).toEqual([2, 1]);
   expect(attributes(embeddings[1])["langfuse.observation.usage_details"]).toBe('{"input":12}');
 });
+
+it("压缩摘要调用归属压缩步骤，保留模型用量和水位且不上传摘要", async () => {
+  const requests = receiver(); const tracer = createLangfuseTracer(config);
+  const common = { compactionId: "compact-1" };
+  tracer.record(event("run_started"));
+  tracer.record(event("compact_started", { beforeTokens: 7000, targetTokens: 3000, availableInputTokens: 10000 }, common));
+  tracer.record(event("compact_model_started", { model: "main" }, { ...common, modelCallId: "summary-call" }));
+  tracer.record(event("compact_model_completed", { model: "main", tokenUsage: { inputTokens: 7000, outputTokens: 100 }, summary: "私人摘要" }, { ...common, modelCallId: "summary-call" }));
+  tracer.record(event("compact_completed", { beforeTokens: 7000, afterTokens: 2000, targetReached: true, ms: 200 }, common));
+  tracer.record(event("run_completed"));
+  await tracer.flush(true);
+  const all = spans(requests);
+  const compact = all.find((s) => s.name === "compact");
+  const generation = all.find((s) => s.name === "compact_model");
+  expect(generation.parentSpanId).toBe(compact.spanId);
+  expect(compact.parentSpanId).toBe(all.find((s) => s.name === "run").spanId);
+  expect(attributes(generation)["langfuse.observation.type"]).toBe("generation");
+  expect(attributes(generation)["langfuse.observation.usage_details"]).toBe('{"input":7000,"output":100}');
+  expect(attributes(compact)["langfuse.observation.metadata.execution"]).toContain('"afterTokens":2000');
+  expect(JSON.stringify(requests)).not.toContain("私人摘要");
+});

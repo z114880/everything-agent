@@ -9,6 +9,7 @@
  * 执行分别由同目录内部模块负责。
  */
 
+import { compactContext, CompactionError, isUserRequest } from "./compaction.ts";
 import type { GuardOptions } from "./execution-guard.ts";
 import { requestModelResponse, textFrom, tokenUsageFrom } from "./model-response.ts";
 import { executeToolCalls } from "./tool-execution.ts";
@@ -25,6 +26,7 @@ import type {
 export { AgentLoopAbortError, AgentLoopTimeoutError } from "./errors.ts";
 export type {
   AgentLoopOptions,
+  ContextCompaction,
   AgentLoopResult,
   AgentMessage,
   AgentModelClient,
@@ -127,6 +129,9 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
   const toolCalls: ToolCallRecord[] = [];
   const notify: AgentObserver = async (kind, event = {}) => observer(kind, { ...event, runId });
   let iterations = 0;
+  let workingMessages = [...messages];
+  const protectedMessage = [...messages].reverse().find(isUserRequest);
+  let compactionFailed = false;
   const metrics: LoopMetrics = {
     modelMs: 0,
     toolMs: 0,
@@ -144,18 +149,41 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
     for (let iteration = 1; iteration <= maxIterations; iteration += 1) {
       iterations = iteration;
       const toolSchemas = tools.schemas();
+      let compactionId: string | undefined;
       const request = {
         model,
         system,
-        messages,
+        messages: workingMessages,
         tools: toolSchemas,
         max_tokens: maxTokens,
         signal,
       };
       if (tokenEstimator) {
         // 先记录再判定，超限的那次请求同样是本轮真实达到过的水位。
-        const estimatedInputTokens = tokenEstimator.estimateRequest(request);
+        let estimatedInputTokens = tokenEstimator.estimateRequest(request);
         metrics.peakEstimatedInputTokens = Math.max(metrics.peakEstimatedInputTokens ?? 0, estimatedInputTokens);
+        if (modelContextWindow !== undefined && !compactionFailed) {
+          try {
+            const compacted = await compactContext({
+              request, beforeTokens: estimatedInputTokens, client, estimator: tokenEstimator,
+              inputBudget: modelContextWindow - maxTokens - CONTEXT_SAFETY_TOKENS,
+              contextWindow: modelContextWindow, safetyTokens: CONTEXT_SAFETY_TOKENS,
+              protectedMessage, guard, iteration, commit: options.onCompacted,
+              notify: async (kind, event) => {
+                if (kind === "compact_started") compactionId = String(event.compactionId);
+                if (kind === "compact_model_completed" || kind === "compact_model_failed") metrics.modelMs += Number(event.ms);
+                await notify(kind, event);
+              },
+            });
+            if (compacted) {
+              request.messages = workingMessages = compacted.messages;
+              estimatedInputTokens = compacted.afterTokens;
+            }
+          } catch (error) {
+            if (!(error instanceof CompactionError)) throw error;
+            compactionFailed = true;
+          }
+        }
         if (modelContextWindow !== undefined && estimatedInputTokens + maxTokens + CONTEXT_SAFETY_TOKENS > modelContextWindow) {
           throw new Error(`模型输入估算、输出预留与安全余量共 ${estimatedInputTokens + maxTokens + CONTEXT_SAFETY_TOKENS} tokens，超过 Context Window ${modelContextWindow}；请新建 Session 或调高 Context Window`);
         }
@@ -164,11 +192,12 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
       const modelCallId = crypto.randomUUID();
       await notify("model_request", {
         iteration,
+        ...(compactionId ? { compactionId } : {}),
         modelCallId,
         request: {
           model,
           system,
-          messages: structuredClone(messages),
+          messages: structuredClone(workingMessages),
           tools: structuredClone(toolSchemas),
           maxTokens,
           stream,
@@ -211,7 +240,9 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
         ms: modelMs,
       });
       await notify("llm", { iteration, stopReason, tokenUsage });
-      messages.push({ role: "assistant", content: response.content });
+      const assistantMessage = { role: "assistant", content: response.content };
+      messages.push(assistantMessage);
+      workingMessages.push(assistantMessage);
 
       const requestedTools = response.content.filter((block) => block?.type === "tool_use");
       if (requestedTools.length === 0) {
@@ -237,7 +268,9 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
       });
       metrics.toolMs += executed.ms;
       toolCalls.push(...executed.records);
-      messages.push({ role: "user", content: executed.results });
+      const resultsMessage = { role: "user", content: executed.results };
+      messages.push(resultsMessage);
+      workingMessages.push(resultsMessage);
     }
 
     const result: AgentLoopResult = {

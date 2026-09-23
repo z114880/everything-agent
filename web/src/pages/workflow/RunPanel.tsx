@@ -1,3 +1,4 @@
+import { AlertMessage } from "../../components/AlertMessage";
 import { ArrowRight, Check, CircleAlert, LoaderCircle, Play, Sparkles } from "lucide-react";
 import type { GraphExecutionResult, WaveResult, Workflow } from "../../workflow-api";
 import type { VisualNodeState } from "../../visual-node-state";
@@ -75,7 +76,7 @@ export function RunPanel(props: RunPanelProps) {
             );
           })}
 
-          {runError && <div className="error-message"><CircleAlert size={15} />{runError}</div>}
+          <AlertMessage message={runError} />
       </div>
     </section>
   );

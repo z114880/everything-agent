@@ -190,7 +190,7 @@ export function createAgentRuntime(paths: LocalConfigPaths, options: { langfuse?
           "model_request", "model_response", "model_failed", "stream_fallback",
           "tool_started", "tool_completed", "tool_failed", "skills_discovered", "skill_loaded",
           "approval_requested", "approval_resolved", "command_blocked", "sandbox_denied",
-        ].includes(kind) || kind.startsWith("memory_")) {
+        ].includes(kind) || kind.startsWith("memory_") || kind.startsWith("compact_")) {
           const modelFields = kind.startsWith("model_") ? { provider: settings.agentModel.provider, model: settings.agentModel.model } : {};
           await trace.record(kind, { ...enriched, ...modelFields });
         }
@@ -256,6 +256,7 @@ export function createAgentRuntime(paths: LocalConfigPaths, options: { langfuse?
           timeoutMs: DEFAULT_TIMEOUT_MS,
           stream: true,
           modelContextWindow: settings.modelContextWindow,
+          onCompacted: (compaction) => memory.saveCompaction(sessionId, runId, messages.slice(appendedFrom), compaction),
           tokenEstimator,
           signal,
           observer: emit,

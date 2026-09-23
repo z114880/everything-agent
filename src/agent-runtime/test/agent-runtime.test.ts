@@ -607,3 +607,29 @@ it("上下文水位与 Loop 硬限制同口径，并随会话历史增长", asyn
   const afterRun = await runtime.contextUsage(session.id);
   expect(afterRun.estimatedInputTokens).toBeGreaterThan(empty.estimatedInputTokens);
 });
+
+it("长会话自动 compact 后水位下降，检查点、聊天标记与脱敏事件同时持久化", async () => {
+  const runtime = await setup();
+  await runtime.saveAgentSettings({ ...modelSettings(), modelContextWindow: 32768, maxTokens: 2048 });
+  const session = await runtime.createSession();
+  runtime.memory.startRun(session.id, "old-run", "历史任务".repeat(6000));
+  await runtime.memory.completeRun(session.id, "old-run", [{ role: "assistant", content: [{ type: "text", text: "已经完成" }] }]);
+  create.mockImplementation(async (request) => {
+    if (request.model === "small-test") return response('{"intent":"none"}');
+    if (Array.isArray(request.tools) && request.tools.length === 0) return response("历史任务已完成，保持中文回答。");
+    expect(request.messages[0]).toMatchObject({ contextSummary: true });
+    expect(request.messages.at(-1)).toEqual({ role: "user", content: "请继续" });
+    return response("完成");
+  });
+  const before = await runtime.contextUsage(session.id);
+  const seen: string[] = [];
+  await runtime.run({ sessionId: session.id, prompt: "请继续" }, { ...options(), observer: (kind) => { seen.push(kind); } });
+  expect(seen).toContain("compact_completed");
+  expect((await runtime.contextUsage(session.id)).estimatedInputTokens).toBeLessThan(before.estimatedInputTokens);
+  expect(runtime.memory.getChatLog(session.id)).toHaveLength(4);
+  expect(runtime.memory.getChatLog(session.id)[2]?.compactions).toHaveLength(1);
+  const records = (await runtime.readTraces()).flatMap((file) => file.records).filter((record) => record.type.startsWith("compact_"));
+  expect(records.map((record) => record.type)).toEqual(["compact_started", "compact_model_started", "compact_model_completed", "compact_completed"]);
+  expect(records.at(-1)).toMatchObject({ sessionId: session.id, payload: { targetReached: true } });
+  expect(JSON.stringify(records)).not.toContain("历史任务已完成");
+});

@@ -63,11 +63,15 @@ console.log(result.reply);
 
 传入的 `messages` 会原地追加模型响应和工具结果，使下一次推理可以观察本轮已执行的动作。
 
-可选的 `modelContextWindow` 与同步 `TokenEstimator` 会在每次模型调用前估算 System Prompt、完整 messages 和工具 schema。估算输入、`maxTokens` 与固定 512-token 安全余量之和超过窗口时，Loop 明确失败，不会静默裁剪历史或工具结果。估算不承诺与任一供应商的分词结果完全一致，也不会调用远程计数接口。
+可选的 `modelContextWindow` 与同步 `TokenEstimator` 会在每次主模型调用前估算 System Prompt、当前工作 messages 和工具 schema。可用输入额度为 `modelContextWindow - maxTokens - 512`；输入达到额度的 70% 时自动 compact，目标是将总输入降至额度的 30% 左右。30% 是软目标：系统提示、工具定义、当前用户请求和最近完整交互优先保留，不为满足比例截断它们。
+
+compact 使用同一主模型、关闭工具和流式输出，将旧摘要与较早历史合并为一份工作摘要；大段历史按摘要请求实际额度分批读取，最多 32 批，受本轮统一取消与截止时间保护。工具调用及结果成组保留。无法压缩的上下文不会反复调用摘要；普通压缩失败后本轮不重试，仍在硬限制内则继续，否则明确失败。空摘要、工具调用、输出截断或未减少输入都视为失败。估算不承诺与任一供应商的分词结果完全一致。
+
+传入的 `messages` 仍只追加原始模型回复与工具结果，不被压缩替换。可选同步 `onCompacted(checkpoint)` 在切换工作上下文前原子保存检查点；回调抛错时保留原上下文，取消、超时或晚到响应不会提交。检查点包含新的 `messages`、压缩身份和前后水位；Loop 不直接依赖数据库。
 
 ## 结束条件与事件
 
-返回结果除 `reply`、`toolCalls`、`iterations` 和 `stopReason` 外，还带回本轮的执行统计：`modelMs` 与 `toolMs` 分别累计模型调用和工具调用的耗时（两者顺序执行，之和不超过整轮耗时），`failedToolCallCount` 是返回错误结果的工具调用数量，`peakEstimatedInputTokens` 是各次迭代请求估算输入 token 的最大值（未注入 `tokenEstimator` 时为 `null`），`peakInputTokens` 是供应商返回的真实输入 token 峰值（没有任何一次调用报告 usage 时为 `null`）。估算峰值与 Context Window 硬限制同口径，超限的那次请求同样计入峰值。
+返回结果除 `reply`、`toolCalls`、`iterations` 和 `stopReason` 外，还带回本轮的执行统计：`modelMs`（含摘要调用）与 `toolMs` 分别累计模型调用和工具调用的耗时（两者顺序执行，之和不超过整轮耗时），`failedToolCallCount` 是返回错误结果的工具调用数量，`peakEstimatedInputTokens` 是各次迭代请求估算输入 token 的最大值（未注入 `tokenEstimator` 时为 `null`），`peakInputTokens` 是供应商返回的真实输入 token 峰值（没有任何一次调用报告 usage 时为 `null`）。估算峰值与 Context Window 硬限制同口径，超限的那次请求同样计入峰值。
 
 - 模型不再请求工具时，`stopReason` 为 `completed`。
 - 达到 `maxIterations` 时，`stopReason` 为 `max_iterations`。
@@ -94,3 +98,12 @@ observer 会收到 `context_assembled`、`loop_start`、`model_request`、`model
 ### 供应商续接数据
 
 模型内容块可携带 `providerMetadata`，Loop 不解析并在下一轮原样保留，由模型适配器用于协议续接。Gemini 适配器通过它保留原始 Part（包括 thought signature 与 function call ID），思考或签名专用块使用 `provider_content`，不作为聊天文本或工具执行。既有 `model_response` 和 `model_request` 事件仍承载完整标准化响应与请求；Gemini 用量统一计入供应商报告的输入、候选输出及思考 token，不新增估算消耗事件。
+
+### Compact 事件
+
+- `compact_started`：`compactionId`、`iteration`、`beforeTokens`、`targetTokens`、`availableInputTokens`。
+- `compact_model_started/completed/failed`：同一压缩身份，以及 `modelCallId`、`batchIndex`、`model`；完成带真实 `tokenUsage` 和 `ms`，失败带 `errorType` 和 `ms`。
+- `compact_completed`：原子保存成功后产生，增加 `afterTokens`、`targetReached`、`ms`；随后才发送带本次 `compactionId` 的主任务 `model_request`。
+- `compact_failed`：保留原上下文，带 `errorType`、固定 `reasonCode`（模型失败、无额度、批次上限、无效摘要、无压缩收益、保存失败或中断）、`ms`；取消和超时仍会终止回合。
+
+事件不包含摘要或历史正文；主任务实际模型请求沿用现有内容记录策略。`peakEstimatedInputTokens` 保留压缩前达到的峰值，不能当作压缩后当前水位；摘要请求用量通过独立事件报告。
