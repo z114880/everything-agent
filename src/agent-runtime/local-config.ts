@@ -17,6 +17,7 @@ const CONFIG_PATHS = {
   EVERYTHING_AGENT_MAX_ITERATIONS: ["maxIterations"],
   EVERYTHING_MODEL_CONTEXT_WINDOW: ["modelContextWindow"],
   EVERYTHING_RETRIEVAL_MODE: ["retrieval", "mode"],
+  EVERYTHING_EMBEDDING_PROVIDER: ["retrieval", "embedding", "provider"],
   EVERYTHING_EMBEDDING_BASE_URL: ["retrieval", "embedding", "baseUrl"],
   EVERYTHING_EMBEDDING_MODEL: ["retrieval", "embedding", "model"],
   EVERYTHING_EMBEDDING_QUERY_TEMPLATE: ["retrieval", "embedding", "queryTemplate"],
@@ -62,7 +63,7 @@ const DEFAULT_CONFIG: JsonObject = {
   maxTokens: RUNTIME_DEFAULTS.maxTokens,
   maxIterations: RUNTIME_DEFAULTS.maxIterations,
   modelContextWindow: RUNTIME_DEFAULTS.modelContextWindow,
-  retrieval: { mode: "lexical_only", embedding: {} },
+  retrieval: { mode: "lexical_only", embedding: { provider: "openai-compatible" } },
   tools: {
     getCurrentTimeEnabled: true,
     searchWebEnabled: false,

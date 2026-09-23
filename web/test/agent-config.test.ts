@@ -66,3 +66,18 @@ it("Web 空库的每日与手动入口都不创建后台任务或占用每日配
     expect(await handleMemoryAction({ action: "semantic_count" })).toBe(1);
   } finally { await runtime.close(); state.runtime = null; await rm(home, { recursive: true, force: true }); }
 });
+
+it("Web 保存入口接收 Gemini 双模型与独立 Embedding Provider，并拒绝 Anthropic 向量配置", async () => {
+  const home = await mkdtemp(join(tmpdir(), "web-gemini-provider-"));
+  const runtime = state.runtime = createAgentRuntime({ home, defaultSystemPromptPath: join(home, "default.md") });
+  try {
+    vi.resetModules();
+    const { saveAgentSettings } = await import("../server/agent-service.ts");
+    const connection = { provider: "gemini", model: "gemini-test", apiKey: "gemini-test-secret" };
+    const input = { agentModel: connection, smallModel: connection, embeddingProvider: "gemini", force: true };
+    const result = await saveAgentSettings(input);
+    expect(result.settings).toMatchObject({ agentModel: { provider: "gemini" }, smallModel: { provider: "gemini" }, embeddingProvider: "gemini" });
+    expect(JSON.stringify(result)).not.toContain("gemini-test-secret");
+    await expect(async () => saveAgentSettings({ ...input, embeddingProvider: "anthropic" })).rejects.toThrow("Embedding Provider");
+  } finally { await runtime.close(); state.runtime = null; await rm(home, { recursive: true, force: true }); }
+});

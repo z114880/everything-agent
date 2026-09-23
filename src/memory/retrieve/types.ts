@@ -3,8 +3,12 @@ import type { AgentObserver } from "../../agent-loop/agent-loop.ts";
 /** Memory Retrieval 支持的全局相关性检索模式。 */
 export type RetrievalMode = "dense_only" | "lexical_only" | "hybrid";
 
+/** 已实现的向量协议；Anthropic 不提供原生 Embedding。 */
+export type EmbeddingProvider = "openai-compatible" | "gemini";
+
 /** 已固定版本的远程 Embedding 配置。 */
 export interface EmbeddingProfile {
+  provider: EmbeddingProvider;
   baseUrl: string;
   apiKey: string;
   model: string;

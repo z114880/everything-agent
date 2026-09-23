@@ -90,3 +90,7 @@ observer 会收到 `context_assembled`、`loop_start`、`model_request`、`model
 `src/agent-runtime/` 组合真实模型、Memory、工具和 Tracer，并管理回合前后的检索、持久化与会话锁。本模块保持模型与工具无关，不读取本地配置文件，也不承担 Web 请求或资源初始化。集成入口见 [Agent Runtime](../agent-runtime/README.md)。
 
 工具内部 observer 事件统一携带本次 `toolCallId` 和 `iteration`，可关联到实际工具步骤。事件顺序仍以 observer 为准。
+
+### 供应商续接数据
+
+模型内容块可携带 `providerMetadata`，Loop 不解析并在下一轮原样保留，由模型适配器用于协议续接。Gemini 适配器通过它保留原始 Part（包括 thought signature 与 function call ID），思考或签名专用块使用 `provider_content`，不作为聊天文本或工具执行。既有 `model_response` 和 `model_request` 事件仍承载完整标准化响应与请求；Gemini 用量统一计入供应商报告的输入、候选输出及思考 token，不新增估算消耗事件。

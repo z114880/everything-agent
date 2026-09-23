@@ -8,7 +8,7 @@ import type { AgentModelClient } from "../../../agent-loop/agent-loop.ts";
 
 const runtimes: MemoryRuntime[] = [];
 const profile: EmbeddingProfile = {
-  baseUrl: "https://embedding.invalid/v1", apiKey: "secret", model: "fake-1024",
+  provider: "openai-compatible" as const, baseUrl: "https://embedding.invalid/v1", apiKey: "secret", model: "fake-1024",
   queryTemplate: "{text}", documentTemplate: "{text}", minimumSimilarity: 0.2,
 };
 const client: EmbeddingPort = {
@@ -148,7 +148,7 @@ describe("MemoryRuntime Dense/Hybrid 集成", () => {
     memory.configureRetrieval({ mode: "lexical_only", embedding: { profile, client }, allowIncompleteIndex: true });
     await memory.rebuildEmbeddings("rebuild-test");
     expect(memory.activeEmbeddingProfile()).toEqual({
-      baseUrl: profile.baseUrl,
+      provider: "openai-compatible" as const, baseUrl: profile.baseUrl,
       model: profile.model,
       queryTemplate: profile.queryTemplate,
       documentTemplate: profile.documentTemplate,

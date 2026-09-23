@@ -5,7 +5,7 @@ import {
   rankDenseSources,
   maximalMarginalRelevance,
   normalizeVector,
-  OpenAIEmbeddingClient,
+  EmbeddingClient,
   reciprocalRankFusion,
   vectorFromBlob,
   vectorToBlob,
@@ -143,8 +143,8 @@ describe("Memory Retrieval 算法", () => {
       ], usage: { prompt_tokens: 2, total_tokens: 2 } }), { status: 200, headers: { "content-type": "application/json" } });
     });
     vi.stubGlobal("fetch", fetchMock);
-    const client = new OpenAIEmbeddingClient({
-      baseUrl: "https://embedding.example/v1", apiKey: "secret", model: "embed",
+    const client = new EmbeddingClient({
+      provider: "openai-compatible" as const, baseUrl: "https://embedding.example/v1", apiKey: "secret", model: "embed",
       queryTemplate: "{text}", documentTemplate: "{text}", minimumSimilarity: 0.3,
     });
 
@@ -164,8 +164,8 @@ describe("Memory Retrieval 算法", () => {
     const observer = vi.fn();
     const fetchMock = vi.fn(async () => new Response("sensitive", { status: 429 }));
     vi.stubGlobal("fetch", fetchMock);
-    const client = new OpenAIEmbeddingClient({
-      baseUrl: "https://embedding.example/v1", apiKey: "super-secret", model: "embed",
+    const client = new EmbeddingClient({
+      provider: "openai-compatible" as const, baseUrl: "https://embedding.example/v1", apiKey: "super-secret", model: "embed",
       queryTemplate: "{text}", documentTemplate: "{text}", minimumSimilarity: 0.3,
     });
     await expect(client.embed(["甲"], [1], { purpose: "query", observer })).rejects.toThrow("HTTP 429");
@@ -175,8 +175,8 @@ describe("Memory Retrieval 算法", () => {
   });
 
   it("Embedding adapter 校验输入 token、响应数量、index 与向量", async () => {
-    const client = new OpenAIEmbeddingClient({
-      baseUrl: "https://embedding.example/v1", apiKey: "secret", model: "embed",
+    const client = new EmbeddingClient({
+      provider: "openai-compatible" as const, baseUrl: "https://embedding.example/v1", apiKey: "secret", model: "embed",
       queryTemplate: "{text}", documentTemplate: "{text}", minimumSimilarity: 0.3,
     });
     await expect(client.embed([], [], { purpose: "query" })).rejects.toThrow("不能为空");
@@ -206,8 +206,8 @@ describe("Memory Retrieval 算法", () => {
       return new Response(JSON.stringify({ data: input.map((_, index) => ({ index, embedding: Array.from(vector(1)) })) }), { status: 200 });
     });
     vi.stubGlobal("fetch", fetchMock);
-    const client = new OpenAIEmbeddingClient({
-      baseUrl: "https://embedding.example/v1/", apiKey: "secret", model: "embed",
+    const client = new EmbeddingClient({
+      provider: "openai-compatible" as const, baseUrl: "https://embedding.example/v1/", apiKey: "secret", model: "embed",
       queryTemplate: "{text}", documentTemplate: "{text}", minimumSimilarity: 0.3,
     });
     const texts = Array.from({ length: 17 }, (_, index) => `x${index}`);

@@ -22,6 +22,7 @@ import {
   rebuildEmbeddingIndex,
   cancelEmbeddingIndexRebuild,
   type AgentProvider,
+  type EmbeddingProvider,
   type AgentSettings,
   type RetrievalMode,
 } from "../../agent-api";
@@ -90,6 +91,7 @@ export function ConfigPage() {
     useState<NumericInputValue>(262_144);
   const [retrievalMode, setRetrievalMode] =
     useState<RetrievalMode>("lexical_only");
+  const [embeddingProvider, setEmbeddingProvider] = useState<EmbeddingProvider>("openai-compatible");
   const [embeddingBaseUrl, setEmbeddingBaseUrl] = useState("");
   const [embeddingModel, setEmbeddingModel] = useState("");
   const [embeddingMinimumSimilarity, setEmbeddingMinimumSimilarity] =
@@ -110,6 +112,7 @@ export function ConfigPage() {
   const [clearingData, setClearingData] = useState(false);
   const [clearMessage, setClearMessage] = useState("");
   const agentKeyKnown = settings?.agentModel.provider === agentProvider;
+  const embeddingKeyKnown = settings?.embeddingProvider === embeddingProvider;
   const smallKeyKnown = settings?.smallModel.provider === smallProvider;
   useEffect(() => {
     loadAgent()
@@ -180,6 +183,7 @@ export function ConfigPage() {
               : settings.modelContextWindow,
           retrievalMode:
             section === "retrieval" ? retrievalMode : settings.retrievalMode,
+          embeddingProvider: section === "retrieval" ? embeddingProvider : settings.embeddingProvider,
           embeddingBaseUrl:
             section === "retrieval"
               ? embeddingBaseUrl
@@ -249,6 +253,7 @@ export function ConfigPage() {
 
   function applyRetrievalInputs(value: AgentSettings) {
     setRetrievalMode(value.retrievalMode);
+    setEmbeddingProvider(value.embeddingProvider);
     setEmbeddingBaseUrl(value.embeddingBaseUrl);
     setEmbeddingModel(value.embeddingModel);
     setEmbeddingMinimumSimilarity(value.embeddingMinimumSimilarity);
@@ -414,10 +419,7 @@ export function ConfigPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="anthropic">Anthropic</SelectItem>
-                    <SelectItem value="openai-compatible">
-                      OpenAI Compatible
-                    </SelectItem>
+                    <ProviderOptions />
                   </SelectContent>
                 </Select>
               </ConfigField>
@@ -441,7 +443,9 @@ export function ConfigPage() {
                   placeholder={
                     agentProvider === "anthropic"
                       ? "https://api.anthropic.com"
-                      : "https://api.openai.com/v1"
+                      : agentProvider === "gemini"
+                        ? "https://generativelanguage.googleapis.com/v1beta"
+                        : "https://api.openai.com/v1"
                   }
                 />
               </ConfigField>
@@ -481,10 +485,7 @@ export function ConfigPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="anthropic">Anthropic</SelectItem>
-                    <SelectItem value="openai-compatible">
-                      OpenAI Compatible
-                    </SelectItem>
+                    <ProviderOptions />
                   </SelectContent>
                 </Select>
               </ConfigField>
@@ -508,7 +509,9 @@ export function ConfigPage() {
                   placeholder={
                     smallProvider === "anthropic"
                       ? "https://api.anthropic.com"
-                      : "https://api.openai.com/v1"
+                      : smallProvider === "gemini"
+                        ? "https://generativelanguage.googleapis.com/v1beta"
+                        : "https://api.openai.com/v1"
                   }
                 />
               </ConfigField>
@@ -620,28 +623,39 @@ export function ConfigPage() {
                   }
                 />
               </ConfigField>
+              <ConfigField label="Embedding Provider" help="Anthropic 暂不提供原生 Embedding。切换 Provider 后请填写对应密钥并重建索引。">
+                <Select value={embeddingProvider} onValueChange={(value) => {
+                  setEmbeddingProvider(value as EmbeddingProvider);
+                  setEmbeddingApiKey("");
+                  setEmbeddingBaseUrl(value === "gemini" ? "https://generativelanguage.googleapis.com/v1beta" : "https://api.openai.com/v1");
+                  setEmbeddingModel("");
+                }}>
+                  <SelectTrigger aria-label="Embedding Provider"><SelectValue /></SelectTrigger>
+                  <SelectContent><ProviderOptions embedding /></SelectContent>
+                </Select>
+              </ConfigField>
               <ConfigField label="Embedding Base URL">
                 <Input
                   value={embeddingBaseUrl}
                   onChange={(event) => setEmbeddingBaseUrl(event.target.value)}
-                  placeholder="https://api.openai.com/v1"
+                  placeholder={embeddingProvider === "gemini" ? "https://generativelanguage.googleapis.com/v1beta" : "https://api.openai.com/v1"}
                 />
               </ConfigField>
               <ConfigField
                 label="Embedding Model"
-                help="请求固定 dimensions=1024；维度不一致时直接失败。"
+                help="请求固定 1024 维向量；维度不一致时直接失败。"
               >
                 <Input
                   value={embeddingModel}
                   onChange={(event) => setEmbeddingModel(event.target.value)}
-                  placeholder="text-embedding-3-large"
+                  placeholder={embeddingProvider === "gemini" ? "gemini-embedding-001" : "text-embedding-3-large"}
                 />
               </ConfigField>
               <ConfigField
                 className="config-field-wide"
                 label="Embedding API Key"
                 help={
-                  settings?.embeddingKeyConfigured
+                  embeddingKeyKnown && settings?.embeddingKeyConfigured
                     ? `已配置 ····${settings.embeddingKeyLast4}`
                     : "尚未配置"
                 }
@@ -652,7 +666,7 @@ export function ConfigPage() {
                   value={embeddingApiKey}
                   onChange={(event) => setEmbeddingApiKey(event.target.value)}
                   placeholder={
-                    settings?.embeddingKeyConfigured
+                    embeddingKeyKnown && settings?.embeddingKeyConfigured
                       ? "留空保留已保存的独立密钥"
                       : "输入独立 Embedding API Key"
                   }
@@ -1108,4 +1122,13 @@ function AllDataClearDialog({
       </AlertDialogContent>
     </AlertDialog>
   );
+}
+
+/** 所有 Provider 菜单保持相同顺序；向量场景禁用未提供接口的供应商。 */
+function ProviderOptions({ embedding = false }: { embedding?: boolean }) {
+  return <>
+    <SelectItem value="openai-compatible">OpenAI Compatible</SelectItem>
+    <SelectItem value="anthropic" disabled={embedding}>Anthropic</SelectItem>
+    <SelectItem value="gemini">Google Gemini</SelectItem>
+  </>;
 }

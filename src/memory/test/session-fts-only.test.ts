@@ -7,7 +7,7 @@ import { MemoryRuntime } from "../index.ts";
 it("Session 归档、重建和 dense_only 下历史搜索均不调用 embedding", async () => {
   const memory = new MemoryRuntime(await mkdtemp(join(tmpdir(), "session-fts-")));
   let calls = 0;
-  const embedding = { profile: { baseUrl: "https://example.invalid", apiKey: "test", model: "test", queryTemplate: "{text}", documentTemplate: "{text}", minimumSimilarity: 0.2 }, client: { async embed(texts: string[]) { calls++; return texts.map((_, index) => ({ index, vector: new Float32Array([1, 0]) })); } } };
+  const embedding = { profile: { provider: "openai-compatible" as const, baseUrl: "https://example.invalid", apiKey: "test", model: "test", queryTemplate: "{text}", documentTemplate: "{text}", minimumSimilarity: 0.2 }, client: { async embed(texts: string[]) { calls++; return texts.map((_, index) => ({ index, vector: new Float32Array([1, 0]) })); } } };
   try {
     memory.configureRetrieval({ mode: "lexical_only", embedding, allowIncompleteIndex: true });
     const session = memory.createSession();

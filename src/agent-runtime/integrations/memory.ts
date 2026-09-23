@@ -1,4 +1,4 @@
-import { OpenAIEmbeddingClient } from "../../memory/index.ts";
+import { EmbeddingClient } from "../../memory/index.ts";
 import type { MemoryRuntime, SessionRecallSettings } from "../../memory/index.ts";
 import type { AgentObserver, TokenEstimator } from "../../agent-loop/agent-loop.ts";
 import { sessionRecallTokenLimit } from "../configuration/schema.ts";
@@ -31,6 +31,7 @@ export async function configureMemoryRuntime(
     return;
   }
   const desiredProfile = {
+    provider: settings.embeddingProvider,
     baseUrl: settings.embeddingBaseUrl,
     apiKey: settings.embeddingApiKey,
     model: settings.embeddingModel,
@@ -42,6 +43,10 @@ export async function configureMemoryRuntime(
   const activeProfile = !allowIncompleteIndex && !memory.embeddingIndexMatches(desiredProfile)
     ? memory.activeEmbeddingProfile()
     : null;
+  // 不能把新供应商的密钥发往旧索引绑定的服务，也不能混用不同向量空间。
+  if (activeProfile && (activeProfile.provider !== desiredProfile.provider || activeProfile.baseUrl !== desiredProfile.baseUrl)) {
+    throw new Error("Embedding Provider 或 Base URL 已改变，请先重建向量索引");
+  }
   const profile = activeProfile
     ? {
         ...activeProfile,
@@ -53,7 +58,7 @@ export async function configureMemoryRuntime(
     : desiredProfile;
   memory.configureRetrieval({
     mode: settings.retrievalMode,
-    embedding: { profile, client: new OpenAIEmbeddingClient(profile) },
+    embedding: { profile, client: new EmbeddingClient(profile) },
     observer,
     ...(allowIncompleteIndex ? { allowIncompleteIndex: true } : {}),
   });

@@ -76,6 +76,8 @@ try {
 
 ## 本地配置
 
+Agent Model 与 Small Model 均支持 `anthropic`、`openai-compatible` 和 `gemini`，两者独立选择协议。Gemini 默认 Base URL 为 `https://generativelanguage.googleapis.com/v1beta`，使用 `x-goog-api-key` 请求头；连接测试读取分页模型列表，仅返回支持 `generateContent` 的模型 ID。API Key 仍分别保存为 `.everything/.env` 中的 `EVERYTHING_AGENT_API_KEY` 与 `EVERYTHING_SMALL_API_KEY`，公开配置只返回状态与末四位。协议与限制见 [模型文档](../model/README.md)。
+
 `local-config.ts` 负责文件持久化。非敏感配置按领域结构保存到 `.everything/config.json`，模型、Embedding 与 Tavily 密钥单独保存到同目录的 `.everything/.env`；文件值覆盖允许的同名进程环境变量。两类文件都采用临时文件加 rename，不修改 `process.env`。清除密钥时持久化空值，防止下次读取重新继承环境密钥。首次 `start()` 会创建 `.everything`、默认 JSON 配置、`EVERYTHING.md`、`skills/`、数据库和 `.everything/.env`（仅含注释占位，不覆盖环境密钥）。缺少默认提示词模板时使用内置中文提示词；重复初始化保留已有配置、密钥和提示词。Web 开发服务器在接受请求前完成初始化；没有 Tavily 密钥时拒绝启用 `search_web`。
 
 Web 的请求校验、Memory action 字符串分发、bootstrap/dashboard 数据和清理确认检查保留在 `web/server/agent-service.ts`。目前尚未提供 CLI 交互入口，但宿主可以直接调用本模块执行回合。
@@ -90,7 +92,7 @@ Consolidation 按服务端本地自然日自动至多一次，Agent 页面首次
 
 `subscribeBackgroundEvents(observer)` 订阅独立后台队列的真实事件并返回取消订阅函数，普通记忆写入事件携带 `taskId`、`taskKind`、`runId` 和可用的 `sourceRunId`；整理直接发出 `consolidation_*`，通过 `runId`、`attempt`、`batchIndex`、`modelCallId` 关联运行、尝试、批次与模型调用。订阅不依赖聊天请求生命周期，Web 使用独立 SSE 连接消费；事件继续写入 Trace，不传输记忆正文。
 
-Web 配置页的 Memory Retrieval 区域提供 Retrieval Mode 与 Minimum Similarity，保存后下一回合生效，重新进入 Agent 页时流程图显示当前配置。Semantic 召回节点标明实际模式；Hybrid 展示 BM25 + Dense → RRF → MMR，历史对话召回始终标明 FTS5 + BM25。同一区域提供 Embedding 连接与索引管理，不展示 Query Template / Document Template，Web 保存使用 `{text}`。
+Web 配置页的 Memory Retrieval 区域提供 Retrieval Mode 与 Minimum Similarity，保存后下一回合生效，重新进入 Agent 页时流程图显示当前配置。Semantic 召回节点标明实际模式；Hybrid 展示 BM25 + Dense → RRF → MMR，历史对话召回始终标明 FTS5 + BM25。同一区域提供独立的 Embedding Provider（OpenAI Compatible / Google Gemini）、连接与索引管理，不展示 Query Template / Document Template，Web 保存使用 `{text}`。
 
 ### Agent 输出与迭代预算
 
@@ -111,3 +113,5 @@ Memory 页在 Consolidation 后提供只读 System Prompt 标签页，直接展�
 ## 实时 Trace 导出
 
 日常 observer 事件经 `createRuntimeTracer` 统一生成时间、ID、顺序并脱敏，分别交给 JSONL 写入队列和异步 OTLP exporter。导出不读取 JSONL，也不等待聊天结束。`createAgentRuntime(paths, { langfuse: false })` 可由隔离评估宿主显式禁用日常导出。配置、内容边界和分页接口见 [Tracing](../tracing/README.md)。`readTraces()` 完整读取，不再截断到最近 2,000 条。清除操作只清除本地数据，并保留 `langfuse.env`；关闭和清理前会结束导出队列，不删除远端 traces。
+
+Embedding Provider 保存在 `.everything/config.json` 的 `retrieval.embedding.provider`，默认 `openai-compatible`，也可通过 `EVERYTHING_EMBEDDING_PROVIDER` 配置。切换 Provider 后未输入新密钥时清除旧密钥；Dense/Hybrid 配置不完整则拒绝保存。Provider 参与索引身份，切换后必须重建，不能使用新密钥继续访问旧 Provider 或 Base URL。Gemini 原生向量协议与事件见 [检索文档](../memory/retrieve/README.md#embedding-协议与配置)。

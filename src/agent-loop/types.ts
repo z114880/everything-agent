@@ -14,6 +14,8 @@ export interface ModelContentBlock {
   id?: string;
   name?: string;
   input?: unknown;
+  /** 供应商续接所需的不透明数据，由协议适配器读取；Loop 原样保留。 */
+  providerMetadata?: Record<string, unknown>;
   [key: string]: unknown;
 }
 

@@ -4,7 +4,7 @@ import type { MemoryRuntime } from "../../memory/index.ts";
 import type { createLocalConfig } from "../local-config.ts";
 import {
   AgentConfigError, RUNTIME_DEFAULTS, SETTING_LIMITS,
-  optionalText, parseProvider, parseRetrievalMode, parseRuntimeSettingBody,
+  optionalText, parseEmbeddingProvider, parseProvider, parseRetrievalMode, parseRuntimeSettingBody,
   parseSetting, parseSimilarity, requiredText, sessionRecallTokenLimit, validateBaseUrl,
 } from "./schema.ts";
 import type {
@@ -21,9 +21,10 @@ export function createRuntimeSettings(config: ReturnType<typeof createLocalConfi
     const runtime = parseRuntimeSettingBody(body);
     if (runtime.embeddingBaseUrl) validateBaseUrl(runtime.embeddingBaseUrl);
     const embeddingApiKey = optionalText(body.embeddingApiKey, "Embedding API Key", 10_000);
-    const clearEmbeddingApiKey = body.clearEmbeddingApiKey === true;
     const force = body.force === true;
     const before = await readValues();
+    const clearEmbeddingApiKey = body.clearEmbeddingApiKey === true
+      || (runtime.embeddingProvider !== (before.EVERYTHING_EMBEDDING_PROVIDER || "openai-compatible") && !embeddingApiKey);
     const agentModel = parseModelConnection(body.agentModel, "Agent Model", before, "AGENT");
     const smallModel = parseModelConnection(body.smallModel, "Small Model", before, "SMALL");
     const candidateEmbeddingKey = clearEmbeddingApiKey ? "" : embeddingApiKey || before.EVERYTHING_EMBEDDING_API_KEY || "";
@@ -44,6 +45,7 @@ export function createRuntimeSettings(config: ReturnType<typeof createLocalConfi
       EVERYTHING_AGENT_MAX_ITERATIONS: String(runtime.maxIterations),
       EVERYTHING_MODEL_CONTEXT_WINDOW: String(runtime.modelContextWindow),
       EVERYTHING_RETRIEVAL_MODE: runtime.retrievalMode,
+      EVERYTHING_EMBEDDING_PROVIDER: runtime.embeddingProvider,
       EVERYTHING_EMBEDDING_BASE_URL: runtime.embeddingBaseUrl,
       EVERYTHING_EMBEDDING_MODEL: runtime.embeddingModel,
       EVERYTHING_EMBEDDING_QUERY_TEMPLATE: runtime.embeddingQueryTemplate,
@@ -100,6 +102,7 @@ export function createRuntimeSettings(config: ReturnType<typeof createLocalConfi
       maxIterations: parseSetting(values.EVERYTHING_AGENT_MAX_ITERATIONS, "Agent 最大迭代", RUNTIME_DEFAULTS.maxIterations, SETTING_LIMITS.maxIterations),
       modelContextWindow: parseSetting(values.EVERYTHING_MODEL_CONTEXT_WINDOW, "Model Context Window", RUNTIME_DEFAULTS.modelContextWindow, SETTING_LIMITS.modelContextWindow),
       retrievalMode: parseRetrievalMode(values.EVERYTHING_RETRIEVAL_MODE || "lexical_only"),
+      embeddingProvider: parseEmbeddingProvider(values.EVERYTHING_EMBEDDING_PROVIDER || "openai-compatible"),
       embeddingBaseUrl: values.EVERYTHING_EMBEDDING_BASE_URL ?? "",
       embeddingModel: values.EVERYTHING_EMBEDDING_MODEL ?? "",
       embeddingQueryTemplate: values.EVERYTHING_EMBEDDING_QUERY_TEMPLATE ?? "{text}",
@@ -116,7 +119,7 @@ export function publicSettings(settings: RuntimeSettings, memory: MemoryRuntime)
   const embeddingIndex = memory.embeddingIndexStatus();
   const embeddingProfile = settings.embeddingApiKey && settings.embeddingBaseUrl && settings.embeddingModel
     ? {
-        baseUrl: settings.embeddingBaseUrl, apiKey: settings.embeddingApiKey, model: settings.embeddingModel,
+        provider: settings.embeddingProvider, baseUrl: settings.embeddingBaseUrl, apiKey: settings.embeddingApiKey, model: settings.embeddingModel,
         queryTemplate: settings.embeddingQueryTemplate,
         documentTemplate: settings.embeddingDocumentTemplate, minimumSimilarity: settings.embeddingMinimumSimilarity,
       }
@@ -131,6 +134,7 @@ export function publicSettings(settings: RuntimeSettings, memory: MemoryRuntime)
     maxIterations: settings.maxIterations,
     modelContextWindow: settings.modelContextWindow,
     retrievalMode: settings.retrievalMode,
+    embeddingProvider: settings.embeddingProvider,
     embeddingBaseUrl: settings.embeddingBaseUrl,
     embeddingModel: settings.embeddingModel,
     embeddingQueryTemplate: settings.embeddingQueryTemplate,
@@ -212,6 +216,7 @@ async function probeModels(
   apiKey: string,
   baseUrl: string,
 ): Promise<string[]> {
+  if (provider === "gemini") return probeGeminiModels(apiKey, baseUrl);
   const endpoint = provider === "anthropic"
     ? `${normalizeBaseUrl(baseUrl || "https://api.anthropic.com")}/v1/models`
     : `${normalizeBaseUrl(baseUrl || "https://api.openai.com/v1")}/models`;
@@ -225,6 +230,35 @@ async function probeModels(
   }
   const payload = await response.json() as { data?: Array<{ id?: string }> };
   return (payload.data ?? []).map((item) => item.id ?? "").filter(Boolean).slice(0, 500);
+}
+
+async function probeGeminiModels(apiKey: string, baseUrl: string): Promise<string[]> {
+  const endpoint = `${normalizeBaseUrl(baseUrl || "https://generativelanguage.googleapis.com/v1beta")}/models`;
+  const models: string[] = [];
+  const seen = new Set<string>();
+  const signal = AbortSignal.timeout(10_000);
+  let pageToken = "";
+  // 连接探测有总超时、分页及结果数量上限，避免兼容服务重复返回游标造成循环。
+  for (let page = 0; page < 10; page++) {
+    const url = new URL(endpoint);
+    url.searchParams.set("pageSize", "1000");
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+    const response = await fetch(url.toString(), { headers: { "x-goog-api-key": apiKey }, signal });
+    if (!response.ok) throw new Error(`连接测试失败（HTTP ${response.status}）：${(await response.text()).slice(0, 500)}`);
+    const payload = await response.json() as {
+      models?: Array<{ name?: string; supportedGenerationMethods?: string[] }>;
+      nextPageToken?: string;
+    };
+    for (const model of payload.models ?? []) {
+      if (model.name && model.supportedGenerationMethods?.includes("generateContent")) {
+        models.push(model.name.replace(/^models\//, ""));
+      }
+    }
+    pageToken = payload.nextPageToken ?? "";
+    if (!pageToken || seen.has(pageToken) || models.length >= 500) break;
+    seen.add(pageToken);
+  }
+  return [...new Set(models)].slice(0, 500);
 }
 
 function normalizeBaseUrl(value: string): string {

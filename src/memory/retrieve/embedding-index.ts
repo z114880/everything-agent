@@ -53,13 +53,13 @@ export class EmbeddingIndex {
     const json = this.vectors.activeProfileJson();
     if (!json) return null;
     const value = JSON.parse(json) as Partial<EmbeddingProfile>;
-    if (typeof value.baseUrl !== "string" || typeof value.model !== "string"
+    if ((value.provider !== "openai-compatible" && value.provider !== "gemini") || typeof value.baseUrl !== "string" || typeof value.model !== "string"
       || typeof value.queryTemplate !== "string"
       || typeof value.documentTemplate !== "string" || typeof value.minimumSimilarity !== "number") {
       throw new TypeError("active generation profile 无效");
     }
     return {
-      baseUrl: value.baseUrl, model: value.model,
+      provider: value.provider, baseUrl: value.baseUrl, model: value.model,
       queryTemplate: value.queryTemplate, documentTemplate: value.documentTemplate,
       minimumSimilarity: value.minimumSimilarity,
     };
@@ -213,7 +213,7 @@ function applyTemplate(template: string, text: string): string {
 
 function embeddingProfileJson(profile: EmbeddingProfile): string {
   return JSON.stringify({
-    baseUrl: profile.baseUrl, model: profile.model,
+    provider: profile.provider, baseUrl: profile.baseUrl, model: profile.model,
     queryTemplate: profile.queryTemplate, documentTemplate: profile.documentTemplate,
     minimumSimilarity: profile.minimumSimilarity, dimensions: 1024,
   });
@@ -222,7 +222,7 @@ function embeddingProfileJson(profile: EmbeddingProfile): string {
 function embeddingProfileHash(profile: EmbeddingProfile): string {
   // Query Template 与阈值只影响查询，不改变已保存文档向量，因此不触发重建。
   return createHash("sha256").update(JSON.stringify({
-    baseUrl: profile.baseUrl, model: profile.model,
+    provider: profile.provider, baseUrl: profile.baseUrl, model: profile.model,
     documentTemplate: profile.documentTemplate, dimensions: 1024,
     documentFormatVersion: 1, chunkingVersion: CHUNKING_VERSION,
     normalizationVersion: 1,

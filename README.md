@@ -1,307 +1,212 @@
 # Everything Agent
 
+一个运行在本地的个人助理 Agent：通过模型和受控工具完成任务，保留可检索的个人记忆，并在可视化控制台中展示记忆召回、上下文组装、模型推理和工具执行过程。
+
+**API Key 仅在本地持久化。** 会话、记忆和运行记录默认保存在本地；你自行选择模型服务并配置连接。
+
+![Everything Agent 控制台：左侧为功能导航，中间展示记忆与 Agent 执行流程，右侧为对话区](docs/images/agent-console.png)
+
 ## 快速开始
 
-环境要求：Node.js 24.12 或更高版本。后端通过 Node.js 原生 TypeScript 类型擦除直接运行 `src/`，前端仍由 Vite 处理。Memory 使用 Node.js 内置 `node:sqlite`，启动时会验证 FTS5 可用性；Session 与 Semantic FTS 共用 nodejieba 中文搜索分词、identifier 整体与组成词索引。
+### 1. 准备环境并启动
+
+需要 **Node.js 24.12 或更高版本**、**pnpm**，以及支持 Anthropic Messages、OpenAI Compatible 或 Google Gemini 原生协议的模型服务。
+
+clone 仓库后，在项目根目录执行：
 
 ```bash
 pnpm install
-pnpm run dev:web
+pnpm start
 ```
 
-`pnpm run dev:web` 是启动 Everything Agent 本地控制台、Engine 和 Agent 桥接接口的主要命令。启动后按照终端输出在浏览器中打开本地地址，并进入“配置”页面设置模型。
+按终端输出打开本地地址。此命令同时启动 Web 控制台与本地后端，使用期间保持终端运行；按 `Ctrl+C` 停止。
 
-提交改动前可运行完整检查和示例：
+首次启动会自动创建 `.everything/` 下的配置、数据库、规则文件和 Skills 目录，无需手动创建 `.env`，也不需要先部署 Docker 或 Langfuse。未配置模型时也能打开控制台。
 
-```bash
-pnpm run typecheck
-pnpm test
-pnpm run example
-```
+### 2. 配置两个模型连接
 
-需要一批本地测试数据时，可用模拟模型驱动真实 Runtime 生成并合并进现有数据目录，不消耗模型额度也不联网：
+进入左侧 **配置** 页面，分别填写并保存 **Agent Model** 和 **Small Model**：
 
-```bash
-pnpm run mock-data
-```
-
-数据默认合并进 `.everything/`，写过的数据集不会重复写入，模型配置与向量索引不受影响；详见 [`mock-data/README.md`](mock-data/README.md)。
-
-## Langfuse 真实环境评估
-
-```bash
-pnpm run langfuse:up
-pnpm run dev:web
-```
-
-完整 Docker Compose 会启动 Langfuse v4 及数据库、对象存储和 Experiment 回调网关，首次自动生成本地凭证。管理平台地址为 `http://localhost:3300`，账号在 `.langfuse/compose.env` 中。详见 [一键部署说明](deploy/langfuse/README.md)。
-
-新增 **Evaluation** 页面，支持从本地或 Langfuse remote experiment trigger（数据集页面的 via Webhook 卡片）启动真实 Agent；两条入口都会在平台产生 Experiment，区别只在发起方式。使用独立评估会话、由 Langfuse 数据集 metadata.memorySnapshot 统一配置的可选日常记忆快照、真实模型与工具，保留工具审批和取消能力；展示进度、结果、用量、平台评分与同步错误。用例默认最多 3 条并发，可通过后端环境变量 `EVERYTHING_EVALUATION_CONCURRENCY` 调整。执行轨迹回传 Langfuse v4，执行完成不代表质量通过。评估器在 Langfuse 管理，尚未配置时不生成虚假评分。详见 [Evaluation 使用说明](src/evaluation/README.md)。
-
-## 本地可视化控制台
-
-仓库已包含一个 React + Tailwind CSS v4 + shadcn/ui 的本地控制台。页面共用本地设计令牌和可复用基础组件，Graph 与 Agent Harness 画布仍以真实拓扑和 observer 事件为唯一事实来源：
-
-- **Agent**：运行真实 `runAgentLoop`，从 SQLite 恢复多轮 Session，展示输入、记忆需求判断、事实与历史召回、上下文组装、推理、工具和回复；独立后台区域展示记忆写入与跨会话整理关系。工具调用过程完整保存在本地 Chat Log，活动边和回复由真实 observer 事件驱动。输入框发送按钮左侧的圆环显示当前 Session 的上下文水位，分子分母与 Agent Loop 的 Context Window 硬限制同口径（已用估算 ÷ 扣除输出预留与安全余量后的可用额度），因此不会出现「圆环未满却报超限」；该估算不含本轮检索注入的记忆，是下限。圆环采用 18px 紧凑样式，悬浮或键盘聚焦可查看已用比例、剩余比例和标记数量；运行中通过与发送按钮同尺寸、带圆环内实心方块图标的停止按钮停止生成。
-- **Workflow**：枚举 `src/workflows/` 下的 TypeScript 文件，可编辑和执行任一工作流。拓扑来自真实 `Graph.describe()`，执行由本地 Node.js 进程调用 `runGraph()`。
-- **Memory**：通过 Overview、Semantic、Session Recall、Procedural、Chat Log 和 Consolidation 查看本地记忆与真实历史检索窗口。Session Recall 结果按消息分段展示，结构化内容保留缩进、正文换行；查询留空可查看最近活跃会话。
-- **Skills**：新建、编辑、重命名和删除 `.everything/skills/<skill-name>/SKILL.md`。每轮 Agent 只注入 Skill 名称与描述，需要使用时通过受控 `read_skill` 工具加载正文；目录发现、加载和工具调用均进入 observer 与 JSONL trace。
-- **Tools**：按来源展示 Agent 的真实工具目录。`manage_memory`、`session_search`、`session_read` 与 `read_skill` 固定启用；`get_current_time` 和 Tavily `search_web` 可独立启停，点击开关后立即保存；保存期间仅当前开关暂时禁用，其他开关可独立操作。工具开关写入 `.everything/config.json`，Tavily 密钥写入 `.everything/.env`；浏览器只读取密钥状态和末四位。
-- **Database**：列出 `.everything/database/state.db` 的全部普通表、字段类型、行数和最多 200 条最新数据，不展示 SQLite 内部表、FTS5 虚拟表及其索引中间表。SQL Console 支持单条 `SELECT`、只读 `WITH`、`INSERT`、`UPDATE` 和 `DELETE`；数据写操作执行前必须在页面二次确认，DDL 始终禁止。
-- **运行记录**：只读列出 `.everything/traces/<日期>/<序号>-run-<runId>.jsonl` 中的 classic loop 与 memory 执行事实，页面按运行分页并展示关联 JSONL 文件中的已脱敏事件，底部提供分页控件，单次运行记录完整读取。trace 不记录 Session 创建、选择，以及 Memory 页面手动搜索记忆或历史会话这类 UI 活动；Agent 内部检索仍记录执行事件。“配置”页面提供带二次确认的“清除全部数据”，可删除数据库、Session、Memory 与 trace，保留 `.everything/EVERYTHING.md`、`.everything/skills`、`.everything/config.json`、`.everything/.env` 密钥和 `.everything/langfuse.env` 连接配置。
-- **配置**：Agent Model 与 Small Model 各自拥有独立的 Provider、Model、Base URL 和 API Key；非敏感连接参数、Session Recall 预算和 Context Limit 等运行参数写入 `.everything/config.json`，四类 API Key 单独保存在 `.everything/.env`，用户可编辑的 Procedural Memory 保存到 `.everything/EVERYTHING.md`，与运行时内置的基础角色、Semantic Memory 策略和 Skills Catalog 一起组装 System Prompt。浏览器只能读取各密钥是否存在及末四位。
-
-运行 `pnpm run dev:web` 时，在接受页面请求前自动创建缺失的 `.everything/`、`config.json`、`EVERYTHING.md`、`skills/`、数据库和 `.everything/.env`，已有文件保留不变。根目录没有 `EVERYTHING.md` 模板时使用内置中文提示词。未配置模型密钥也能打开控制台、查看空数据并编辑配置；调用模型前需要在“配置”页面填写连接信息。打开“配置”菜单即可维护 JSON 中的普通设置；`.everything/.env` 只保存以下密钥：
-
-```dotenv
-EVERYTHING_AGENT_API_KEY=""
-EVERYTHING_SMALL_API_KEY=""
-EVERYTHING_EMBEDDING_API_KEY=""
-TAVILY_API_KEY=""
-```
-
-Agent Model 用于主 Agent 推理、工具调用、记忆写入和 consolidation；Small Model 仅用于 retrieval gate，两者不会互相回退或复用连接。`pnpm run dev:web` 同时启动页面与本地 Engine/Agent 桥接接口；浏览器不会执行工作流源码，也不会读取完整模型密钥。修改任一连接的新密钥、Provider 或 Base URL 时，服务端会先对该连接进行只读测试；失败不会覆盖旧配置，除非用户显式选择“仍然保存”。整个 `.everything/`（含其中的 `.env`）都已被 Git 忽略，不应提交。`pnpm run build:web` 可验证并构建浏览器静态资源到 `dist-web/`，但执行仍需要本地开发服务器。
-
-Everything Agent 的目标是构建一个真正可长期使用的个人助理 Agent：它能够理解用户意图、调用工具完成任务、保留必要的个人记忆，并以可视化方式展示每一次执行过程。
-
-项目当前已完成 Graph Engine、Agent Loop、两类真实模型协议适配、持久 Session、SQLite 长期 Memory、本地 Skills、受控工具、本地 Agent Harness 和 JSONL 运行记录。
-
-## 项目目标
-
-这个项目重点解决四件事：
-
-- **个人助理**：围绕个人任务、日程、知识和工作流提供持续协助。
-- **可以行动**：通过受控工具读取信息或执行操作，而不只是生成文本。
-- **过程透明**：展示节点、路由、工具调用、状态变化、耗时和错误。
-- **安全可控**：限制循环次数，记录错误，对具有外部影响的操作保留确认机制。
-
-## 当前进度
-
-| 能力 | 状态 | 说明 |
+| 连接 | 用途 | 首次使用要求 |
 | --- | --- | --- |
-| State | 已完成 | 保存共享状态，以增量方式合并节点输出 |
-| Node | 已完成 | 支持同步和异步执行函数 |
-| Graph | 已完成 | 支持普通边、条件路由和并行汇合 |
-| Describe | 已完成 | 从真实 Graph 生成可序列化拓扑 |
-| Graph 执行器 | 已完成 | `runGraph` 支持 wave 并发、条件汇合、停滞检测、错误收敛和循环保护 |
-| 执行事件 | 基础能力完成 | observer 可接收生命周期、真实 wave 及节点自定义事件 |
-| Agent Loop | 基础能力完成 | 支持模型推理、工具调用、结果观察、流式文本、迭代限制、超时和取消 |
-| 模型客户端 | 基础能力完成 | 支持 Anthropic Messages 与 OpenAI Compatible，包含普通响应、SSE 流式响应和降级 |
-| Tool Registry | 基础能力完成 | 固定注册记忆、会话召回与 Skill 工具；支持可配置的 `get_current_time` 和 Tavily `search_web`，Tools 页面开关下一回合生效 |
-| Session / Memory | 基础闭环完成 | SQLite Session、结构化 Chat Log、消息级 FTS5 + BM25 Session Recall、基于 RetrievalIntent 的 gated retrieval；聊天异步记忆写入；每日与手动全量 semantic facts 整理 |
-| Graph 前端 | 本地闭环完成 | 浏览器读写本地 TypeScript 工作流，消费真实 describe 与 observer 事件，并展示 wave、耗时和结果 |
-| Agent Harness 前端 | 基础闭环完成 | 真实 Agent Loop、动态 SVG、流式 Reply、持久多轮 Session、停止与 60 秒超时 |
-| 完整可视化界面 | 进行中 | 已有 Memory 管理与按 JSONL 文件列出的持久 trace 查看页；状态差异和更丰富的工具仍待补充 |
+| Agent Model | 主推理、工具调用、记忆写入与整理 | 配置支持工具调用的模型 |
+| Small Model | 判断本轮是否需要检索记忆，以及检索什么 | 同样需要完整配置 |
 
-## 总体架构
+两者的连接配置相互独立，不会自动共用或回退。可以在两处填写同一组服务地址、模型和密钥，先完成首次运行，再按需要分别调整。
+
+每个连接包含以下字段：
+
+| 字段 | 如何填写 |
+| --- | --- |
+| Provider | 按服务使用的协议选择 `OpenAI Compatible`、`Anthropic` 或 `Google Gemini` |
+| Model | 服务提供的准确模型 ID，不是自行起的名称 |
+| Base URL | 服务的 API 基础地址；OpenAI Compatible 通常包含 `/v1`，Anthropic 使用服务根地址，Gemini 默认使用 `https://generativelanguage.googleapis.com/v1beta`；不要追加生成接口的方法或路径 |
+| API Key | 对应服务的密钥，保存后只显示已配置状态和末四位 |
+
+使用代理或自建服务时，填写其实际 API 基础地址。保存新的密钥、Provider 或 Base URL 时，后端会尝试读取模型列表来测试连接；失败默认不会覆盖已有配置。部分兼容服务不提供模型列表接口，可核实配置后选择“仍然保存”，再通过实际对话验证。
+
+使用 **Google Gemini** 时，选择该 Provider，填写 Gemini 模型 ID 与 API Key，Base URL 留空即使用 Google 官方地址，也支持包含 API 版本的原生协议代理地址。当前接入 API Key 认证的 Gemini Developer API，支持文本、流式回复和工具调用；不包含 Vertex AI 身份认证、图片或音视频能力，Embedding 独立支持 OpenAI Compatible 与 Google Gemini。详见 [模型适配文档](src/model/README.md)。
+
+同时检查运行参数中的 **Context Window** 和 **单次模型输出**，使它们符合所选模型的限制。当前默认值分别为 262,144 和 32,768 tokens，并非所有模型都支持；输入、输出预留和安全余量需要共同满足上下文限制。
+
+### 3. 发送第一条消息
+
+返回 **Agent**，发送“你好，请介绍一下你能做什么”。看到右侧逐步生成回复、中间画布展示执行活动，即可确认基本对话已跑通。
+
+之后可以尝试“请记住，我喜欢简洁的中文回答”，再到 **Memory** 查看后台写入结果。记忆写入是异步任务，回复结束时可能还未完成；可通过 **Trace** 查看运行过程。
+
+首次使用保持默认关键词检索即可，**无需配置 Embedding、联网搜索或终端工具**。
+
+## API Key 与本地数据
+
+**通过配置页面保存的模型、Embedding 和 Tavily API Key，只持久化到本机的 `.everything/.env`。** 普通设置与密钥分开保存，配置读取接口不会返回完整密钥，只返回是否已配置及末四位。整个 `.everything/` 已被 Git 忽略。
+
+“本地保存”指存储位置：本地后端仍会使用密钥向你配置的服务地址发起认证请求，因此请确认 Base URL 属于你信任的服务。密钥文件没有加密，具有本机文件读取权限的程序仍可能访问它。
+
+| 默认路径 | 内容 |
+| --- | --- |
+| `.everything/.env` | 模型、Embedding 与 Tavily 密钥 |
+| `.everything/config.json` | 模型连接参数、检索设置、运行预算和工具开关 |
+| `.everything/database/state.db` | 会话、聊天记录、长期记忆与后台任务 |
+| `.everything/EVERYTHING.md` | 可编辑的助理常驻规则 |
+| `.everything/skills/` | 本地 Skill 文件 |
+| `.everything/traces/` | JSONL 执行记录 |
+| `.everything/sandbox/` | 默认终端工具工作区 |
+
+还需要了解以下数据边界：
+
+- **模型调用会发送必要上下文**：包括当前对话、召回的记忆、规则，以及所需工具信息；启用向量检索或联网搜索后，相关内容也会发送到对应服务。
+- **本地 Trace 可能包含私人内容**：记录会对常见凭证进行脱敏，但可能保留模型输入、回复和工具结果。分享日志前请检查内容。
+- **日常远程 Trace 导出默认关闭**：手动启用 Langfuse 后，默认仅导出元数据；内容采集和评估回传有各自的数据边界，见 [Tracing 文档](src/tracing/README.md) 与 [Evaluation 文档](src/evaluation/README.md)。
+- **清除数据不等于清除密钥**：配置页的“清除全部数据”保留模型配置、密钥、常驻规则、Skills 和 Langfuse 连接配置，也不会删除已经上传的远端记录。
+
+备份时建议停止服务后复制 `.everything/`，并将备份视为包含凭证与个人信息的私人文件保存。
+
+## 可选配置
+
+| 需求 | 配置入口与说明 |
+| --- | --- |
+| 调整助理常驻规则 | 在配置页编辑 Procedural Memory，保存到 `.everything/EVERYTHING.md` |
+| 使用 Skills | 在 **Skills** 页面创建或编辑技能；每轮仅注入名称与描述，使用时再加载正文，见 [Skills 文档](src/skills/README.md) |
+| 启用语义向量检索 | 在配置页的 Memory Retrieval 中选择 Dense 或 Hybrid，并选择独立的 Embedding Provider（OpenAI Compatible / Google Gemini），填写连接参数并重建索引；固定请求 1024 维向量。历史会话检索始终使用 FTS5，见 [Memory 文档](src/memory/README.md) |
+| 联网搜索 | 在 **Tools** 中配置 Tavily API Key 并启用 `search_web` |
+| 执行终端命令 | 在配置页 **Sandbox** 确认工作区，再在 **Tools** 启用 `run_terminal`；默认关闭，见 [Sandbox 文档](src/sandbox/README.md) |
+| 体验已有数据 | 执行 `pnpm run mock-data`，使用本地模拟模型生成并合并数据，不联网、不消耗模型额度，见 [模拟数据说明](mock-data/README.md) |
+| 接入追踪与评估 | 按 [Langfuse 部署说明](deploy/langfuse/README.md) 和 [Evaluation 使用说明](src/evaluation/README.md) 操作；日常对话无需部署这些服务 |
+
+终端工具在 macOS 使用 Seatbelt，在 Linux / WSL2 使用 bubblewrap；平台无法建立沙箱时不会退化为无保护执行，原生 Windows 不提供此能力。默认禁止出站网络，命令只能写入指定工作区和会话临时目录；工作区内的文件仍可能被命令修改或删除，需要谨慎处理审批请求。
+
+## 功能概览
+
+| 页面 | 当前已实现的能力 |
+| --- | --- |
+| Agent | 多轮会话、流式回复、停止生成，以及记忆召回、模型推理、工具执行的实时展示 |
+| Memory | 查看与管理长期记忆、检索历史会话、查看 Chat Log 和记忆整理结果 |
+| Skills | 创建、编辑、重命名和删除本地技能，供 Agent 按需读取 |
+| Tools | 查看真实工具目录，配置可选工具与启用状态 |
+| Trace | 查看本地持久化运行记录，排查模型、工具与记忆任务的耗时和错误 |
+| Workflow | 编辑并执行本地 TypeScript Graph 工作流，展示真实拓扑和执行事件 |
+| Database | 查看 SQLite 表与数据，执行受限 SQL；写入操作需要页面确认 |
+| Evaluation | 使用真实模型和工具运行数据集评估，查看执行、同步与评分状态 |
+| 配置 | 管理模型连接、运行预算、检索、常驻规则、沙箱与本地数据 |
+
+长期记忆写入在后台串行处理，支持新增、更新、删除和合并；另有每日与手动触发的 Consolidation，用于整理已有事实。完整机制见 [Memory](src/memory/README.md) 和 [Consolidation](src/memory/CONSOLIDATION.md)。
+
+## 项目架构
+
+Web 控制台连接本地 Node.js 后端。个人助理由 Agent Runtime 组合模型、工具和记忆；Graph 工作流通过独立入口运行。下图展示当前已实现的模块关系：
 
 ```mermaid
-flowchart LR
-    U[用户] --> C[会话入口]
-    C --> R[Agent Runtime]
-    R --> L[Agent Loop]
-    C --> G[Graph Engine]
-    L --> M[模型客户端]
-    L --> T[工具注册表]
-    R --> ME[SQLite Memory]
-    L --> E[执行事件流]
-    G --> E[执行事件流]
-    G --> D[Graph.describe]
-    E --> V[可视化界面]
-    D --> V
-    V --> U
+flowchart TD
+    UI[Web 控制台] --> Runtime[Agent Runtime]
+    UI --> Engine[Graph Engine / 本地工作流]
+    Runtime --> Loop[Agent Loop]
+    Runtime --> Memory[SQLite Memory / Session]
+    Runtime --> Skills[Skills / 常驻规则]
+    Loop --> Model[模型客户端]
+    Loop --> Tools[工具注册表]
+    Tools --> Sandbox[终端沙箱]
+    Runtime --> Trace[JSONL Trace]
+    Runtime --> Events[observer 事件]
+    Engine --> Events
+    Engine --> Describe[Graph.describe]
+    Harness[Agent Harness 静态拓扑] --> Describe
+    Events --> UI
+    Describe --> UI
 ```
 
-当前 `src/agent-runtime/` 已承担个人助理回合编排、配置持久化和本地资源生命周期；Web 层负责请求校验与页面数据组装。Agent Runtime 调用 Agent Loop，Graph 工作流仍由独立入口运行。
+- **Engine**：零运行时依赖，负责 State、Node、Graph、路由、并发、错误与循环保护，不直接初始化模型、数据库或 UI。
+- **Agent Loop**：执行 `observe → reason → act → repeat`，提供迭代上限、超时、取消与工具调用事件。
+- **Agent Runtime**：负责本地配置、会话上下文、记忆检索、后台任务以及模型和工具的集成。
+- **可视化**：静态拓扑来自 `Graph.describe()`，执行活动来自 observer 事件；页面不根据最终结果猜测执行路径。
 
-其中：
+主要目录与详细文档：
 
-- `Graph.describe()` 提供静态拓扑，是可视化节点和边的唯一事实来源。
-- `runGraph(..., { observer })` 提供动态事件，是节点状态、路径、耗时和错误的事实来源。
-- 可视化层只消费拓扑与事件，不复制一套工作流定义，避免界面和实际执行逻辑漂移。
-
-## 可视化执行过程
-
-Agent 业务画布直接置于页面的可滚动内容区，不额外包裹边框卡片；内部流程分区仍保留边界。
-
-当前 Graph 前端已经实现代码编辑、Graph 画布、wave 运行卡片和最终结果。完整执行界面还将补充以下能力：
-
-1. **Graph 画布**：展示节点、普通边、条件边和当前执行位置。
-2. **运行时间线**：按顺序展示节点开始、结束、路由选择和错误。
-3. **状态检查器**：展示每个 wave 合并前后的状态变化，并隐藏敏感字段。
-4. **工具与模型详情**：展示工具名称、参数摘要、结果摘要、模型耗时和 token 使用量。
-
-当前引擎已经提供以下基础事件：
-
-| 事件 | 用途 |
+| 目录 | 职责 / 文档 |
 | --- | --- |
-| `graph_start` | 初始化一次 Graph 运行及其节点列表 |
-| `wave_start` | 给出真实 wave 编号、并发节点及实际激活的入边 |
-| `node_start` | 将节点标记为运行中 |
-| `node_end` | 展示耗时、写入键和异常 |
-| `route` | 高亮实际选择的条件边 |
-| `graph_stalled` | 展示无法继续执行的节点及其未解决上游 |
-| `graph_end` | 展示最终路径、步数和首个错误 |
-| 自定义事件 | 展示工具调用、模型输出进度等节点内部过程 |
+| `web/` | React 控制台与 Vite 本地后端桥接 |
+| `src/engine/` | [Graph 公开接口、执行语义与示例](src/engine/README.md) |
+| `src/agent-loop/` | [Agent 回合接口与事件](src/agent-loop/README.md) |
+| `src/agent-runtime/` | [集成接口、配置与资源生命周期](src/agent-runtime/README.md) |
+| `src/agent-graph/` | [Agent Harness 拓扑与可视化边界](src/agent-graph/README.md) |
+| `src/model/`、`src/tools/` | [模型协议适配](src/model/README.md)与工具注册、校验、执行 |
+| `src/memory/` | [Session、SQLite、检索与长期记忆](src/memory/README.md) |
+| `src/skills/`、`src/sandbox/` | [按需技能](src/skills/README.md)与[终端执行边界](src/sandbox/README.md) |
+| `src/tracing/`、`src/evaluation/` | [运行记录](src/tracing/README.md)与[真实环境评估](src/evaluation/README.md) |
+| `src/workflows/` | 可编辑、执行的本地工作流 |
+| `deploy/langfuse/`、`mock-data/` | 可选服务部署与模拟数据工具 |
 
-后续会在不破坏现有事件的前提下，为每次运行和事件增加稳定 ID、时间戳及脱敏后的状态增量。wave 编号已经由 `wave_start`、`node_start` 和 `node_end` 提供。
+## 常见问题
 
-## 目录结构
+**启动时提示 Node.js、SQLite 或原生模块错误？**
 
-```text
-everything-agent/
-├── AGENTS.md          # 编码 Agent 的项目约束和开发规则
-├── README.md          # 项目目标、架构和路线图
-├── package.json       # 根目录统一管理脚本和开发依赖
-├── tsconfig.json      # TypeScript 严格类型检查配置
-├── vitest.config.ts   # Engine 测试与覆盖率配置
-├── src/
-│   ├── index.ts       # 包公开入口
-│   ├── engine/        # Node.js Graph Engine
-│   │   ├── src/       # State、Node、Graph、Describe、runGraph
-│   │   ├── test/      # Vitest 行为测试
-│   │   └── examples/  # 命令行使用示例
-│   ├── agent-runtime/ # 个人助理集成、配置、资源生命周期及测试
-│   ├── agent-loop/    # 模型与工具无关的 Agent 回合循环及文档
-│   ├── agent-graph/    # Agent Harness 静态拓扑及文档
-│   │   └── test/      # Harness 与 Runtime 集成行为测试
-│   ├── memory/        # SQLite、FTS5、Session、检索和 consolidation
-│   ├── sandbox/       # 由内核强制的命令执行边界（Seatbelt / bubblewrap）
-│   ├── skills/        # Skill 文件存储、目录发现和按需读取工具
-│   ├── tracing/       # classic loop 与 memory 的 JSONL 运行记录
-│   ├── tools/         # 本地工具注册表、manage_memory、Session Recall 与 run_terminal
-│   ├── model/         # 模型协议适配与配置接口
-│   └── workflows/     # 可由本地控制台编辑、执行的真实工作流
-│       └── test/      # 工作流行为测试，不参与控制台文件枚举
-└── web/               # 本地 Graph 控制台及 Vite Engine 桥接接口
-    ├── src/
-    │   ├── pages/     # 一级页面及其页面专属组件
-    │   └── components/# 跨页面复用组件与基础 UI
-    └── test/          # Web 行为测试
-```
+先用 `node --version` 确认运行版本不低于 24.12，再执行 `pnpm install`。项目使用 Node.js 内置 SQLite 和 nodejieba 原生分词模块；如果 nodejieba 安装失败，请根据安装日志检查当前平台的编译环境和依赖构建是否被阻止。
 
-## 最小工作流
+**能打开页面，但无法发送消息？**
 
-```ts
-import { END, START, Graph, node, runGraph } from "everything-agent";
+检查 Agent Model 和 Small Model 是否都已填写 Model、API Key 和正确的 Provider / Base URL。仅配置主模型不足以运行完整回合。401 / 403 通常与密钥或权限有关，404 则需要检查基础地址、协议和模型 ID。
 
-const graph = new Graph("assistant-demo")
-  .addNode(node("understand", (state) => ({
-    intent: state.message.includes("天气") ? "weather" : "chat",
-  })))
-  .addNode(node("reply", (state) => ({
-    reply: `识别到意图：${state.intent}`,
-  })))
-  .addEdge(START, "understand")
-  .addEdge("understand", "reply")
-  .addEdge("reply", END);
+**连接测试失败，但服务地址看起来正确？**
 
-const events = [];
-const result = await runGraph(graph, { message: "今天天气怎么样？" }, {
-  observer(kind, event) {
-    events.push({ kind, event });
-  },
-});
+保存时的连接测试读取模型列表，不能保证服务支持实际推理或工具调用；反过来，某些兼容服务也可能支持推理但不支持模型列表。核实服务能力后再决定是否“仍然保存”，最终通过一次实际对话确认。
 
-console.log(graph.describe());
-console.log(events);
-console.log(result.state.reply);
-```
+**模型报输出额度或上下文超限？**
 
-完整的引擎接口和执行语义请查看 [Engine 文档](./src/engine/README.md)，本地集成接口请查看 [Agent Runtime 文档](./src/agent-runtime/README.md)，Agent 回合接口请查看 [Agent Loop 文档](./src/agent-loop/README.md)，静态 Harness 拓扑请查看 [Agent Graph 文档](./src/agent-graph/README.md)，持久记忆语义请查看 [Memory 文档](./src/memory/README.md)。
+按服务的实际限制调整 Context Window 和单次模型输出。长对话会累积上下文，可新建会话再试；提高 Agent 最大迭代数不会扩大模型上下文。当前默认最多 100 轮迭代，单次 Agent 回合超时为 300 秒，也可以在界面主动停止。
 
-## 设计原则
+**构建后可以只部署静态文件吗？**
 
-- **状态是共享黑板**：节点读取快照并返回状态增量，不直接修改引擎内部状态。
-- **控制流由代码决定**：模型可以写入分类结果，路由函数负责验证并选择下一节点。
-- **并发必须确定**：同一 wave 并行执行，但按节点声明顺序合并结果和记录路径。
-- **激活决定汇合**：条件分支未命中的路径会显式跳过，汇合只等待本次运行需要解决的上游。
-- **冲突必须显式**：并行节点写入同一个状态键会失败，不允许静默覆盖。
-- **错误需要可观察**：节点异常写入状态和事件；失败节点不会触发普通下游边。
-- **停滞不是完成**：没有可运行节点但仍有部分依赖未解决时，运行返回 `stalled` 和阻塞节点。
-- **循环必须有界**：节点通过 `maxVisits` 限制访问次数，运行通过 `maxSteps` 设置总上限。
-- **可视化来自事实**：拓扑来自 `describe`，运行过程来自 observer 事件。
-- **个人数据默认最小化**：日志、事件、模型上下文和长期记忆只保留完成任务所需信息。
+当前执行依赖本地后端，`pnpm run build:web` 只生成浏览器资源，不能替代 `pnpm run dev:web` 提供的 Engine / Agent 接口。日常使用请运行开发服务器。
 
-## 路线图
+## 开发与检查
 
-### 阶段一：基础引擎（已完成）
-
-- State、Node、Graph、Describe、runGraph
-- 条件路由与并行汇合
-- 错误恢复与循环保护
-- Vitest 测试和覆盖率门槛
-
-### 阶段二：Agent Runtime
-
-- `observe → reason → act → repeat` Agent 执行过程（基础能力已完成）
-- 迭代限制、超时、取消和运行事件（基础能力已完成）
-- 消息与模型响应的统一数据结构（当前暂用 Anthropic Messages 形状）
-- Tool Registry、工具参数校验和执行策略
-- 会话管理及跨回合中断
-
-### 阶段三：可观测性与可视化
-
-- 稳定的 run、event、node、wave 标识
-- 事件流持久化与回放
-- 实时 Graph 画布和运行时间线
-- 状态差异、路由原因、模型和工具详情
-- 敏感字段脱敏
-
-### 阶段四：个人助理能力
-
-- 会话管理和短期记忆（基础闭环已完成）
-- 可检索、可删除的长期个人记忆（基础闭环已完成）
-- 日历、任务、笔记、文件等工具适配器
-- 外部写操作确认、权限边界和审计记录
-
-## 测试
+项目使用 pnpm、ESM 和严格模式 TypeScript。后端由 Node.js 原生类型擦除直接运行，不生成 JavaScript 构建目录；前端由 Vite 构建。
 
 ```bash
-pnpm test
-pnpm run test:watch
-pnpm run test:coverage
-pnpm run typecheck
-pnpm run build
+pnpm run typecheck      # 后端类型检查
+pnpm test              # Vitest 行为测试
+pnpm run test:coverage # 覆盖率检查
+pnpm run build         # 后端类型检查 + 前端类型检查与构建
+pnpm run example       # 最小 Graph 示例，无需模型密钥
 ```
 
-当前测试通过公开接口验证行为，不依赖私有实现。覆盖率门槛为：行、函数和语句 85%，分支 80%。
-`pnpm run build` 会先严格检查后端 TypeScript，再由 Vite 检查并构建前端到 `dist-web/`。后端不生成 `dist/`；Node.js 直接加载 `.ts` 源码。`tsconfig.json` 只服务于静态类型检查，Node.js 运行时不会读取它。
+测试通过公开接口验证行为，放在对应模块的 `test/` 目录中。覆盖率门槛为语句、函数和行 85%，分支 80%。开发约束见 [AGENTS.md](AGENTS.md)。
 
-## 当前边界
+## 当前边界与路线图
 
-- 当前 Session 和 Memory 是单用户、本地实现，不包含多租户或云同步。
-- 当前 Session 的全部完整回合进入 Working Memory，并完全排除在 Session Recall 之外。完整模型输入使用统一启发式规则估算，并统一预留输出与 512-token 安全余量；估算值只用于请求前预算，不作为真实消耗统计。
-- Semantic Memory 与 Session Recall 已支持 Dense、FTS5 + BM25 和 Hybrid 三种模式。Dense 仅调用 OpenAI-compatible Embedding API，固定 1024 维；Hybrid 以 RRF 融合并以 MMR 多样化。失败 run 不进入任何检索索引；工具结果不参与索引，但成功 run 的命中窗口会恢复完整工具过程。
-- JSONL trace 只覆盖 classic loop 与 memory；Workflow 继续使用实时 observer，不写入该目录。记录按 `.everything/traces/YYYY-MM-DD/<序号>-run-<runId>.jsonl` 存放，序号按当日文件创建顺序递增；无 Session、独立任务归属的系统事件写入 `<序号>-system-<UUID>.jsonl`，UUID 在记录器创建时随机生成，同一记录器在同一日期持续追加，重启后使用新的 UUID，不读取旧版根目录 JSONL。前台每个 run 独立存储，目录日期固定为该 run 首个事件的本地日期，跨午夜仍追加到同一文件；事件保留 `sessionId` 用于会话关联。回合内的检索一律经回合观察者上报并归入 run 文件，包括 `manage_memory` 的 `search` 与 `session_search`；`system-` 文件只承载 Embedding 索引重建这类确实不属于任何会话的操作。V2 记录为每个事件生成 `eventId` 和 run 内递增的 `sequence`；`model_request` 保存每次调用实际使用的 System Prompt、messages、工具 schema 和生成参数，`model_response` 与 `embedding_completed` 以 `tokenUsage` 记录供应商返回的真实输入、输出和总 token 数，缺失真实 usage 时为 `null`，不记录估算消耗。工具事件保存结构化参数与结果；记忆管理工具仅保存操作和 ID 摘要，新增 `memory_*` 事件记录决策、版本冲突与变更结果，不记录事实正文或自由文本理由。常见凭证字段与 Bearer token 仍会在写入前移除。`context_assembled` 只记录上下文的组装数量与记忆来源，模型请求才是 eval 的权威输入快照。`run_completed` 与 `run_failed` 记录回合级事实：供应商与模型、`ms` 及其拆分（`retrievalMs` 含 gate 小模型调用、`modelMs`、`toolMs`，三者之外的差额是编排开销）、`failedToolCallCount`、本回合入队的后台记忆写入任务 `derivedTaskIds`（用于关联 `<序号>-memory_write-<taskId>.jsonl`），以及上下文水位 `contextWindow`、`maxTokens`、`contextSafetyTokens`、`availableInputTokens`、`peakEstimatedInputTokens` 和 `peakInputTokens`。`run_failed` 另有 `cancelled` 与 `timedOut`，用户主动停止和整轮超时都不算模型或工具故障。
-- `State.snapshot()` 是顶层复制；节点应把收到的状态视为只读对象。
-- `run_terminal` 让 Agent 在受内核约束的工作区内执行 shell 命令：macOS 使用 Seatbelt，Linux 与 WSL2 使用 bubblewrap，原生 Windows 不提供该能力且不降级为无保护执行。默认关闭，启用前必须配置一个已存在的工作区根目录，且当前平台确实能建立沙箱。命令只能写入工作区与会话临时目录，工作区内的 `.git` 与 `.everything` 不可写，默认切断出站网络，父进程凭证不进入子进程。**沙箱不保护工作区内部**：工作区必须可写，因此工作区内的破坏性操作由人工审批、`.git` 拒写和 Git 本身共同兜底。
-- 沙箱管不到的后果由人工审批把关：`git push`、发布软件包这类外部可见操作，以及 `git reset --hard`、`git clean -fd` 这类会丢弃工作成果的操作，都必须确认；指向根目录或主目录的递归删除、fork 炸弹等直接拒绝执行。判定只看命令文本，不额外执行 git 查询工作树状态。审批请求经 observer 事件推送到界面，用户的决定由独立请求送回，运行结束或连接断开时一并作废。命令文本匹配只防手滑、不防对抗，真正的边界始终是沙箱。
-- 工作区根目录属于配置页面的 **Sandbox** 区域（`.everything/config.json` 的 `sandbox.workspaceRoot`），默认使用自动创建的 `.everything/sandbox`（保存为绝对路径，自定义数据目录时使用其下的 `sandbox`），是这项配置的唯一写入口；Tools 页面只负责启用开关，未配置工作区时提示先去 Sandbox 区域设置。两处都会显示当前沙箱类型，不可用时给出原因且无法启用。详见 [Sandbox 文档](./src/sandbox/README.md)。
-- 当前没有内置鉴权、密钥管理或个人数据加密能力。
+当前已经跑通本地个人助理的基础闭环：模型与工具调用、多轮会话、长期记忆、Skills、执行可视化、Trace 和可选真实评估。项目仍处于需求开发阶段，接口和数据结构可能直接调整，不提供旧版本兼容保证。
 
-### 记忆变更流程
+当前边界：
 
-聊天通过 `manage_memory submit` 将用户事实或忘记意图持久入队，立即返回 `queued`，与独立的全量 consolidation 共用串行队列。代码逐条按配置检索旧记忆，Agent Model 选择 `create/update/delete/merge/noop`，代码校验证据与版本后执行。删除无需确认令牌；合并原子保留完整内容和来源并删除冗余项。版本冲突最多尝试 3 次（含首次），检索或模型失败不会降级新增。每日与手动全库去重通过独立 consolidation 流程完成。详见 [Memory 文档](./src/memory/README.md#统一-semantic-memory-管理)。
+- 面向单用户、本地使用，没有内置鉴权、多租户、云同步或本地数据加密，不应直接将控制台暴露到公网。
+- 控制台内切换页面可继续运行，但浏览器刷新或关闭后不支持恢复正在进行的前台运行。
+- Agent 与 Memory 有持久 JSONL 记录；Workflow 当前使用实时 observer，不写入同一套 Trace。
+- 沙箱约束执行范围，人工审批处理部分外部影响与破坏性操作；命令文本匹配不构成完整的安全保证。
 
-### 后台记忆任务
+后续计划：
 
-Session 历史只维护 FTS，不生成或检索向量，回合归档不再等待远程 embedding。只有 Semantic Memory 使用配置的向量检索。
+- 完善状态差异展示和执行过程检查体验。
+- 增加日历、任务、笔记等个人助理工具适配器。
+- 随工具扩展完善权限、外部写入确认和审计能力。
 
-Agent 页面每天首次进入时检查 consolidation（服务端本地自然日），仅在 Semantic Memory 非空时后台创建任务；空库不创建任务或占用每日配额。**Consolidate** 按钮可额外手动触发；同一时刻只允许一个整理任务。仅将全量 semantic facts 及已有元数据交给模型，进行去重、合并、冲突检测、直接替换旧事实和低质量清理，不读取聊天。超出上下文时分组并进行有界组间审查；画布独立成区，与其他流程无连线，整理连线与记忆写入连线分别播放，新回合只重置记忆写入动画，不会打断正在进行的整理。详见 [Consolidation 机制](./src/memory/CONSOLIDATION.md)。
-
-记忆写入与 consolidation 持久化到 `memory_tasks`，共用串行后台队列；失败最多执行三次，重试与恢复使用事务内操作凭据避免重复提交。一次写入独立一个 trace JSONL，一次 consolidation 的所有子任务共用一个 JSONL，文件名分别为 `<序号>-memory_write-<taskId>.jsonl` 和 `<序号>-consolidation-<runId>.jsonl`。整理 trace 直接以 consolidation 为根，批次下记录模型审查与变更，不包含 memory_task 包装层。
-
-Agent 页的聊天区在桌面端固定为 420px，小屏幕下独占一行。顶部独立标题栏展示机器人图标、当前会话标题，标题右侧为重命名、删除操作，最右侧可收起或展开聊天区（保留会话、输入草稿及运行中的请求）；分隔线下方依次排列新建对话、历史对话按钮和右侧模型配置入口。历史列表使用白色浮层与淡紫色选中态；条目保留标题和记录数所需高度，超出浮层高度时由列表滚动，避免压缩裁切。历史列表默认收起，以浮层展开，不挤压消息区；点击外部、移出焦点、按 Escape 或切换会话后关闭。消息区独立滚动，底部保留输入框、快捷键提示和发送／停止按钮；展开历史列表时保留当前会话和输入内容。用户与助理的消息正文统一渲染 Markdown，支持标题、加粗、列表、引用、链接、代码块及 GFM 表格和任务列表；实时流式回复和历史消息使用相同格式，宽表格与代码块可横向滚动。消息中的原始 HTML 不会执行。
-
-Agent 运行期间可通过侧栏切换到其他页面，运行与实时事件接收会继续；返回 Agent 后保留当前会话、消息、输入草稿和停止控制，并刷新模型配置。该行为适用于控制台内页面导航，不包含浏览器刷新或关闭后恢复运行。
-
-### Agent 输出与迭代预算
-
-配置页的运行参数支持修改“单次模型输出”和“Agent 最大迭代”，分别默认 **32,768 tokens** 和 **100 轮**。允许范围分别为 1–131,072 tokens 和 1–1,000 轮，保存后对新运行生效，恢复默认会重置这两个值。
-
-也可在 `.everything/config.json` 顶层设置 `maxTokens` 与 `maxIterations`。运行记录 `run_started.settings` 保存实际预算，模型请求使用配置的 `max_tokens`。输入估算、输出预算及 512 tokens 安全余量仍须合计不超过 `modelContextWindow`；输出预算需符合模型服务自身的限制。Agent Loop 超时仍为 300 秒。提高预算不会自动续写被截断的回答。
-
-配套默认预算为 `modelContextWindow: 262144`（256K）与 `sessionRecall.entryTokenLimit: 8192`（Recall Entry Token Limit，session_search 的单条正文上限）。单次 session_search 的 token 总额不是独立配置，固定取 `modelContextWindow` 的 25%（默认 65,536），配置页只读展示。初始化、缺省配置、配置页和恢复默认保持一致。预留 32,768 输出 tokens 与 512 安全余量后，输入预算为 228,864 tokens；召回总额占上下文窗口的四分之一，为系统提示、当前会话和工具结果留出空间。100 轮是执行上限，不表示预留 100 份输出；每轮仍检查实际累计上下文。
-
-日常运行支持实时 TraceEvent 分流到 JSONL 与 OTLP exporter，经 OpenTelemetry 协议导出到 Langfuse；默认关闭，启用后默认仅上传元数据。配置、隐私边界、运行分页及性能限制见 [Tracing](src/tracing/README.md)。
+这些方向尚未全部实现，具体可用能力以当前代码与模块文档为准。

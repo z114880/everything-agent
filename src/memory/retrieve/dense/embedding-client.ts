@@ -11,11 +11,14 @@ const MAX_BATCH_ITEMS = 16;
 const MAX_BATCH_TOKENS = 8_192;
 const REQUEST_TIMEOUT_MS = 60_000;
 
-/** 调用 OpenAI-compatible `/v1/embeddings` 的严格 HTTP adapter。 */
-export class OpenAIEmbeddingClient implements EmbeddingPort {
+/** 按 Provider 调用向量协议，统一批次、维度校验与可观察事件。 */
+export class EmbeddingClient implements EmbeddingPort {
   private readonly profile: EmbeddingProfile;
 
-  constructor(profile: EmbeddingProfile) { this.profile = profile }
+  constructor(profile: EmbeddingProfile) {
+    if (profile.provider !== "openai-compatible" && profile.provider !== "gemini") throw new TypeError("Embedding Provider 不受支持");
+    this.profile = profile;
+  }
 
   async embed(texts: string[], estimatedTokens: number[], context: EmbeddingCallContext): Promise<EmbeddedVector[]> {
     if (texts.length !== estimatedTokens.length || texts.length === 0) {
@@ -28,18 +31,18 @@ export class OpenAIEmbeddingClient implements EmbeddingPort {
       const startedAt = performance.now();
       const operationId = crypto.randomUUID();
       await context.observer?.("embedding_started", metadata(context, {
-        operationId, model: this.profile.model, batchIndex, itemCount: batch.texts.length, estimatedTokens: sum(batch.estimatedTokens),
+        operationId, provider: this.profile.provider, model: this.profile.model, batchIndex, itemCount: batch.texts.length, estimatedTokens: sum(batch.estimatedTokens),
       }));
       try {
-        const result = await this.request(batch.texts, context.signal);
+        const result = await this.request(batch.texts, context);
         output.push(...result.vectors.map((item) => ({ index: batch.startIndex + item.index, vector: item.vector })));
         await context.observer?.("embedding_completed", metadata(context, {
-          operationId, model: this.profile.model, batchIndex, itemCount: batch.texts.length, estimatedTokens: sum(batch.estimatedTokens), tokenUsage: result.tokenUsage,
+          operationId, provider: this.profile.provider, model: this.profile.model, batchIndex, itemCount: batch.texts.length, estimatedTokens: sum(batch.estimatedTokens), tokenUsage: result.tokenUsage,
           dimensions: VECTOR_DIMENSIONS, ms: Math.round(performance.now() - startedAt),
         }));
       } catch (error) {
         await context.observer?.("embedding_failed", metadata(context, {
-          operationId, model: this.profile.model, batchIndex, itemCount: batch.texts.length, estimatedTokens: sum(batch.estimatedTokens),
+          operationId, provider: this.profile.provider, model: this.profile.model, batchIndex, itemCount: batch.texts.length, estimatedTokens: sum(batch.estimatedTokens),
           errorType: error instanceof Error ? error.name : "UnknownError",
           errorMessage: sanitizedError(error), ms: Math.round(performance.now() - startedAt),
         }));
@@ -49,7 +52,9 @@ export class OpenAIEmbeddingClient implements EmbeddingPort {
     return output.sort((left, right) => left.index - right.index);
   }
 
-  private async request(texts: string[], signal?: AbortSignal): Promise<{ vectors: EmbeddedVector[]; tokenUsage: TokenUsage | null }> {
+  private async request(texts: string[], context: EmbeddingCallContext): Promise<{ vectors: EmbeddedVector[]; tokenUsage: TokenUsage | null }> {
+    if (this.profile.provider === "gemini") return this.requestGemini(texts, context);
+    const { signal } = context;
     const endpoint = `${this.profile.baseUrl.replace(/\/+$/, "")}/embeddings`;
     const response = await fetch(endpoint, {
       method: "POST",
@@ -72,6 +77,32 @@ export class OpenAIEmbeddingClient implements EmbeddingPort {
       return { index, vector: normalizeVector(item.embedding) };
     });
     return { vectors, tokenUsage: embeddingTokenUsage(value.usage) };
+  }
+
+  private async requestGemini(texts: string[], context: EmbeddingCallContext): Promise<{ vectors: EmbeddedVector[]; tokenUsage: TokenUsage | null }> {
+    const id = this.profile.model.replace(/^models\//, "");
+    if (!/^[\w.-]+$/.test(id)) throw new TypeError("Gemini Embedding Model 必须是有效的模型 ID");
+    const model = `models/${id}`;
+    const response = await fetch(`${this.profile.baseUrl.replace(/\/+$/, "")}/${model}:batchEmbedContents`, {
+      method: "POST",
+      headers: { "x-goog-api-key": this.profile.apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ requests: texts.map(text => ({
+        model, content: { parts: [{ text }] },
+        embedContentConfig: {
+          outputDimensionality: VECTOR_DIMENSIONS,
+          taskType: context.purpose === "query" ? "RETRIEVAL_QUERY" : "RETRIEVAL_DOCUMENT",
+          autoTruncate: false,
+        },
+      })) }),
+      signal: context.signal ? AbortSignal.any([context.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) : AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (!response.ok) throw new Error(`Embedding HTTP ${response.status}`);
+    const value = await response.json() as { embeddings?: Array<{ values?: unknown }>; usageMetadata?: { promptTokenCount?: unknown } };
+    if (!Array.isArray(value.embeddings) || value.embeddings.length !== texts.length) throw new TypeError("Embedding 响应数量与请求不一致");
+    // Gemini 的批量响应按输入顺序返回；与 OpenAI 一样校验维度并归一化后才写入索引。
+    const vectors = value.embeddings.map((item, index) => ({ index, vector: normalizeVector(item.values) }));
+    const inputTokens = nonNegativeInteger(value.usageMetadata?.promptTokenCount);
+    return { vectors, tokenUsage: inputTokens === null ? null : { inputTokens, outputTokens: 0, totalTokens: inputTokens } };
   }
 
 }

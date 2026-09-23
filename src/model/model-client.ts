@@ -1,3 +1,5 @@
+import { createGeminiClient } from "./gemini-client.ts";
+import { iterateSse, postJson, postStream, providerError } from "./transport.ts";
 import type {
   AgentMessage,
   AgentModelClient,
@@ -8,7 +10,7 @@ import type {
   TokenUsage,
 } from "../agent-loop/agent-loop.ts";
 
-export type AgentProvider = "anthropic" | "openai-compatible";
+export type AgentProvider = "anthropic" | "openai-compatible" | "gemini";
 
 /** 创建真实模型客户端所需的服务端配置。 */
 export interface ModelClientConfig {
@@ -20,6 +22,7 @@ export interface ModelClientConfig {
 /** 根据协议类型创建与 Agent Loop 兼容的模型客户端。 */
 export function createModelClient(config: ModelClientConfig): AgentModelClient {
   assertConfig(config);
+  if (config.provider === "gemini") return createGeminiClient(config);
   return config.provider === "anthropic"
     ? createAnthropicClient(config)
     : createOpenAIClient(config);
@@ -79,7 +82,13 @@ function anthropicBody(request: ModelRequest): Record<string, unknown> {
   return {
     model: request.model,
     system: request.system,
-    messages: request.messages,
+    messages: request.messages.map((message) => ({
+      ...message,
+      // 跨供应商继续会话时，不向 Anthropic 发送 Gemini 的续接元数据。
+      content: Array.isArray(message.content) ? message.content
+        .filter((block: ModelContentBlock) => block.type !== "provider_content")
+        .map(({ providerMetadata: _metadata, ...block }: ModelContentBlock) => block) : message.content,
+    })),
     tools: request.tools,
     max_tokens: request.max_tokens,
   };
@@ -334,77 +343,6 @@ function optionalNonNegativeInteger(value: unknown): number | null {
   return value === undefined ? 0 : nonNegativeInteger(value);
 }
 
-async function* iterateSse(response: Response): AsyncGenerator<Record<string, any>> {
-  if (!response.body) throw new Error("模型响应缺少可读取的流");
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    buffer += decoder.decode(value, { stream: !done }).replaceAll("\r\n", "\n");
-    let boundary = buffer.indexOf("\n\n");
-    while (boundary >= 0) {
-      const raw = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-      const data = raw.split("\n")
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trim())
-        .join("\n");
-      if (data && data !== "[DONE]") yield JSON.parse(data) as Record<string, any>;
-      boundary = buffer.indexOf("\n\n");
-    }
-    if (done) break;
-  }
-}
-
-async function postJson(
-  url: string,
-  headers: Record<string, string>,
-  body: unknown,
-  signal?: AbortSignal,
-): Promise<unknown> {
-  const response = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-    ...(signal ? { signal } : {}),
-  });
-  if (!response.ok) throw await responseError(response);
-  return response.json();
-}
-
-async function postStream(
-  url: string,
-  headers: Record<string, string>,
-  body: unknown,
-  signal?: AbortSignal,
-): Promise<Response> {
-  const response = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-    ...(signal ? { signal } : {}),
-  });
-  if (!response.ok) throw await responseError(response);
-  return response;
-}
-
-async function responseError(response: Response): Promise<Error> {
-  const text = await response.text();
-  try {
-    return providerError(JSON.parse(text));
-  } catch {
-    return new Error(`模型服务返回 HTTP ${response.status}：${text.slice(0, 300)}`);
-  }
-}
-
-function providerError(value: unknown): Error {
-  if (typeof value === "string") return new Error(value);
-  const record = value && typeof value === "object" ? value as Record<string, any> : {};
-  const nested = record.error && typeof record.error === "object" ? record.error : record;
-  return new Error(String(nested.message ?? nested.error ?? "模型服务请求失败"));
-}
-
 function parseToolArguments(value: unknown): unknown {
   if (!value) return {};
   if (typeof value !== "string") return value;
@@ -431,7 +369,7 @@ function normalizedBaseUrl(value: string): string {
 
 function assertConfig(config: ModelClientConfig): void {
   if (!config.apiKey.trim()) throw new Error("模型 API Key 尚未配置");
-  if (!["anthropic", "openai-compatible"].includes(config.provider)) {
+  if (!["anthropic", "openai-compatible", "gemini"].includes(config.provider)) {
     throw new TypeError(`不支持的模型提供方：${config.provider}`);
   }
   if (config.baseUrl) normalizedBaseUrl(config.baseUrl);

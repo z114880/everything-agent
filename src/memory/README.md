@@ -202,4 +202,4 @@ Semantic 检索按全局模式执行所需路线，Hybrid 将两路独立候选�
 
 `retrieval_completed.semantic` 使用 `denseQuery`、`lexicalQuery` 和 `hits`，不再使用单一 `query`；JSONL 记录继续对两路查询递归脱敏。阶段事件只表示实际执行过的路线。
 
-Gate、自动检索和每批 Embedding 调用的开始/结束事件携带相同 `operationId`；Gate 与 Embedding 同时携带模型名称。Gate、记忆裁判和整理模型完成事件补充供应商返回的真实 `tokenUsage`，缺失时不估算。运行时导出详见 [Tracing](../tracing/README.md)。
+Gate、自动检索和每批 Embedding 调用的开始/结束事件携带相同 `operationId`；Gate 与 Embedding 同时携带模型名称，Embedding 还携带独立向量 Provider。Gate、记忆裁判和整理模型完成事件补充供应商返回的真实 `tokenUsage`，缺失时不估算。运行时导出详见 [Tracing](../tracing/README.md)。

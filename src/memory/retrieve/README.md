@@ -74,25 +74,26 @@ type RetrievalMode = "dense_only" | "lexical_only" | "hybrid";
 
 ## Embedding 协议与配置
 
-首版只支持 OpenAI-compatible `POST /v1/embeddings`。Embedding 配置与聊天模型配置完全分离，禁止隐式复用聊天密钥。
+支持独立选择 `openai-compatible` 或 `gemini` Provider。OpenAI Compatible 调用 `POST {Base URL}/embeddings`；Google Gemini 调用 `POST {Base URL}/models/{model}:batchEmbedContents`，使用 `x-goog-api-key` 请求头。Embedding 配置与聊天模型完全分离，不复用聊天密钥。Anthropic 不提供原生 Embedding，因此配置页保留该选项但禁用。
 
 必要配置包括：
 
 | 配置 | 约定 |
 | --- | --- |
-| Base URL | 独立于聊天模型 |
+| Provider | 默认 `openai-compatible`，也可选择 `gemini` |
+| Base URL | 独立于聊天模型；Gemini 填写包含 `/v1beta` 等 API 版本的基础地址 |
 | API Key | 使用独立凭证，不回退到 `OPENAI_API_KEY` |
 | Model | 远程 Embedding 模型名 |
-| Dimensions | 固定发送 `1024` |
+| Dimensions | 两种协议均请求 1024 维向量 |
 | Query Template | 默认 `{text}` |
 | Document Template | 默认 `{text}` |
 | Minimum Similarity | 默认 `0.30` |
 
 Query Template 与 Document Template 只能包含一个 `{text}` 占位符，不支持任意代码或复杂模板。建索引只使用 Document Template，查询只使用 Query Template。模板增加的内容计入估算输入预算。
 
-所有请求固定发送 `dimensions: 1024`。服务不支持该参数、忽略参数、返回非 1024 维向量，或者同一 generation 内维度发生变化时，直接抛出异常。
+OpenAI Compatible 请求固定发送 `dimensions: 1024`；Gemini 每个请求的 `embedContentConfig` 设置 `outputDimensionality: 1024` 和 `autoTruncate: false`，查询使用 `RETRIEVAL_QUERY`，文档写入与重建使用 `RETRIEVAL_DOCUMENT`。服务不支持该参数、忽略参数、返回非 1024 维向量，或者同一 generation 内维度发生变化时，直接抛出异常。
 
-远程向量先在本地执行 L2 normalization，再以 Float32 little-endian BLOB 保存。零向量、NaN、Infinity、缺失响应、重复或缺失 `index`、维度不一致都使整批请求失败。
+远程向量先在本地执行 L2 normalization，再以 Float32 little-endian BLOB 保存。零向量、NaN、Infinity、缺失响应、OpenAI 响应中重复或缺失 `index`、维度不一致都使整批请求失败。
 
 ### 批处理
 
@@ -365,7 +366,7 @@ Session Recall 按排名顺序组装上下文。高排名 Session 尽可能使�
 
 ## Generation 与影子重建
 
-Embedding Model、固定维度、Document Template、文档格式版本、`chunkingVersion`、规范化版本中任一变化，都产生新的索引 generation。估算公式或切块规则变化时必须提升 `chunkingVersion`。Query Template 和最低相似度变化不要求重建，但需要重新校准检索质量。
+Embedding Provider、Base URL、Model、固定维度、Document Template、文档格式版本、`chunkingVersion`、规范化版本中任一变化，都产生新的索引 generation。估算公式或切块规则变化时必须提升 `chunkingVersion`。Query Template 和最低相似度变化不要求重建，但需要重新校准检索质量。
 
 配置页先保存 profile，再由“重建 Embedding 索引”创建单一作业：
 
@@ -376,7 +377,7 @@ Embedding Model、固定维度、Document Template、文档格式版本、`chunk
 5. 全部 chunk 成功、维度一致且数量校验通过后，在一个 SQLite 事务中切换 active generation。
 6. 激活成功后删除旧 generation，再解除写入阻止。
 
-任一批失败会立即停止作业、写 trace、清空影子 generation 的局部 chunks，并保留失败状态；旧配置与旧索引继续可用，重建不自动重试。进程退出后，启动时把未完成作业标记为 `interrupted`，用户需要手动重试。
+任一批失败会立即停止作业、写 trace、清空影子 generation 的局部 chunks，并保留失败状态；旧索引保留，重建不自动重试。同一 Provider 和 Base URL 下更换模型时可继续绑定旧索引；跨 Provider 或 Base URL 时必须完成重建才能继续使用向量能力，不能把新密钥发给旧服务。进程退出后，启动时把未完成作业标记为 `interrupted`，用户需要手动重试。
 
 配置页提供取消按钮。取消中止当前 HTTP 请求，将作业标记为 `cancelled`，清空局部 chunks、保留旧索引并解除写入阻止。页面关闭不等于取消。
 
@@ -463,3 +464,7 @@ embedding_generation_activated
 Semantic 检索按全局模式执行所需路线，Hybrid 将两路独立候选融合。任一路查询缺失或空白时，该路回退到当前消息；Gate 失败时，两路及 Session 搜索一起回退到当前消息。手动 `searchSemantic` 和记忆管理检索不调用 Gate，直接把调用方提供的文本用于两路。
 
 `retrieval_completed.semantic` 使用 `denseQuery`、`lexicalQuery` 和 `hits`，不再使用单一 `query`；JSONL 记录继续对两路查询递归脱敏。阶段事件只表示实际执行过的路线。
+
+`embedding_started`、`embedding_completed` 和 `embedding_failed` 事件均携带 `provider` 与 `model`。Gemini 的 `usageMetadata.promptTokenCount` 归一化为真实输入和总 token 数，输出 token 为 0；缺失时 `tokenUsage` 为 `null`，不以本地估算补齐。
+
+协议参考：[Gemini Embeddings](https://ai.google.dev/api/embeddings)、[Anthropic Embeddings 说明](https://platform.claude.com/docs/en/build-with-claude/embeddings)。

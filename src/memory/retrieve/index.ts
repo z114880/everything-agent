@@ -1,6 +1,6 @@
 export { CHUNKING_VERSION, chunkText } from "./dense/chunker.ts";
 export type { ChunkOptions, TextChunk } from "./dense/chunker.ts";
-export { OpenAIEmbeddingClient } from "./dense/embedding-client.ts";
+export { EmbeddingClient } from "./dense/embedding-client.ts";
 export { rankDenseSources } from "./dense/dense-retriever.ts";
 export type { DenseSource } from "./dense/dense-retriever.ts";
 export { cosineSimilarity, normalizeVector, vectorFromBlob, vectorToBlob, VECTOR_DIMENSIONS } from "./dense/vector.ts";
@@ -19,6 +19,7 @@ export type {
   EmbeddingCallContext,
   EmbeddingPort,
   EmbeddingProfile,
+  EmbeddingProvider,
   RankedCandidate,
   RetrievalMode,
 } from "./types.ts";

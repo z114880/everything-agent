@@ -1,9 +1,9 @@
 import { statSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import type { AgentProvider } from "../../model/model-client.ts";
-import type { MemoryRuntime, RetrievalMode } from "../../memory/index.ts";
+import type { MemoryRuntime, RetrievalMode, EmbeddingProvider } from "../../memory/index.ts";
 
-const VALID_PROVIDERS = new Set<AgentProvider>(["anthropic", "openai-compatible"]);
+const VALID_PROVIDERS = new Set<AgentProvider>(["anthropic", "openai-compatible", "gemini"]);
 const VALID_RETRIEVAL_MODES = new Set<RetrievalMode>(["lexical_only", "dense_only", "hybrid"]);
 export const RUNTIME_DEFAULTS = {
   sessionSearchWindow: 5,
@@ -49,6 +49,7 @@ export interface RuntimeSettings {
   maxTokens: number;
   maxIterations: number;
   retrievalMode: RetrievalMode;
+  embeddingProvider: EmbeddingProvider;
   embeddingBaseUrl: string;
   embeddingModel: string;
   embeddingQueryTemplate: string;
@@ -87,6 +88,7 @@ export interface PublicAgentSettings {
   maxTokens: number;
   maxIterations: number;
   retrievalMode: RetrievalMode;
+  embeddingProvider: EmbeddingProvider;
   embeddingBaseUrl: string;
   embeddingModel: string;
   embeddingQueryTemplate: string;
@@ -128,6 +130,7 @@ export function parseRuntimeSettingBody(body: AgentSettingsInput) {
     maxIterations: parseSetting(body.maxIterations, "Agent 最大迭代", RUNTIME_DEFAULTS.maxIterations, SETTING_LIMITS.maxIterations),
     modelContextWindow: parseSetting(body.modelContextWindow, "Model Context Window", RUNTIME_DEFAULTS.modelContextWindow, SETTING_LIMITS.modelContextWindow),
     retrievalMode: parseRetrievalMode(body.retrievalMode ?? "lexical_only"),
+    embeddingProvider: parseEmbeddingProvider(body.embeddingProvider ?? "openai-compatible"),
     embeddingBaseUrl: optionalText(body.embeddingBaseUrl, "Embedding Base URL", 2_000),
     embeddingModel: optionalText(body.embeddingModel, "Embedding Model", 500),
     embeddingQueryTemplate: embeddingTemplate(body.embeddingQueryTemplate, "Query Template"),
@@ -172,7 +175,7 @@ export function parseSetting(value: unknown, name: string, fallback: number, lim
 /** 验证模型提供方，避免未经验证的值进入客户端配置。 */
 export function parseProvider(value: unknown): AgentProvider {
   if (typeof value !== "string" || !VALID_PROVIDERS.has(value as AgentProvider)) {
-    throw new TypeError("Provider 必须是 anthropic 或 openai-compatible");
+    throw new TypeError("Provider 必须是 anthropic、openai-compatible 或 gemini");
   }
   return value as AgentProvider;
 }
@@ -220,4 +223,10 @@ export function optionalText(value: unknown, field: string, maxLength: number): 
 export function validateBaseUrl(value: string): void {
   const url = new URL(value);
   if (!["http:", "https:"].includes(url.protocol)) throw new TypeError("Base URL 只支持 HTTP 或 HTTPS");
+}
+
+/** Embedding 仅接受已实现的向量协议，不能复用聊天 Provider 的全集。 */
+export function parseEmbeddingProvider(value: unknown): EmbeddingProvider {
+  if (value !== "openai-compatible" && value !== "gemini") throw new TypeError("Embedding Provider 必须是 openai-compatible 或 gemini；Anthropic 不提供原生 Embedding");
+  return value;
 }

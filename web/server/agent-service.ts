@@ -208,6 +208,10 @@ export function saveAgentSettings(body: Record<string, unknown>) {
   for (const key of ["maxTokens", "maxIterations", "sessionSearchWindow", "sessionRecallEntryTokenLimit", "modelContextWindow", "embeddingMinimumSimilarity"] as const) {
     if (body[key] !== undefined && body[key] !== "") input[key] = Number(body[key]);
   }
+  if (body.embeddingProvider !== undefined) {
+    if (body.embeddingProvider !== "openai-compatible" && body.embeddingProvider !== "gemini") throw new TypeError("Embedding Provider 必须是 openai-compatible 或 gemini");
+    input.embeddingProvider = body.embeddingProvider;
+  }
   if (body.retrievalMode !== undefined) {
     if (!["lexical_only", "dense_only", "hybrid"].includes(String(body.retrievalMode))) throw new TypeError("Retrieval Mode 无效");
     input.retrievalMode = body.retrievalMode as RetrievalMode;
@@ -230,7 +234,7 @@ export function saveSystemPrompt(body: Record<string, unknown>) {
   return runtime.saveSystemPrompt(requiredText(body.systemPrompt, "System Prompt", 100_000));
 }
 function providerInput(value: unknown): AgentProvider {
-  if (value !== "anthropic" && value !== "openai-compatible") throw new TypeError("Provider 必须是 anthropic 或 openai-compatible");
+  if (value !== "anthropic" && value !== "openai-compatible" && value !== "gemini") throw new TypeError("Provider 必须是 openai-compatible、anthropic 或 gemini");
   return value;
 }
 

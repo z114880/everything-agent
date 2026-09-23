@@ -784,7 +784,7 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
                 <Button
                   variant="secondary"
                   size="sm"
-                  className="model-chip"
+                  className="model-chip shadow-none"
                   onClick={onOpenConfig}
                   title="打开模型配置"
                 >
@@ -800,7 +800,6 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
                     {bootstrap.settings.agentModel.model ||
                       bootstrap.settings.agentModel.provider}
                   </span>
-                  <ChevronDown size={12} aria-hidden="true" />
                 </Button>
               </div>
               <div

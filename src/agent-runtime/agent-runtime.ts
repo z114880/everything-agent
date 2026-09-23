@@ -102,9 +102,13 @@ export function createAgentRuntime(paths: LocalConfigPaths, options: { langfuse?
       return { result, settings: publicSettings(settings, getMemoryRuntime()) };
     } finally {
       // 无论成功、失败还是取消，都退出 allowIncompleteIndex 临时状态。
-      // 失败时普通运行会重新绑定旧 active generation，避免影子索引语义名存实亡。
-      await configureMemoryRuntime(memory, settings, recordMemoryEvent);
-      scheduleStartupRecovery(memory, settings);
+      memory.configureRetrieval({ mode: "lexical_only", observer: recordMemoryEvent });
+      const active = memory.activeEmbeddingProfile();
+      // 只恢复当前凭证对应的连接；跨供应商重建失败时保留原错误，后续运行仍要求重建。
+      if (active?.provider === settings.embeddingProvider && active.baseUrl === settings.embeddingBaseUrl) {
+        await configureMemoryRuntime(memory, settings, recordMemoryEvent);
+        scheduleStartupRecovery(memory, settings);
+      }
     }
   }
 

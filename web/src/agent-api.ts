@@ -1,6 +1,7 @@
 import type { Workflow } from "./workflow-api";
 
-export type AgentProvider = "anthropic" | "openai-compatible";
+export type AgentProvider = "anthropic" | "openai-compatible" | "gemini";
+export type EmbeddingProvider = "openai-compatible" | "gemini";
 export type RetrievalMode = "lexical_only" | "dense_only" | "hybrid";
 
 export interface ModelConnectionSettings {
@@ -22,6 +23,7 @@ export interface AgentSettings {
   maxTokens: number;
   maxIterations: number;
   retrievalMode: RetrievalMode;
+  embeddingProvider: EmbeddingProvider;
   embeddingBaseUrl: string;
   embeddingModel: string;
   embeddingQueryTemplate: string;
@@ -273,6 +275,7 @@ export function saveAgentConfig(value: {
   maxTokens: number;
   maxIterations: number;
   retrievalMode: RetrievalMode;
+  embeddingProvider: EmbeddingProvider;
   embeddingBaseUrl: string;
   embeddingModel: string;
   embeddingQueryTemplate: string;

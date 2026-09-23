@@ -218,7 +218,7 @@ function model(decide: (payload: { relatedFacts: Array<{ id: number; content: st
     return { content: [{ type: "text", text: JSON.stringify(result) }], stop_reason: "end_turn" };
   } } };
 }
-const profile = { baseUrl: "https://embedding.invalid/v1", apiKey: "fake", model: "test", queryTemplate: "{text}", documentTemplate: "{text}", minimumSimilarity: 0.2 };
+const profile = { provider: "openai-compatible" as const, baseUrl: "https://embedding.invalid/v1", apiKey: "fake", model: "test", queryTemplate: "{text}", documentTemplate: "{text}", minimumSimilarity: 0.2 };
 function vector() { const result = new Float32Array(1024); result[0] = 1; return result }
 async function configureEmbedding(memory: MemoryRuntime, mode: "lexical_only" | "dense_only" | "hybrid") {
   const client = { async embed(texts: string[]) { return texts.map((_text, index) => ({ index, vector: vector() })) } };
