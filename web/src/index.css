@@ -586,7 +586,9 @@ button:disabled { cursor: not-allowed; }
 .eval-subsection-heading { display: grid; gap: 4px; }
 .eval-subsection-heading h3 { margin: 0; }
 .eval-subsection-heading p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
-.eval-subsection-actions > span { max-width: 720px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+/* 复制按钮与提示同一行：按钮按内容宽度，提示独占剩余宽度并纵向居中。 */
+.eval-subsection-actions { align-items: center; }
+.eval-subsection-actions > span { min-width: 0; flex: 1 1 auto; color: var(--muted); font-size: 11px; line-height: 1.6; }
 /* 步骤编号交给计数器，正文段落保持左对齐文本流，长行自然换行且悬挂缩进对齐。 */
 .eval-steps { display: grid; gap: 10px; counter-reset: eval-step; }
 .eval-steps > p { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; gap: 10px; margin: 0; color: #3f4c63; font-size: 13px; line-height: 1.75; }
