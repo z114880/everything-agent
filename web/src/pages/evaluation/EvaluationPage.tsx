@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { evaluationRequest } from '../../evaluation-api';
+import { withMinimumDuration } from '../../lib/minimum-duration';
 import type { EvaluationDashboard } from '../../evaluation-api';
 
 const labels: Record<string, string> = { queued: '排队中', running: '执行中', waiting_approval: '等待审批', completed: '执行完成', failed: '失败', cancelled: '已取消', interrupted: '进程中断', pending: '待同步', synced: '已同步' };
@@ -27,6 +28,8 @@ export function EvaluationPage() {
   /** 操作成功反馈，交给 SaveMessage 浮层展示并在 2.5 秒后消失，不在页面里占位。 */
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  /** 连接平台动画：与 busy 分开，避免其他操作顺带在连接按钮上转圈。 */
+  const [connecting, setConnecting] = useState(false);
   const [connected, setConnected] = useState(false);
   useEffect(() => {
     let disposed = false;
@@ -45,11 +48,17 @@ export function EvaluationPage() {
     catch (cause) { setActError(String(cause)); }
     finally { setBusy(false); }
   };
+  /** 连接平台：最短反馈时长保证旋转动画可见，成功后给出已发现的数据集数量。 */
   const connect = async () => {
-    setBusy(true); setMessage(''); setActError('');
-    try { const result = await evaluationRequest<{ datasets: typeof datasets }>('/datasets'); setDatasets(result.datasets); setDataset(result.datasets[0]?.name ?? ''); setConnected(true); }
+    if (busy || connecting) return;
+    setBusy(true); setConnecting(true); setActError('');
+    try {
+      const result = await withMinimumDuration(() => evaluationRequest<{ datasets: typeof datasets }>('/datasets'));
+      setDatasets(result.datasets); setDataset(result.datasets[0]?.name ?? ''); setConnected(true);
+      setMessage(`平台连接正常，已发现 ${result.datasets.length} 个数据集。`);
+    }
     catch (cause) { setActError(String(cause)); setConnected(false); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setConnecting(false); }
   };
   const copyHeaders = async () => {
     setActError('');
@@ -68,7 +77,7 @@ export function EvaluationPage() {
     {Boolean(error || actError || data?.error) && <div role="alert" className="rounded-lg border p-3 text-sm">{error || actError || data?.error}</div>}
     <section className="rounded-xl border p-5 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-4"><div><h2 className="font-semibold">Langfuse 连接</h2><p className="text-sm text-muted-foreground">{connected ? '平台连接正常' : data?.configured ? '本地入口已就绪，点击连接平台检查' : '等待配置'} · {data?.baseUrl}</p></div>
-        <div className="flex gap-2"><Button variant="outline" disabled={busy || !data?.configured} onClick={() => void connect()}><RefreshCw size={14} />连接平台</Button>{data?.configured && <a className="text-sm underline flex items-center gap-1" href={projectUrl} target="_blank" rel="noreferrer">打开 Langfuse <ExternalLink size={14} /></a>}</div></div>
+        <div className="flex gap-2"><Button variant="outline" disabled={busy} loading={connecting} onClick={() => void connect()}><RefreshCw size={14} />连接平台</Button>{data?.configured && <a className="text-sm underline flex items-center gap-1" href={projectUrl} target="_blank" rel="noreferrer">打开 Langfuse <ExternalLink size={14} /></a>}</div></div>
       <section className="border-t pt-4 text-sm"><h2 className="font-semibold">从 Langfuse 管理平台发起 Experiment</h2><div className="mt-3 space-y-3 text-muted-foreground">
         <p>打开数据集 → 进入 <strong>Experiments</strong> 标签页 → 右上角 <strong>Run experiment</strong> → 在 Run Experiment 弹窗里选 <strong>via Webhook</strong> 卡片。</p>
         <p>首次点击卡片上的 Configure，进入 <strong>Set up remote experiment trigger in UI</strong>：<strong>URL</strong> 填回调地址 <code className="inline-block rounded-md bg-muted p-3 text-xs break-all">{data?.webhookUrl}</code></p>

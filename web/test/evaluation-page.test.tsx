@@ -3,6 +3,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { EvaluationPage } from '../src/pages/evaluation/EvaluationPage';
+import { MINIMUM_FEEDBACK_DURATION_MS } from '../src/lib/minimum-duration';
 import type { EvaluationDashboard } from '../src/evaluation-api';
 
 const { request } = vi.hoisted(() => ({ request: vi.fn() }));
@@ -51,7 +52,7 @@ it('本地启动可临时填写 Experiment 名称前缀，留空时不提交名�
   expect(container.querySelector('input')?.placeholder).toBe('留空时使用 Everything Agent');
   expect(container.querySelector('a')?.href).toBe('http://localhost:3300/project/p');
   request.mockResolvedValueOnce({ datasets: [{ id: 'dataset', name: '测试集' }] });
-  await click('连接平台');
+  await connectToPlatform();
   await pickDataset('测试集');
   expect(trigger!.textContent).toContain('测试集');
   const starts = () => request.mock.calls.filter(([, body]) => (body as { action?: string } | undefined)?.action === 'start').map(([, body]) => body);
@@ -85,7 +86,7 @@ it('审批请求携带 Experiment 和用例身份，离开页面不取消后台�
   await act(async () => root.render(null)); expect(request.mock.calls.some(([, body]) => body?.action === 'cancel')).toBe(false);
 });
 it('连接失败展示错误，不把失败伪装为空数据集', async () => {
-  await act(async () => root.render(<EvaluationPage />)); request.mockRejectedValueOnce(new Error('平台断开')); await click('连接平台'); expect(container.textContent).toContain('平台断开'); expect(container.querySelector('[role="alert"]')?.textContent).toContain('平台断开');
+  await act(async () => root.render(<EvaluationPage />)); request.mockRejectedValueOnce(new Error('平台断开')); await connectToPlatform(); expect(container.textContent).toContain('平台断开'); expect(container.querySelector('[role="alert"]')?.textContent).toContain('平台断开');
 });
 it('复制的是 Authorization 值，能够直接粘贴到平台请求头字段', async () => {
   const writeText = vi.fn(async () => {});
@@ -117,6 +118,45 @@ it('复制失败按错误提示留在页面内，不显示成功浮层', async (
   request.mockResolvedValueOnce({ Authorization: 'Bearer dedicated-test-token' });
   await click('复制 authorization 值');
   expect(container.querySelector('[role="alert"]')?.textContent).toContain('剪贴板不可用');
+  expect(container.querySelector('[role="status"]')).toBeNull();
+});
+/** 找到连接平台按钮，并取出它当前的加载动画状态。 */
+function connectButton() {
+  const button = [...container.querySelectorAll('button')].find(item => item.textContent?.includes('连接平台'));
+  expect(button).toBeDefined();
+  return { button: button!, spinning: button!.getAttribute('data-loading') === 'true', indicator: button!.querySelector('[data-slot="button-loading-indicator"]') };
+}
+/** 点击连接平台并走完最短反馈时长：按钮在动画期间保持禁用，等待结束后才能继续操作。 */
+async function connectToPlatform() {
+  await click('连接平台');
+  await act(async () => vi.advanceTimersByTimeAsync(MINIMUM_FEEDBACK_DURATION_MS));
+}
+it('连接平台期间按钮转圈并禁用，最短反馈时长后给出成功提示', async () => {
+  await act(async () => root.render(<EvaluationPage />));
+  expect(connectButton().spinning).toBe(false);
+  let release: (value: unknown) => void = () => {};
+  request.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+  await click('连接平台');
+  const pending = connectButton();
+  expect(pending.spinning).toBe(true);
+  expect(pending.indicator).not.toBeNull();
+  expect(pending.button.disabled).toBe(true);
+  // 平台很快返回也要保留最短动画时间，先不结束加载状态
+  await act(async () => { release({ datasets: [{ id: 'dataset', name: '测试集' }, { id: 'other', name: '第二集' }] }); await Promise.resolve(); });
+  expect(connectButton().spinning).toBe(true);
+  await act(async () => vi.advanceTimersByTimeAsync(MINIMUM_FEEDBACK_DURATION_MS));
+  expect(connectButton().spinning).toBe(false);
+  const toast = container.querySelector('[role="status"]');
+  expect(toast?.className).toBe('save-message');
+  expect(toast?.textContent).toContain('平台连接正常，已发现 2 个数据集');
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+it('连接平台失败时停止动画，只用页面内错误提示', async () => {
+  await act(async () => root.render(<EvaluationPage />));
+  request.mockRejectedValueOnce(new Error('平台断开'));
+  await connectToPlatform();
+  expect(connectButton().spinning).toBe(false);
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain('平台断开');
   expect(container.querySelector('[role="status"]')).toBeNull();
 });
 
