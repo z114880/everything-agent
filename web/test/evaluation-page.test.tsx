@@ -25,6 +25,18 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); });
 async function click(label: string) { const button = [...container.querySelectorAll('button')].find(button => button.textContent?.includes(label)); expect(button).toBeDefined(); await act(async () => button!.click()); }
+/** 打开平台配置指南弹窗；弹窗内容渲染在 portal 里，因此从 document 查找元素与按钮。 */
+async function openGuide() {
+  await click('平台配置指南');
+  expect(document.body.textContent).toContain('从 Langfuse 管理平台发起 Experiment');
+}
+/** 点击弹窗内的按钮：校验它确实挂在页面根节点之外的 portal 容器里。 */
+async function clickInDialog(label: string) {
+  const button = [...document.querySelectorAll('button')].find(item => item.textContent?.includes(label));
+  expect(button).toBeDefined();
+  expect(container.contains(button!)).toBe(false);
+  await act(async () => button!.click());
+}
 /** 打开数据集下拉框并选中指定项；选项渲染在 portal 中，因此从 document 查找。 */
 async function pickDataset(name: string) {
   const trigger = container.querySelector<HTMLElement>('[role="combobox"]'); expect(trigger).not.toBeNull();
@@ -92,8 +104,9 @@ it('复制的是 Authorization 值，能够直接粘贴到平台请求头字段'
   const writeText = vi.fn(async () => {});
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
   await act(async () => root.render(<EvaluationPage />));
+  await openGuide();
   request.mockResolvedValueOnce({ Authorization: 'Bearer dedicated-test-token' });
-  await click('复制 authorization 值');
+  await clickInDialog('复制 authorization 值');
   expect(writeText).toHaveBeenCalledWith('Bearer dedicated-test-token');
   expect(writeText).not.toHaveBeenCalledWith(expect.stringContaining('{'));
 });
@@ -101,8 +114,9 @@ it('复制成功的提示用浮层展示并自动消失，不在页面里占位'
   const writeText = vi.fn(async () => {});
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
   await act(async () => root.render(<EvaluationPage />));
+  await openGuide();
   request.mockResolvedValueOnce({ Authorization: 'Bearer dedicated-test-token' });
-  await click('复制 authorization 值');
+  await clickInDialog('复制 authorization 值');
   const toast = container.querySelector('[role="status"]');
   expect(toast?.className).toBe('save-message');
   expect(toast?.textContent).toContain('authorization 值已复制');
@@ -115,8 +129,9 @@ it('复制成功的提示用浮层展示并自动消失，不在页面里占位'
 it('复制失败按错误提示留在页面内，不显示成功浮层', async () => {
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn(async () => { throw new Error('剪贴板不可用'); }) } });
   await act(async () => root.render(<EvaluationPage />));
+  await openGuide();
   request.mockResolvedValueOnce({ Authorization: 'Bearer dedicated-test-token' });
-  await click('复制 authorization 值');
+  await clickInDialog('复制 authorization 值');
   expect(container.querySelector('[role="alert"]')?.textContent).toContain('剪贴板不可用');
   expect(container.querySelector('[role="status"]')).toBeNull();
 });
@@ -160,38 +175,43 @@ it('连接平台失败时停止动画，只用页面内错误提示', async () =
   expect(container.querySelector('[role="status"]')).toBeNull();
 });
 
-it('配置入口常驻展示默认值，并展示 Experiment 采用的配置', async () => {
+it('页面常驻展示数据集 Metadata 默认值与 Experiment 采用的配置，平台步骤只在弹窗出现', async () => {
   const data = structuredClone(dashboard); data.runs[0]!.terminalEnabled = true; request.mockResolvedValue(data);
   await act(async () => root.render(<EvaluationPage />));
   expect(container.textContent).toContain('{"terminal":false,"memorySnapshot":false}');
   expect(container.textContent).toContain('{"name":"Everything Agent"}');
   expect(container.textContent).toContain('terminal：true');
   expect(container.textContent).toContain('memorySnapshot：false');
-  expect([...container.querySelectorAll('code')].some(code => code.textContent === 'authorization')).toBe(true);
-  expect(container.textContent).toContain('via Webhook');
-  expect(container.textContent).toContain('Set up remote experiment trigger in UI');
-  expect([...container.querySelectorAll('details')].some(item => item.textContent?.includes('从 Langfuse 管理平台发起 Experiment'))).toBe(false);
+  // 长说明不再常驻页面，首屏只留连接状态与按钮
+  expect(container.textContent).not.toContain('via Webhook');
+  expect(container.textContent).not.toContain('Set up remote experiment trigger in UI');
+  await openGuide();
+  expect(document.body.textContent).toContain('via Webhook');
+  expect(document.body.textContent).toContain('Set up remote experiment trigger in UI');
+  expect([...document.querySelectorAll('code')].some(code => code.textContent === 'authorization')).toBe(true);
+  expect([...document.querySelectorAll('details')].some(item => item.textContent?.includes('从 Langfuse 管理平台发起 Experiment'))).toBe(false);
 });
 it('实验配置的示例框与回调地址、Default config 使用各自合适的代码框样式', async () => {
   await act(async () => root.render(<EvaluationPage />));
-  const blocks = [...container.querySelectorAll('code')].map(code => ({ text: code.textContent ?? '', classes: code.className }));
-  const metadata = blocks.find(block => block.text === '{"terminal":false,"memorySnapshot":false}');
-  // 数据集 Metadata 示例是整行示例，保留块级代码框的内边距
-  expect(metadata?.classes).toContain('eval-code-block');
-  expect(metadata?.classes).toContain('p-3');
-  const webhook = [...container.querySelectorAll('code')].find(code => code.textContent === dashboard.webhookUrl);
+  await openGuide();
+  const metadata = [...container.querySelectorAll('code')].find(code => code.textContent === '{"terminal":false,"memorySnapshot":false}');
+  // 数据集 Metadata 示例是常驻页面的整行示例，保留块级代码框的内边距
+  expect(metadata?.className).toContain('eval-code-block');
+  expect(metadata?.className).toContain('p-3');
+  // 弹窗里的短值走内联代码框，不套用块级示例的 p-3，否则框明显大于文字
+  const guide = document.querySelector('.eval-guide-dialog')!;
+  const webhook = [...guide.querySelectorAll('code')].find(code => code.textContent === dashboard.webhookUrl);
   expect(webhook).toBeDefined();
   // 回调地址紧跟在“URL 填回调地址”之后，同一段落内不另起一行
   expect(webhook!.previousSibling?.nodeType).toBe(Node.TEXT_NODE);
   expect(webhook!.closest('p')?.textContent).toContain('URL 填回调地址');
   expect(webhook!.closest('p')?.querySelector('br')).toBeNull();
   for (const text of [dashboard.webhookUrl, '{"name":"Everything Agent"}', 'authorization']) {
-    const block = blocks.find(item => item.text === text);
+    const block = [...guide.querySelectorAll('code')].find(code => code.textContent === text);
     expect(block).toBeDefined();
-    // 短值用内联代码框（CSS 里按行高给内边距），不套用块级示例的 p-3，否则框明显大于文字
-    expect(block!.classes).toContain('eval-code-inline');
-    expect(block!.classes).not.toContain('eval-code-block');
-    expect(block!.classes).not.toContain('p-3');
+    expect(block!.className).toContain('eval-code-inline');
+    expect(block!.className).not.toContain('eval-code-block');
+    expect(block!.className).not.toContain('p-3');
   }
 });
 it('运行区说明用换行分隔用例边界与输入格式', async () => {
@@ -206,12 +226,9 @@ it('运行区说明用换行分隔用例边界与输入格式', async () => {
 });
 it('平台启动说明与 Langfuse v4 实际界面一致，不残留不存在的老文案', async () => {
   await act(async () => root.render(<EvaluationPage />));
-  expect(container.textContent).toContain('Run experiment');
-  expect(container.textContent).toContain('Experiments');
-  expect(container.textContent).toContain('Default config');
-  expect(container.textContent).toContain('Sign requests');
-  expect(container.textContent).toContain('Run remote dataset run');
-  for (const outdated of ['Start Experiment', 'Custom Experiment', 'Default payload']) expect(container.textContent).not.toContain(outdated);
+  await openGuide();
+  for (const current of ['Run experiment', 'Experiments', 'Default config', 'Sign requests', 'Run remote dataset run']) expect(document.body.textContent).toContain(current);
+  for (const outdated of ['Start Experiment', 'Custom Experiment', 'Default payload']) expect(document.body.textContent).not.toContain(outdated);
 });
 it('Experiment 记录每页十条，翻页及轮询保留选中 Experiment', async () => {
   const data = structuredClone(dashboard);

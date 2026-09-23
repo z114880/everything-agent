@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { RefreshCw, ExternalLink, Copy, Play, Square, FlaskConical, PlugZap, ListChecks, SlidersHorizontal } from 'lucide-react';
+import { RefreshCw, ExternalLink, Copy, Play, Square, FlaskConical, PlugZap, ListChecks, SlidersHorizontal, BookOpen } from 'lucide-react';
 import { PageHeading } from '../../components/PageHeading';
 import { SaveMessage } from '../../components/SaveMessage';
+import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '../../components/ui/alert-dialog';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
@@ -96,30 +97,36 @@ export function EvaluationPage() {
         </div>
         <div className="eval-panel-actions">
           <Button variant="outline" disabled={busy} loading={connecting} onClick={() => void connect()}><RefreshCw size={14} />连接平台</Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline"><BookOpen size={15} />平台配置指南</Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent className="eval-guide-dialog">
+              <AlertDialogHeader>
+                <AlertDialogTitle className="eval-guide-title">从 Langfuse 管理平台发起 Experiment</AlertDialogTitle>
+                <AlertDialogDescription className="eval-guide-note">按下面的顺序在 Langfuse 界面完成一次性配置，之后即可从数据集页直接触发本机评估。</AlertDialogDescription>
+              </AlertDialogHeader>
+              {/* 步骤编号由 CSS 计数器生成，正文仍是普通段落，长句可在窄屏内正常换行。 */}
+              <div className="eval-steps">
+                <p><span>打开数据集 → 进入 <strong>Experiments</strong> 标签页 → 右上角 <strong>Run experiment</strong> → 在 Run Experiment 弹窗里选 <strong>via Webhook</strong> 卡片。</span></p>
+                <p><span>首次点击卡片上的 Configure，进入 <strong>Set up remote experiment trigger in UI</strong>：<strong>URL</strong> 填回调地址 <code className="eval-code-inline">{data?.webhookUrl}</code></span></p>
+                <p><span><strong>Default config</strong> 填 <code className="eval-code-inline">{defaultConfigJson}</code></span></p>
+                <p><span><strong>Sign requests</strong> 保持关闭，我们的网关只校验 authorization，不校验 x-langfuse-signature。</span></p>
+                <p><span><strong>Enabled</strong> 打开，否则实验无法触发。</span></p>
+                <p><span>展开 <strong>Advanced Options</strong> → <strong>Custom headers</strong>：名称填 <code className="eval-code-inline">authorization</code>，值用下方按钮复制后粘贴，最后保存。</span></p>
+              </div>
+              <AlertDialogFooter className="eval-guide-footer">
+                <span>本地 Web 服务需保持运行。平台评估器需在 Langfuse 中配置，目标为本次 Experiment 的根 Agent observation。未收到评分时显示等待评分，不推断通过。</span>
+                <div className="eval-guide-actions">
+                  <AlertDialogCancel className="eval-copy-button" onClick={() => void copyHeaders()} disabled={!data?.configured}><Copy size={14} />复制 authorization 值</AlertDialogCancel>
+                  <AlertDialogCancel>关闭</AlertDialogCancel>
+                </div>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           {data?.configured && <a className="eval-link" href={projectUrl} target="_blank" rel="noreferrer">打开 Langfuse <ExternalLink size={14} /></a>}
         </div>
       </header>
-      <div className="eval-panel-body">
-        <div className="eval-subsection">
-          <div className="eval-subsection-heading">
-            <h3>从 Langfuse 管理平台发起 Experiment</h3>
-            <p>按下面的顺序在 Langfuse 界面完成一次性配置，之后即可从数据集页直接触发本机评估。</p>
-          </div>
-          {/* 步骤编号由 CSS 计数器生成，正文仍是普通段落，长句可在窄屏内正常换行。 */}
-          <div className="eval-steps">
-            <p><span>打开数据集 → 进入 <strong>Experiments</strong> 标签页 → 右上角 <strong>Run experiment</strong> → 在 Run Experiment 弹窗里选 <strong>via Webhook</strong> 卡片。</span></p>
-            <p><span>首次点击卡片上的 Configure，进入 <strong>Set up remote experiment trigger in UI</strong>：<strong>URL</strong> 填回调地址 <code className="eval-code-inline">{data?.webhookUrl}</code></span></p>
-            <p><span><strong>Default config</strong> 填 <code className="eval-code-inline">{defaultConfigJson}</code></span></p>
-            <p><span><strong>Sign requests</strong> 保持关闭，我们的网关只校验 authorization，不校验 x-langfuse-signature。</span></p>
-            <p><span><strong>Enabled</strong> 打开，否则实验无法触发。</span></p>
-            <p><span>展开 <strong>Advanced Options</strong> → <strong>Custom headers</strong>：名称填 <code className="eval-code-inline">authorization</code>，值粘贴下方复制的内容，最后保存。</span></p>
-          </div>
-          <div className="eval-subsection-actions">
-            <Button variant="outline" size="sm" onClick={() => void copyHeaders()} disabled={!data?.configured}><Copy size={14} />复制 authorization 值</Button>
-            <span>本地 Web 服务需保持运行。平台评估器需在 Langfuse 中配置，目标为本次 Experiment 的根 Agent observation。未收到评分时显示等待评分，不推断通过。</span>
-          </div>
-        </div>
-      </div>
     </section>
 
     <section className="eval-panel eval-panel-config" aria-label="运行前配置">

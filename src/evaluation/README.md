@@ -63,9 +63,11 @@ Docker 内部网关使用 80 端口，满足 Langfuse 的 Webhook 端口限制�
 
 ## 页面和可观测性
 
-页面常驻展示平台启动步骤与两处配置入口：数据集 Metadata 示例为 `{"terminal":false,"memorySnapshot":false}`，两个开关默认均为 false；remote experiment trigger 的 Default config 示例为 `{"name":"Everything Agent"}`，默认名称前缀为 Everything Agent，最终名称附加运行 ID 短码。本地运行区的名称前缀输入框使用同一默认值，最长 120 字符，留空时提交的启动参数不含名称；本地页面不提供 terminal 与 memorySnapshot 开关，两者只从数据集 metadata 读取。Experiment 详情展示本次读取的两个开关及最终 Experiment 名称，不区分未配置与显式 false。终端开关表示数据集授权，实际可用性仍取决于日常工具配置和沙箱。
+页面首屏只常驻连接状态与两处配置入口：数据集 Metadata 示例为 `{"terminal":false,"memorySnapshot":false}`，两个开关默认均为 false；remote experiment trigger 的 Default config 示例为 `{"name":"Everything Agent"}`，默认名称前缀为 Everything Agent，最终名称附加运行 ID 短码。本地运行区的名称前缀输入框使用同一默认值，最长 120 字符，留空时提交的启动参数不含名称；本地页面不提供 terminal 与 memorySnapshot 开关，两者只从数据集 metadata 读取。Experiment 详情展示本次读取的两个开关及最终 Experiment 名称，不区分未配置与显式 false。终端开关表示数据集授权，实际可用性仍取决于日常工具配置和沙箱。
 
-Experiment 记录每页 10 条，显示总数和页码，翻页与进度轮询保留选中的 Experiment；平台启动说明始终展开。
+Experiment 记录每页 10 条，显示总数和页码，翻页与进度轮询保留选中的 Experiment。
+
+平台侧的一次性配置步骤（回调地址、Default config、Custom headers，以及“复制 authorization 值”）收在「平台配置指南」弹窗里，页面不再常驻长说明；弹窗底部的复制按钮同样只在本地入口已配置时可用。
 
 
 Evaluation 展示连接状态、数据集、运行记录、用例输入与输出、预期结果、平台评分、模型、工具调用次数、耗时、模型返回的输入／输出 Token，以及按 observer 顺序记录的执行事件。Token 统计来自 Agent 主循环模型；未返回用量时显示 `—`，不伪造费用或用量。

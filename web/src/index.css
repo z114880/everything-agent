@@ -577,18 +577,21 @@ button:disabled { cursor: not-allowed; }
 .eval-panel-heading p { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 3px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .eval-panel-heading code { min-width: 0; color: var(--accent-foreground); font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
 .eval-panel-heading > h2:only-child { align-self: center; }
-.eval-panel-actions, .eval-subsection-actions, .eval-detail-actions, .eval-approval-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.eval-panel-actions, .eval-detail-actions, .eval-approval-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .eval-panel-actions { justify-content: flex-end; }
 .eval-panel-body { min-width: 0; }
 .eval-panel-body > * + * { margin-top: 14px; }
-.eval-config-card > header, .eval-subsection-heading h3 { color: var(--ink); font-size: 13px; font-weight: 650; line-height: 1.45; }
-.eval-subsection { display: grid; gap: 12px; border-top: 1px solid var(--line); padding-top: 18px; }
-.eval-subsection-heading { display: grid; gap: 4px; }
-.eval-subsection-heading h3 { margin: 0; }
-.eval-subsection-heading p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
-/* 复制按钮与提示同一行：按钮按内容宽度，提示独占剩余宽度并纵向居中。 */
-.eval-subsection-actions { align-items: center; }
-.eval-subsection-actions > span { min-width: 0; flex: 1 1 auto; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.eval-config-card > header { color: var(--ink); font-size: 13px; font-weight: 650; line-height: 1.45; }
+/* 平台配置步骤放在弹窗里，页面只留连接状态，避免长说明把首屏撑满。 */
+.eval-guide-dialog { max-width: 720px; max-height: calc(100dvh - 32px); overflow-y: auto; gap: 18px; padding: 22px 24px; }
+.eval-guide-title { font-size: 17px; }
+.eval-guide-note { font-size: 13px; line-height: 1.65; }
+.eval-guide-footer { display: grid; gap: 12px; border-top: 1px solid var(--line); padding-top: 16px; }
+.eval-guide-footer > span { color: var(--muted); font-size: 11px; line-height: 1.65; }
+.eval-guide-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; }
+/* 复制按钮沿用关闭按钮的尺寸，只把语义色换成主色，两个按钮并排时不出现高低差。 */
+.eval-copy-button { color: var(--accent); }
+.eval-copy-button:enabled:hover { border-color: var(--accent); background: var(--accent-soft); }
 /* 步骤编号交给计数器，正文段落保持左对齐文本流，长行自然换行且悬挂缩进对齐。 */
 .eval-steps { display: grid; gap: 10px; counter-reset: eval-step; }
 .eval-steps > p { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; gap: 10px; margin: 0; color: #3f4c63; font-size: 13px; line-height: 1.75; }
