@@ -141,11 +141,14 @@ describe("Agent 会话窗口布局", () => {
   it("窄屏下左右两侧展开按钮距屏幕边缘的留白一致", async () => {
     const css = await readFile(stylePath, "utf8");
     const mobileCollapsedHeader = css.match(/\.agent-page-layout\[data-chat-collapsed="true"\] \.agent-dock-header \{ top: var\(--panel-toggle-top\); ([^}]*)\}/)?.[1] ?? "";
+    const toggleInset = pixelsOf(css, "--panel-toggle-inset", "面板按钮边缘留白");
 
-    expect(pixelsOf(css, "--panel-toggle-inset", "面板按钮边缘留白")).toBeGreaterThan(0);
+    expect(toggleInset).toBeGreaterThan(0);
     // 两枚按钮引用同一条间距线：左侧贴左边缘，窄屏收起后右侧贴右边缘。
     expect(ruleFor(css, ".panel-collapse-toggle.sidebar-reopen")).toMatch(/left:\s*var\(--panel-toggle-inset\)/);
     expect(mobileCollapsedHeader).toMatch(/right:\s*var\(--panel-toggle-inset\)/);
+    // 桌面端收起后，右侧按钮的留白沿用聊天区水平留白，与左侧按钮取同一数值。
+    expect(pixelsOf(css, "--chat-inline-padding", "聊天区水平留白")).toBe(toggleInset);
   });
 
   it("让 Dock 收缩到视口内并把超长会话交给日志区域滚动", async () => {

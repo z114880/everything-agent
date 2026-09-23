@@ -235,8 +235,9 @@ button:disabled { cursor: not-allowed; }
 .agent-graph-note { border-top: 1px solid var(--line); padding: 10px 14px; color: var(--muted); font-size: 10px; }
 .agent-graph-note code, .config-page code { font-family: var(--font-mono); font-size: 10px; }
 
-/* 聊天区共用输入框的水平留白，让标题、消息和输入框边界一致。 */
-.agent-chat-dock { --chat-inline-padding: 14px; display: grid; min-width: 0; min-height: 0; grid-template-columns: minmax(0, 1fr); overflow: hidden; border-left: 1px solid var(--line); background: #fbfdff; }
+/* 聊天区共用输入框的水平留白，让标题、消息和输入框边界一致；
+   它同时决定收起后展开按钮距视口右缘的距离，取值与左侧展开按钮的留白一致。 */
+.agent-chat-dock { --chat-inline-padding: 12px; display: grid; min-width: 0; min-height: 0; grid-template-columns: minmax(0, 1fr); overflow: hidden; border-left: 1px solid var(--line); background: #fbfdff; }
 .session-rail[hidden] { display: none; }
 .session-rail { position: absolute; top: 100%; left: 18px; right: 18px; z-index: 30; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 16px 40px #252a3d26; display: flex; min-height: 0; max-height: 220px; flex: 0 1 auto; flex-direction: column; border-bottom: 1px solid var(--line); background: white; padding: 6px; }
 .session-toolbar-button { flex-shrink: 0; min-height: 34px; border: 1px solid var(--secondary); border-radius: 8px; background: var(--secondary); box-shadow: none; padding: 0 10px; color: var(--secondary-foreground); font-size: 12px; font-weight: 650; transition: border-color 140ms ease, background 140ms ease, color 140ms ease; }
@@ -851,8 +852,8 @@ button:disabled { cursor: not-allowed; }
 .agent-page-layout[data-chat-collapsed="true"] { grid-template-columns: minmax(var(--agent-main-min-width), 1fr) 0; }
 .agent-page-layout[data-chat-collapsed="true"] .agent-chat-dock { overflow: visible; border-left: 0; background: transparent; }
 /* 收起后标题区改为贴视口定位：顶到 0 并沿用展开时的标题区盒模型（60px 高度、8px 纵向内边距、
-   1px 底边线占位、14px 外侧留白），按钮因此落在与展开时相同的坐标（即 --panel-toggle-top 这条线），
-   收起与展开之间不再漂移。 */
+   1px 底边线占位、--chat-inline-padding 外侧留白），按钮因此落在与展开时相同的坐标
+   （即 --panel-toggle-top 这条线），收起与展开之间不再漂移。 */
 .agent-page-layout[data-chat-collapsed="true"] .agent-dock-header { position: fixed; top: 0; right: 0; z-index: 40; border-bottom-color: transparent; pointer-events: none; }
 .agent-page-layout[data-chat-collapsed="true"] .agent-dock-header > :not(.chat-collapse-toggle) { display: none; }
 .agent-page-layout[data-chat-collapsed="true"] .chat-collapse-toggle { pointer-events: auto; border-color: var(--line); border-radius: 9px; background: var(--panel); color: var(--muted); box-shadow: 0 4px 16px #2222; }
