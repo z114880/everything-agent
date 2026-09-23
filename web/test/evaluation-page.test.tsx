@@ -26,12 +26,12 @@ beforeEach(() => {
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); });
 async function click(label: string) { const button = [...container.querySelectorAll('button')].find(button => button.textContent?.includes(label)); expect(button).toBeDefined(); await act(async () => button!.click()); }
 /**
- * 打开「平台启动步骤」弹窗（位于「数据集与实验」分区）。
+ * 打开「从 Langfuse 管理平台触发 Experiment」弹窗（位于「数据集与实验」分区的描述之后）。
  * 弹窗内容渲染在 portal 里，因此断言与按钮查找都走 document。
  */
 async function openGuide() {
-  await click('平台启动步骤');
-  expect(document.body.textContent).toContain('在 Langfuse 管理平台触发 Experiment');
+  await click('从 Langfuse 管理平台触发 Experiment');
+  expect(document.body.textContent).toContain('按下面的顺序在 Langfuse 界面完成一次性配置');
 }
 /** 点击弹窗内的按钮：校验它确实挂在页面根节点之外的 portal 容器里。 */
 async function clickInDialog(label: string) {
@@ -188,14 +188,22 @@ it('页面常驻展示数据集 Metadata 默认值与 Experiment 采用的配置
   // 长说明不再常驻页面，入口放在「数据集与实验」分区里
   expect(container.textContent).not.toContain('via Webhook');
   expect(container.textContent).not.toContain('Set up remote experiment trigger in UI');
-  const guideButton = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('平台启动步骤'));
+  const guideButton = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('从 Langfuse 管理平台触发 Experiment'));
   expect(guideButton).toBeDefined();
   expect(guideButton!.closest('[aria-label="数据集与实验"]')).not.toBeNull();
+  // 入口挂在分区描述文字之后（同一个 heading 内、描述下方），按钮文案不再与描述重复
+  const heading = guideButton!.closest('.eval-panel-heading');
+  expect(heading).not.toBeNull();
+  expect(heading!.querySelector('h2')?.textContent).toBe('数据集与实验');
+  expect(heading!.querySelector('p')?.textContent).toBe('选择 Langfuse 数据集后在本机启动 Experiment，执行过程与平台入口共用。');
+  const entry = guideButton!.closest('.eval-panel-heading-actions');
+  expect(entry).not.toBeNull();
+  expect(heading!.querySelector('p')?.nextElementSibling).toBe(entry);
   await openGuide();
   expect(document.body.textContent).toContain('via Webhook');
   expect(document.body.textContent).toContain('Set up remote experiment trigger in UI');
   expect([...document.querySelectorAll('code')].some(code => code.textContent === 'authorization')).toBe(true);
-  expect([...document.querySelectorAll('details')].some(item => item.textContent?.includes('在 Langfuse 管理平台触发 Experiment'))).toBe(false);
+  expect([...document.querySelectorAll('details')].some(item => item.textContent?.includes('按下面的顺序在 Langfuse 界面完成一次性配置'))).toBe(false);
 });
 it('实验配置的示例框与回调地址、Default config 使用各自合适的代码框样式', async () => {
   await act(async () => root.render(<EvaluationPage />));
