@@ -30,7 +30,7 @@ async function click(label: string) { const button = [...container.querySelector
  * 弹窗内容渲染在 portal 里，因此断言与按钮查找都走 document。
  */
 async function openGuide() {
-  await click('从 Langfuse 管理平台触发 Experiment');
+  await click('Langfuse Experiment 配置说明');
   expect(document.body.textContent).toContain('按下面的顺序在 Langfuse 界面完成一次性配置');
 }
 /** 点击弹窗内的按钮：校验它确实挂在页面根节点之外的 portal 容器里。 */
@@ -63,7 +63,7 @@ it('本地启动可临时填写 Experiment 名称前缀，留空时不提交名�
   expect(trigger!.textContent).toContain('选择数据集');
   expect(container.textContent).toContain('Langfuse 数据集');
   expect([...container.querySelectorAll('button')].some(button => button.textContent?.includes('Run Experiment'))).toBe(true);
-  expect(container.textContent).toContain('两条入口都会在平台产生 Experiment');
+  expect(container.textContent).toContain('需要审批时暂停该用例');
   expect(container.querySelector('input')?.placeholder).toBe('留空时使用 Everything Agent');
   expect(container.querySelector('a')?.href).toBe('http://localhost:3300/project/p');
   request.mockResolvedValueOnce({ datasets: [{ id: 'dataset', name: '测试集' }] });
@@ -123,7 +123,8 @@ it('复制成功的提示用浮层展示并自动消失，不在页面里占位'
   const toast = container.querySelector('[role="status"]');
   expect(toast?.className).toBe('save-message');
   expect(toast?.textContent).toContain('authorization 值已复制');
-  expect(toast?.textContent).toContain('Secret');
+  // 提示要落在“怎么用这个值”上：在平台请求头里使用
+  expect(toast?.textContent).toContain('请求头');
   // 与配置页一致：浮层挂在页面根节点下，不进入任何内容区块
   expect(toast?.closest('section')).toBeNull();
   await act(async () => vi.advanceTimersByTimeAsync(2_500));
@@ -188,7 +189,7 @@ it('页面常驻展示数据集 Metadata 默认值与 Experiment 采用的配置
   // 长说明不再常驻页面，入口放在「数据集与实验」分区里
   expect(container.textContent).not.toContain('via Webhook');
   expect(container.textContent).not.toContain('Set up remote experiment trigger in UI');
-  const guideButton = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('从 Langfuse 管理平台触发 Experiment'));
+  const guideButton = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('Langfuse Experiment 配置说明'));
   expect(guideButton).toBeDefined();
   expect(guideButton!.closest('[aria-label="数据集与实验"]')).not.toBeNull();
   // 入口与分区说明左右排列（同 page-heading-description），按钮文案不再与描述重复
@@ -196,8 +197,10 @@ it('页面常驻展示数据集 Metadata 默认值与 Experiment 采用的配置
   expect(heading).not.toBeNull();
   expect(heading!.querySelector('h2')?.textContent).toBe('数据集与实验');
   const description = heading!.querySelector('p');
-  expect(description?.textContent).toBe('选择 Langfuse 数据集后在本机启动 Experiment，执行过程与平台入口共用。');
-  expect(description?.parentElement?.className).toBe('eval-panel-description');
+  expect(description?.textContent).toBe('选择 Langfuse 数据集后在本机启动 Experiment，执行过程与平台入口共用，需要审批时暂停该用例。');
+  // relative 为绝对定位的触发入口提供参照，说明行本身仍走 eval-panel-description 的左右排列
+  expect(description?.parentElement?.classList.contains('eval-panel-description')).toBe(true);
+  expect(description?.parentElement?.classList.contains('relative')).toBe(true);
   expect(description?.nextElementSibling?.contains(guideButton!)).toBe(true);
   await openGuide();
   expect(document.body.textContent).toContain('via Webhook');
@@ -228,15 +231,12 @@ it('实验配置的示例框与回调地址、Default config 使用各自合适�
     expect(block!.className).not.toContain('p-3');
   }
 });
-it('运行区说明用换行分隔用例边界与输入格式', async () => {
+it('运行区提示列出用例输入支持的三种写法', async () => {
   await act(async () => root.render(<EvaluationPage />));
-  const note = [...container.querySelectorAll('p')].find(item => item.textContent?.includes('与平台入口共用同一执行过程'));
-  expect(note).toBeDefined();
-  const br = note!.querySelector('br');
-  // JSX 源码里的换行会被折叠成空格，这一处换行必须由 <br /> 产生
-  expect(br).not.toBeNull();
-  expect(br!.previousSibling?.textContent).toContain('需要审批时暂停该用例。');
-  expect(br!.nextSibling?.textContent).toContain('输入支持字符串');
+  const launch = container.querySelector('[aria-label="数据集与实验"]')!;
+  const note = [...launch.querySelectorAll('p')].find(item => item.textContent?.includes('输入支持字符串'));
+  expect(note?.className).toBe('eval-note');
+  expect(note?.textContent).toBe('输入支持字符串、{ prompt } 或 { turns: ["第一轮", "第二轮"] }。');
 });
 it('平台启动说明与 Langfuse v4 实际界面一致，不残留不存在的老文案', async () => {
   await act(async () => root.render(<EvaluationPage />));

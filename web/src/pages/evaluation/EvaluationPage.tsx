@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { RefreshCw, ExternalLink, Copy, Play, Square, FlaskConical, PlugZap, ListChecks, SlidersHorizontal, BookOpen } from 'lucide-react';
+import { RefreshCw, ExternalLink, Copy, Play, Square, FlaskConical, PlugZap, ListChecks, SlidersHorizontal, BookOpen, ChevronRight } from 'lucide-react';
 import { PageHeading } from '../../components/PageHeading';
 import { SaveMessage } from '../../components/SaveMessage';
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '../../components/ui/alert-dialog';
@@ -67,7 +67,7 @@ export function EvaluationPage() {
   };
   const copyHeaders = async () => {
     setActError('');
-    try { const headers = await evaluationRequest<{ Authorization: string }>('/webhook-headers', {}); await navigator.clipboard.writeText(headers.Authorization); setMessage('authorization 值已复制。在 Langfuse 添加同名请求头，粘贴该值并标记 Secret。'); }
+    try { const headers = await evaluationRequest<{ Authorization: string }>('/webhook-headers', {}); await navigator.clipboard.writeText(headers.Authorization); setMessage('authorization 值已复制，请在 Langfuse 添加请求头。'); }
     catch (cause) { setMessage(''); setActError(String(cause)); }
   };
   const run = data?.runs.find(item => item.id === selected) ?? data?.runs[0];
@@ -140,7 +140,7 @@ export function EvaluationPage() {
           <h2>数据集与实验</h2>
           {/* 与页面头部一致：说明在左，触发入口在右，同一行内垂直居中。 */}
           <div className="eval-panel-description relative">
-            <p>选择 Langfuse 数据集后在本机启动 Experiment，执行过程与平台入口共用。</p>
+            <p>选择 Langfuse 数据集后在本机启动 Experiment，执行过程与平台入口共用，需要审批时暂停该用例。</p>
             <div className="eval-panel-description-actions">
               <AlertDialog>
                 <AlertDialogTrigger asChild>
@@ -188,11 +188,7 @@ export function EvaluationPage() {
           </div>
           <Button disabled={busy || active || !dataset} onClick={() => void act({ action: 'start', datasetName: dataset, ...(name.trim() ? { name: name.trim() } : {}) })}><Play size={14} />Run Experiment</Button>
         </div>
-        <p className="eval-note">
-          1. 与平台入口共用同一执行过程，两条入口都会在平台产生 Experiment（v4 没有可单独创建或不创建的 Experiment 记录）；本地运行记录只保存在本机，平台侧只出现由回传轨迹合成的同名 Experiment。需要审批时暂停该用例。
-          <br />
-          2. 输入支持字符串、{'{ prompt }'} 或 {'{ turns: ["第一轮", "第二轮"] }'}。
-        </p>
+        <p className="eval-note pt-2">输入支持字符串、{'{ prompt }'} 或 {'{ turns: ["第一轮", "第二轮"] }'}。</p>
       </div>
     </section>
 
@@ -264,11 +260,11 @@ export function EvaluationPage() {
           <div className="eval-panel-body">
             {/* 冒号写在标签内，复制文本时仍能读成“terminal：true”。 */}
             <div className="eval-facts">
-              <p><span>Experiment 名称：</span>{run.name}</p>
-              <p><span>terminal：</span>{String(run.terminalEnabled)}</p>
-              <p><span>memorySnapshot：</span>{String(run.memorySnapshot)}</p>
-              <p><span>数据集版本：</span>{run.datasetVersion}</p>
-              <p><span>同步成功：</span>{syncedCount} 条</p>
+              <p className="eval-fact-name"><span>Experiment 名称：</span><strong className="eval-fact-value">{run.name}</strong></p>
+              <p><span>terminal：</span><code className="eval-fact-value">{String(run.terminalEnabled)}</code></p>
+              <p><span>memorySnapshot：</span><code className="eval-fact-value">{String(run.memorySnapshot)}</code></p>
+              <p className="eval-fact-version"><span>数据集版本：</span><code className="eval-fact-value">{run.datasetVersion}</code></p>
+              <p><span>同步成功：</span><span className="eval-fact-value">{syncedCount} 条</span></p>
             </div>
             <p className="eval-note">上方开关为本次运行读取的数据集配置；terminal 为 true 表示数据集允许终端，实际可用性取决于日常配置与沙箱。执行完成不代表质量通过。</p>
             {(run.error || run.scoreError) && <p className="eval-error-text" role="alert">{run.error || run.scoreError}</p>}
@@ -299,7 +295,7 @@ export function EvaluationPage() {
                   </section>
                   <a className="eval-link" href={`${projectUrl}/traces/${item.traceId}`} target="_blank" rel="noreferrer">打开 Langfuse Trace</a>
                   <details className="eval-events">
-                    <summary>执行事件（{item.events.length}）</summary>
+                    <summary><ChevronRight className="eval-events-chevron" size={14} aria-hidden="true" />执行事件（{item.events.length}）</summary>
                     <div className="eval-events-list">
                       {item.events.map(event => <div className="eval-event" key={event.sequence}>{event.sequence}. {new Date(event.timestamp).toLocaleTimeString()} {event.kind} {JSON.stringify(event.data)}</div>)}
                     </div>

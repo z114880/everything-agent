@@ -630,11 +630,14 @@ button:disabled { cursor: not-allowed; }
 .eval-approval-command { background: #fffaf3; }
 .eval-approval-detail { margin: 0; color: #3f4c63; font-size: 13px; line-height: 1.7; }
 .eval-workspace { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 16px; }
-.eval-runs { align-content: start; }
+.eval-runs { --eval-run-height: 96px; --eval-run-gap: 8px; grid-template-rows: auto 1fr auto; }
 .eval-runs-header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; }
 .eval-runs-header h2 { margin: 0; color: var(--ink); font-size: 15px; font-weight: 680; letter-spacing: -.01em; }
 .eval-count { border-radius: 999px; background: var(--muted-surface); padding: 2px 9px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
-.eval-runs > .eval-panel-body { display: grid; gap: 8px; }
+.eval-runs > .eval-panel-body { display: grid; min-height: calc(10 * var(--eval-run-height) + 9 * var(--eval-run-gap)); align-content: start; gap: var(--eval-run-gap); }
+/* 列表预留十条标准记录的位置，条目间距统一由 grid 管理。 */
+.eval-runs > .eval-panel-body > * { margin: 0; }
+.eval-runs .eval-run { min-height: var(--eval-run-height); align-content: start; }
 .eval-run { display: grid; width: 100%; gap: 5px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); padding: 12px 13px; text-align: left; transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease; }
 .eval-run:hover { border-color: #bcd1f7; background: var(--panel-soft); }
 .eval-run:hover .eval-run-name { color: var(--accent-foreground); }
@@ -658,32 +661,19 @@ button:disabled { cursor: not-allowed; }
 .eval-detail-heading p { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .eval-detail > .eval-panel-body { padding: 20px 24px 22px; }
 .eval-detail > .eval-panel-body > * + * { margin-top: 16px; }
-/* 配置事实默认三列，宽度不够再退回单列。
-   门槛按详情卡片的真实可用宽度定：1180px 以上侧栏占 232px、
-   「Experiment 记录」占 380px，再扣页面与面板内边距，1360px 以下三格
-   连「2026-09-23T02:55:46.632Z」都放不下，因此 1359px 起退回单列。
-   三列时每格只有 200px 出头，标签横排会把值挤成逐字换行，所以格内
-   标签在上、值在下；单列一行足够宽，1760px 的三列也够宽，标签才回到值的左侧。 */
-.eval-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; border: 1px solid var(--line); border-radius: 11px; background: var(--panel-soft); padding: 14px 16px; gap: 14px 20px; }
-.eval-facts > p { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 2px; margin: 0; color: var(--ink); font-size: 13px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.eval-facts > p > span { min-width: 0; color: var(--muted); font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
-/* 宽度不够排三列：单列一条一行。 */
-@media (max-width: 1359px) {
-  .eval-facts { grid-template-columns: minmax(0, 1fr); }
-}
-/* 单列从 560px 起一行放得下「标签 值」，标签在值的左侧。 */
-@media (min-width: 560px) and (max-width: 1359px) {
-  .eval-facts > p { grid-template-columns: minmax(96px, max-content) minmax(0, 1fr); align-items: baseline; gap: 10px; }
-}
-/* 三列的每格也宽到放得下标签和值时，同样回到一行。 */
-@media (min-width: 1760px) {
-  .eval-facts > p { grid-template-columns: minmax(96px, max-content) minmax(0, 1fr); align-items: baseline; gap: 10px; }
-}
+/* 按详情面板的可用宽度排列事实；名称和版本独占一行，长值允许换行。 */
+.eval-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); margin: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-soft); padding: 16px 18px; gap: 14px 24px; }
+.eval-facts > p { display: flex; min-width: 0; flex-wrap: wrap; align-items: baseline; gap: 4px; margin: 0; color: var(--ink); font-size: 13px; line-height: 1.65; font-variant-numeric: tabular-nums; }
+.eval-facts > p > span:first-child { flex: 0 0 auto; color: var(--muted); font-size: 12px; }
+.eval-facts .eval-fact-name { grid-column: 1 / -1; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+.eval-fact-value { min-width: 0; color: var(--ink); font-family: inherit; font-size: 13px; font-weight: 400; overflow-wrap: anywhere; }
+.eval-fact-name .eval-fact-value { font-size: 14px; font-weight: 650; }
+.eval-facts .eval-fact-version { grid-column: 1 / -1; }
 .eval-error-text { margin: 0; color: #be4035; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
 .eval-items { display: grid; gap: 12px; }
 .eval-item { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
 .eval-item[open] { border-color: #cfddf5; }
-.eval-item-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 13px 16px; color: var(--muted); cursor: pointer; font-size: 12px; list-style: none; }
+.eval-item-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 13px 16px; color: var(--muted); cursor: pointer; font-size: 12px; list-style: none; -webkit-user-select: none; user-select: none; }
 .eval-item-summary::-webkit-details-marker { display: none; }
 .eval-item-summary:hover { color: var(--accent); }
 .eval-item-summary strong { color: var(--ink); font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
@@ -692,7 +682,8 @@ button:disabled { cursor: not-allowed; }
 .eval-item-body > * { margin: 0; }
 .eval-run-metrics { color: var(--muted); font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
 .eval-value-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
-.eval-value { display: grid; min-width: 0; gap: 8px; }
+/* 标题只占内容高度，剩余高度交给正文，让同一行的内容框上下对齐。 */
+.eval-value { display: grid; grid-template-rows: auto 1fr; min-width: 0; gap: 8px; }
 .eval-value-title { margin: 0; color: var(--eval-label); font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
 .eval-pre { margin: 0; border: 1px solid var(--line); border-radius: 9px; background: var(--muted-surface); padding: 12px 13px; color: #3f4c63; font-family: var(--font-mono); font-size: 11px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 .eval-value-body { max-height: 300px; overflow: auto; }
@@ -701,8 +692,11 @@ button:disabled { cursor: not-allowed; }
 .eval-scores-empty { color: var(--muted); }
 .eval-link { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); font-size: 13px; text-decoration: underline; text-underline-offset: 2px; }
 .eval-events { border-top: 1px dashed var(--line); padding-top: 12px; }
-.eval-events > summary { color: var(--muted); cursor: pointer; font-size: 12px; }
+.eval-events > summary { display: flex; align-items: center; gap: 6px; color: var(--muted); cursor: pointer; font-size: 12px; list-style: none; -webkit-user-select: none; user-select: none; }
+.eval-events > summary::-webkit-details-marker { display: none; }
 .eval-events > summary:hover { color: var(--accent); }
+.eval-events-chevron { flex: 0 0 auto; transition: transform 140ms ease; }
+.eval-events[open] > summary > .eval-events-chevron { transform: rotate(90deg); }
 .eval-events-list { display: grid; gap: 4px; max-height: 300px; overflow: auto; margin-top: 10px; }
 .eval-event { color: #4b5565; font-family: var(--font-mono); font-size: 11px; line-height: 1.65; overflow-wrap: anywhere; }
 .eval-empty { margin: 0; padding: 24px 8px; color: var(--muted); font-size: 12px; line-height: 1.7; text-align: center; }
@@ -715,6 +709,8 @@ button:disabled { cursor: not-allowed; }
 }
 @media (min-width: 1180px) {
   .eval-workspace { grid-template-columns: minmax(0, 380px) minmax(0, 1fr); }
+  /* 双列时由左侧记录决定行高，右侧内容不撑高整行，超出部分在面板内滚动。 */
+  .eval-detail { contain: size; align-self: stretch; display: block; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
 }
 @media (max-width: 760px) {
   .eval-panel { padding: 18px 16px; }
@@ -726,9 +722,9 @@ button:disabled { cursor: not-allowed; }
   .eval-field-list > div { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* 可展开的用例与事件用纯 CSS 三角提示展开方向，不额外增加节点或图标依赖。 */
-.eval-item-summary::before, .eval-events > summary::before { content: ""; width: 0; height: 0; flex: 0 0 auto; border-top: 4px solid transparent; border-bottom: 4px solid transparent; border-left: 5px solid var(--muted-light); transition: transform 140ms ease; }
-.eval-item[open] > .eval-item-summary::before, .eval-events[open] > summary::before { transform: rotate(90deg); }
+/* 可展开的用例用纯 CSS 三角提示展开方向，不额外增加节点或图标依赖。 */
+.eval-item-summary::before { content: ""; width: 0; height: 0; flex: 0 0 auto; border-top: 4px solid transparent; border-bottom: 4px solid transparent; border-left: 5px solid var(--muted-light); transition: transform 140ms ease; }
+.eval-item[open] > .eval-item-summary::before { transform: rotate(90deg); }
 
 @keyframes flow { to { stroke-dashoffset: -24; } }
 @keyframes nodePulse { 50% { filter: drop-shadow(0 0 8px rgb(37 99 235 / .34)); } }
