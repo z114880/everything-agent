@@ -564,6 +564,152 @@ button:disabled { cursor: not-allowed; }
 .database-query-actions > span { color: var(--muted); font-size: 10px; }
 .database-confirm-sql { max-height: 220px; overflow: auto; margin: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-soft); padding: 11px; font-size: 10px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 
+/* Evaluation：连接说明、运行配置、Experiment 记录与用例详情依次分区，长文本在各自容器内换行。 */
+.evaluation-page { display: flex; width: 100%; max-width: 1440px; flex-direction: column; gap: 18px; }
+.evaluation-page { --eval-label: #475569; --eval-panel-gap: 18px; }
+.eval-panel { display: grid; gap: var(--eval-panel-gap); border: 1px solid var(--line); border-radius: 14px; background: var(--panel); box-shadow: var(--shadow-card); padding: 22px 24px; }
+.eval-panel-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 6px 14px; }
+/* 没有操作按钮的分区只用两列，标题区不会被空列挤压。 */
+.eval-panel-config > .eval-panel-header, .eval-launch > .eval-panel-header, .eval-panel-approval > .eval-panel-header { grid-template-columns: auto minmax(0, 1fr); }
+.eval-panel-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 10px; background: var(--accent-soft); color: var(--accent); }
+.eval-panel-heading { min-width: 0; }
+.eval-panel-heading h2 { margin: 0; color: var(--ink); font-size: 15px; font-weight: 680; letter-spacing: -.01em; line-height: 1.35; }
+.eval-panel-heading p { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 3px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.eval-panel-heading code { min-width: 0; color: var(--accent-foreground); font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
+.eval-panel-heading > h2:only-child { align-self: center; }
+.eval-panel-actions, .eval-subsection-actions, .eval-detail-actions, .eval-approval-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.eval-panel-actions { justify-content: flex-end; }
+.eval-panel-body { min-width: 0; }
+.eval-panel-body > * + * { margin-top: 14px; }
+.eval-config-card > header, .eval-subsection-heading h3 { color: var(--ink); font-size: 13px; font-weight: 650; line-height: 1.45; }
+.eval-subsection { display: grid; gap: 12px; border-top: 1px solid var(--line); padding-top: 18px; }
+.eval-subsection-heading { display: grid; gap: 4px; }
+.eval-subsection-heading h3 { margin: 0; }
+.eval-subsection-heading p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.eval-subsection-actions > span { max-width: 720px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+/* 步骤编号交给计数器，正文段落保持左对齐文本流，长行自然换行且悬挂缩进对齐。 */
+.eval-steps { display: grid; gap: 10px; counter-reset: eval-step; }
+.eval-steps > p { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; gap: 10px; margin: 0; color: #3f4c63; font-size: 13px; line-height: 1.75; }
+.eval-steps > p > span { min-width: 0; overflow-wrap: anywhere; }
+.eval-steps > p::before { counter-increment: eval-step; content: counter(eval-step); display: grid; width: 20px; height: 20px; place-items: center; align-self: start; border-radius: 999px; background: var(--accent-soft); color: var(--accent-foreground); font-size: 11px; font-weight: 680; font-variant-numeric: tabular-nums; line-height: 1; }
+.eval-steps strong { color: var(--ink); font-weight: 650; }
+.eval-code-block, .eval-code-inline { border: 1px solid var(--line); border-radius: 8px; background: var(--muted-surface); color: #3f4c63; font-family: var(--font-mono); font-size: 11px; }
+.eval-code-block { display: block; margin: 0; padding: 12px; overflow-wrap: anywhere; line-height: 1.7; }
+/* 内联代码框与块级示例共用 p-3 内边距，两种框在同一段说明里高度一致。 */
+.eval-code-inline { padding: 12px; overflow-wrap: anywhere; }
+.eval-config-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 14px; align-items: start; }
+.eval-config-card { display: grid; min-width: 0; gap: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-soft); padding: 18px; }
+.eval-config-card > header { display: grid; min-width: 0; gap: 3px; }
+.eval-config-card > header > span { color: var(--muted); font-size: 11px; font-weight: 500; line-height: 1.5; }
+.eval-field-list { display: grid; gap: 8px; margin: 0; }
+.eval-field-list > div { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; gap: 4px 10px; }
+.eval-field-list dt { border-radius: 6px; background: var(--accent-soft); padding: 2px 7px; color: var(--accent-foreground); font-family: var(--font-mono); font-size: 11px; }
+.eval-field-list dd { margin: 0; color: #3f4c63; font-size: 13px; line-height: 1.7; }
+.eval-config-footnote { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.65; }
+.eval-launch-form { display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
+.eval-field { display: grid; min-width: 0; gap: 7px; }
+.eval-field-label { color: var(--eval-label); font-size: 12px; font-weight: 600; line-height: 1.4; }
+.eval-control { width: 100%; min-width: 0; }
+.eval-option-placeholder { color: var(--muted); }
+.eval-note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.75; }
+.eval-panel-config { border-color: #cfddf5; }
+.eval-panel-approval { border-color: #f0c9a8; background: linear-gradient(180deg, #fffcf7 0%, var(--panel) 42%); }
+.eval-panel-approval .eval-panel-icon { background: var(--warn-soft); color: var(--warn); }
+.eval-approval-list { display: grid; gap: 12px; }
+.eval-approval { display: grid; gap: 10px; border: 1px solid #f0d8bd; border-radius: 12px; background: var(--panel-soft); padding: 16px; }
+.eval-approval-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--muted); font-family: var(--font-mono); font-size: 11px; }
+.eval-approval-reason { margin: 0; color: var(--ink); font-size: 13px; font-weight: 550; line-height: 1.65; }
+.eval-approval-command { background: #fffaf3; }
+.eval-approval-detail { margin: 0; color: #3f4c63; font-size: 13px; line-height: 1.7; }
+.eval-workspace { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 16px; }
+.eval-runs { align-content: start; }
+.eval-runs-header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; }
+.eval-runs-header h2 { margin: 0; color: var(--ink); font-size: 15px; font-weight: 680; letter-spacing: -.01em; }
+.eval-count { border-radius: 999px; background: var(--muted-surface); padding: 2px 9px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.eval-runs > .eval-panel-body { display: grid; gap: 8px; }
+.eval-run { display: grid; width: 100%; gap: 5px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); padding: 12px 13px; text-align: left; transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease; }
+.eval-run:hover { border-color: #bcd1f7; background: var(--panel-soft); }
+.eval-run:hover .eval-run-name { color: var(--accent-foreground); }
+.eval-run[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 1px #2563eb1f; }
+.eval-run-name { display: block; color: var(--ink); font-size: 13px; font-weight: 640; line-height: 1.45; overflow-wrap: anywhere; }
+.eval-run-meta { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 5px 8px; font-size: 11px; }
+.eval-run-dataset { min-width: 0; flex: 0 1 auto; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.eval-run-time { color: var(--muted-light); font-size: 11px; font-variant-numeric: tabular-nums; }
+.eval-status { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px; background: var(--panel-soft); padding: 1px 8px; color: var(--muted); font-size: 11px; font-weight: 550; line-height: 1.6; white-space: nowrap; }
+.eval-status-running, .eval-status-queued, .eval-status-pending { border-color: #c7d9fb; background: var(--accent-soft); color: var(--accent-foreground); }
+.eval-status-completed, .eval-status-synced { border-color: #c4e6d7; background: var(--good-soft); color: #1d7a5a; }
+.eval-status-failed, .eval-status-cancelled { border-color: #f3cdd2; background: var(--destructive-soft); color: #b23a48; }
+.eval-status-waiting_approval, .eval-status-interrupted { border-color: #f0d8bd; background: var(--warn-soft); color: #995c10; }
+.eval-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid var(--line); padding-top: 14px; }
+.eval-pagination-page { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.eval-detail { gap: 0; padding: 0; overflow: hidden; }
+.eval-detail > .eval-empty { padding: 26px 24px; }
+.eval-detail-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 18px; border-bottom: 1px solid var(--line); background: var(--panel-soft); padding: 18px 24px; }
+.eval-detail-heading { min-width: 0; }
+.eval-detail-heading h2 { margin: 0; color: var(--ink); font-size: 16px; font-weight: 680; letter-spacing: -.01em; line-height: 1.4; overflow-wrap: anywhere; }
+.eval-detail-heading p { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.eval-detail > .eval-panel-body { padding: 20px 24px 22px; }
+.eval-detail > .eval-panel-body > * + * { margin-top: 16px; }
+/* 配置事实按标签列对齐，数值用等宽数字，长名称在窄屏换行而不是撑破卡片。 */
+.eval-facts { display: grid; margin: 0; border: 1px solid var(--line); border-radius: 11px; background: var(--panel-soft); padding: 14px 16px; gap: 10px 20px; }
+.eval-facts > p { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; gap: 10px; margin: 0; color: var(--ink); font-size: 13px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.eval-facts > p > span { color: var(--muted); font-family: var(--font-mono); font-size: 11px; }
+.eval-error-text { margin: 0; color: #be4035; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.eval-items { display: grid; gap: 12px; }
+.eval-item { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.eval-item[open] { border-color: #cfddf5; }
+.eval-item-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 13px 16px; color: var(--muted); cursor: pointer; font-size: 12px; list-style: none; }
+.eval-item-summary::-webkit-details-marker { display: none; }
+.eval-item-summary:hover { color: var(--accent); }
+.eval-item-summary strong { color: var(--ink); font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+.eval-item-duration { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+.eval-item-body { display: grid; gap: 14px; border-top: 1px solid var(--line); padding: 16px; }
+.eval-item-body > * { margin: 0; }
+.eval-run-metrics { color: var(--muted); font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
+.eval-value-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.eval-value { display: grid; min-width: 0; gap: 8px; }
+.eval-value-title { margin: 0; color: var(--eval-label); font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.eval-pre { margin: 0; border: 1px solid var(--line); border-radius: 9px; background: var(--muted-surface); padding: 12px 13px; color: #3f4c63; font-family: var(--font-mono); font-size: 11px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.eval-value-body { max-height: 300px; overflow: auto; }
+.eval-scores { display: grid; gap: 6px; color: #3f4c63; font-size: 13px; line-height: 1.7; }
+.eval-scores p { margin: 0; }
+.eval-scores-empty { color: var(--muted); }
+.eval-link { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); font-size: 13px; text-decoration: underline; text-underline-offset: 2px; }
+.eval-events { border-top: 1px dashed var(--line); padding-top: 12px; }
+.eval-events > summary { color: var(--muted); cursor: pointer; font-size: 12px; }
+.eval-events > summary:hover { color: var(--accent); }
+.eval-events-list { display: grid; gap: 4px; max-height: 300px; overflow: auto; margin-top: 10px; }
+.eval-event { color: #4b5565; font-family: var(--font-mono); font-size: 11px; line-height: 1.65; overflow-wrap: anywhere; }
+.eval-empty { margin: 0; padding: 24px 8px; color: var(--muted); font-size: 12px; line-height: 1.7; text-align: center; }
+@media (min-width: 640px) {
+  .eval-launch-form { flex-direction: row; flex-wrap: wrap; align-items: flex-end; }
+  .eval-field { flex: 1 1 300px; max-width: 420px; }
+}
+@media (min-width: 760px) {
+  .eval-value-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .eval-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1080px) {
+  .eval-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (min-width: 1180px) {
+  .eval-workspace { grid-template-columns: minmax(0, 380px) minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .eval-panel { padding: 18px 16px; }
+  .eval-panel-header { grid-template-columns: auto minmax(0, 1fr); }
+  .eval-panel-actions { grid-column: 1 / -1; justify-content: flex-start; }
+  .eval-detail { padding: 0; }
+  .eval-detail-header { padding: 16px; }
+  .eval-detail > .eval-panel-body { padding: 16px; }
+  .eval-field-list > div { grid-template-columns: minmax(0, 1fr); }
+  .eval-facts > p { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
+
+/* 可展开的用例与事件用纯 CSS 三角提示展开方向，不额外增加节点或图标依赖。 */
+.eval-item-summary::before, .eval-events > summary::before { content: ""; width: 0; height: 0; flex: 0 0 auto; border-top: 4px solid transparent; border-bottom: 4px solid transparent; border-left: 5px solid var(--muted-light); transition: transform 140ms ease; }
+.eval-item[open] > .eval-item-summary::before, .eval-events[open] > summary::before { transform: rotate(90deg); }
+
 @keyframes flow { to { stroke-dashoffset: -24; } }
 @keyframes nodePulse { 50% { filter: drop-shadow(0 0 8px rgb(37 99 235 / .34)); } }
 @keyframes runningBar { 50% { opacity: .4; } }

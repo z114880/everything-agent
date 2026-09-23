@@ -17,6 +17,7 @@ const pageSources = [
   "pages/agent/AgentPage.tsx",
   "pages/config/ConfigPage.tsx",
   "pages/database/DatabasePage.tsx",
+  "pages/evaluation/EvaluationPage.tsx",
   "pages/memory/MemoryPage.tsx",
   "pages/skills/SkillsPage.tsx",
   "pages/tools/ToolsPage.tsx",

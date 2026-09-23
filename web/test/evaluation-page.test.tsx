@@ -176,7 +176,8 @@ it('需要填写的回调地址与 Default config 不占整行，且内边距与
   await act(async () => root.render(<EvaluationPage />));
   const blocks = [...container.querySelectorAll('code')].map(code => ({ text: code.textContent ?? '', classes: code.className }));
   const metadata = blocks.find(block => block.text === '{"terminal":false,"memorySnapshot":false}');
-  expect(metadata?.classes).toContain('block');
+  // 数据集 Metadata 示例是块级代码框，内边距 p-3 与内联代码框保持一致
+  expect(metadata?.classes).toContain('eval-code-block');
   expect(metadata?.classes).toContain('p-3');
   const webhook = [...container.querySelectorAll('code')].find(code => code.textContent === dashboard.webhookUrl);
   expect(webhook).toBeDefined();
@@ -187,10 +188,9 @@ it('需要填写的回调地址与 Default config 不占整行，且内边距与
   for (const text of [dashboard.webhookUrl, '{"name":"Everything Agent"}']) {
     const block = blocks.find(item => item.text === text);
     expect(block).toBeDefined();
-    // 内联框不能拉满整行（不能是 block），但垂直内边距要和块级示例一致，避免两种代码框高度不同
-    expect(block!.classes.split(' ')).not.toContain('block');
-    expect(block!.classes).toContain('inline-block');
-    expect(block!.classes).toContain('bg-muted');
+    // 内联框不能拉满整行（不能是块级样式），但垂直内边距要和块级示例一致，避免两种代码框高度不同
+    expect(block!.classes).toContain('eval-code-inline');
+    expect(block!.classes).not.toContain('eval-code-block');
     expect(block!.classes).toContain('p-3');
   }
 });
