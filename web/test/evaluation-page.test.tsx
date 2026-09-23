@@ -63,7 +63,7 @@ it('本地启动可临时填写 Experiment 名称前缀，留空时不提交名�
   expect(trigger!.textContent).toContain('选择数据集');
   expect(container.textContent).toContain('Langfuse 数据集');
   expect([...container.querySelectorAll('button')].some(button => button.textContent?.includes('Run Experiment'))).toBe(true);
-  expect(container.textContent).toContain('不创建 Langfuse Experiment 记录');
+  expect(container.textContent).toContain('两条入口都会在平台产生 Experiment');
   expect(container.querySelector('input')?.placeholder).toBe('留空时使用 Everything Agent');
   expect(container.querySelector('a')?.href).toBe('http://localhost:3300/project/p');
   request.mockResolvedValueOnce({ datasets: [{ id: 'dataset', name: '测试集' }] });

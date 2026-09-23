@@ -29,10 +29,14 @@ Docker 内部网关使用 80 端口，满足 Langfuse 的 Webhook 端口限制�
 
 本地页面和 Langfuse remote experiment trigger（via Webhook 卡片）的回调进入同一个执行层：都按启动时刻固定数据集版本，读取数据集 metadata 的 `terminal` 与 `memorySnapshot`，共用并发上限、隔离目录、审批、超时和结果回传策略，因此“一次只允许一个 Experiment”的限制也是共享的，两条入口会互相阻塞。
 
-差别只在发起位置和结果归属：
+两条入口都会在平台上产生 Experiment：回传的 trace 统一携带 `langfuse.experiment.*` 属性，Langfuse v4 的数据模型据此把同一 Experiment 的条目轨迹合成为一次运行记录。v4 没有可单独创建或不创建的 Experiment 资源，平台也没有创建它的公开接口，因此“是否留下 Experiment 记录”不是这两条入口的差别。
 
-- 平台入口由 Langfuse 创建本次 Experiment，Experiment 记录、名称和版本留在平台；回调额外携带数据集 ID，运行时校验 ID 与名称一致。远程入口只能启动 Experiment，不能管理本地文件、修改运行时配置或批准工具操作，启动失败时平台只收到统一的 400 提示，看不到具体原因。
-- 本地入口（页面按钮「Run Experiment」）不创建平台 Experiment 记录，运行记录只保存在 `.evaluations/langfuse-v4/`，执行轨迹仍关联到对应数据集条目；本地在运行区填写 Experiment 名称前缀，留空或只填空白字符时使用默认前缀 Everything Agent，与平台 Default config 的 `name` 语义一致，失败原因直接显示在页面上。
+差别只在发起位置和运行状态的归属：
+
+- 平台入口由 Langfuse 发起本次 Experiment；回调额外携带数据集 ID，运行时校验 ID 与名称一致。远程入口只能启动 Experiment，不能管理本地文件、修改运行时配置或批准工具操作，启动失败时平台只收到统一的 400 提示，看不到具体原因。
+- 本地入口（页面按钮「Run Experiment」）由本地发起，运行过程和记录只保存在 `.evaluations/langfuse-v4/`，平台侧只会出现由回传轨迹合成的同名 Experiment；本地在运行区填写 Experiment 名称前缀，留空或只填空白字符时使用默认前缀 Everything Agent，与平台 Default config 的 `name` 语义一致，失败原因直接显示在页面上。
+
+两条入口目前使用相同的 `environment` 与 Experiment metadata，平台侧无法区分某次运行是本地发起还是平台触发。
 
 ## 数据集输入
 

@@ -139,12 +139,12 @@ export function EvaluationPage() {
         <div className="eval-panel-heading">
           <h2>数据集与实验</h2>
           {/* 与页面头部一致：说明在左，触发入口在右，同一行内垂直居中。 */}
-          <div className="eval-panel-description">
+          <div className="eval-panel-description relative">
             <p>选择 Langfuse 数据集后在本机启动 Experiment，执行过程与平台入口共用。</p>
             <div className="eval-panel-description-actions">
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button variant="outline" size="sm"><BookOpen size={14} />从 Langfuse 管理平台触发 Experiment</Button>
+                  <Button variant="outline" size="sm" className="eval-guide-trigger absolute top-[-10px]">Langfuse Experiment 配置说明</Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent className="eval-guide-dialog">
                   <AlertDialogHeader>
@@ -189,7 +189,7 @@ export function EvaluationPage() {
           <Button disabled={busy || active || !dataset} onClick={() => void act({ action: 'start', datasetName: dataset, ...(name.trim() ? { name: name.trim() } : {}) })}><Play size={14} />Run Experiment</Button>
         </div>
         <p className="eval-note">
-          1. 与平台入口共用同一执行过程，但不创建 Langfuse Experiment 记录，只把执行轨迹回传到对应数据集条目；需要审批时暂停该用例。
+          1. 与平台入口共用同一执行过程，两条入口都会在平台产生 Experiment（v4 没有可单独创建或不创建的 Experiment 记录）；本地运行记录只保存在本机，平台侧只出现由回传轨迹合成的同名 Experiment。需要审批时暂停该用例。
           <br />
           2. 输入支持字符串、{'{ prompt }'} 或 {'{ turns: ["第一轮", "第二轮"] }'}。
         </p>
