@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const tracePage = fileURLToPath(new URL("../src/pages/trace/TracePage.tsx", import.meta.url));
 
-describe("Trace 页面", () => {
+describe("Traces 页面", () => {
   it("JSONL 文件默认展开且可折叠，文件内每条 JSON 默认折叠", async () => {
     const source = await readFile(tracePage, "utf8");
 

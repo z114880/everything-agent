@@ -25,7 +25,7 @@ describe("配置页布局", () => {
     expect(styles).toContain(".config-grid { grid-template-columns: minmax(0, 1fr); }");
   });
 
-  it("配置、Memory 与 Trace 页面使用和 Agent 主区一致的宽内容布局", async () => {
+  it("配置、Memory 与 Traces 页面使用和 Agent 主区一致的宽内容布局", async () => {
     const styles = await readFile(styleSheet, "utf8");
 
     expect(styles).toContain("--page-padding-inline: clamp(20px, 3vw, 46px);");

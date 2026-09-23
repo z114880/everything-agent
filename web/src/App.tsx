@@ -50,7 +50,7 @@ export default function App() {
         <Button variant="ghost" className={`nav-item mb-1 ${page === "tools" ? "active" : ""}`} onClick={() => setPage("tools")}><Wrench size={15} /><span>Tools</span></Button>
         <Button variant="ghost" className={`nav-item mb-1 ${page === "memory" ? "active" : ""}`} onClick={() => setPage("memory")}><Brain size={15} /><span>Memory</span></Button>
         <Button variant="ghost" className={`nav-item mb-1 ${page === "database" ? "active" : ""}`} onClick={() => setPage("database")}><Database size={15} /><span>Database</span></Button>
-        <Button variant="ghost" className={`nav-item mb-1 ${page === "traces" ? "active" : ""}`} onClick={() => setPage("traces")}><Activity size={15} /><span>Trace</span></Button>
+        <Button variant="ghost" className={`nav-item mb-1 ${page === "traces" ? "active" : ""}`} onClick={() => setPage("traces")}><Activity size={15} /><span>Traces</span></Button>
         <Button variant="ghost" className={`nav-item mb-1 ${page === "evaluation" ? "active" : ""}`} onClick={() => setPage("evaluation")}><FlaskConical size={15} /><span>Evaluation</span></Button>
         <Button variant="ghost" className={`nav-item mb-1 ${page === "config" ? "active" : ""}`} onClick={() => setPage("config")}><Settings size={15} /><span>配置</span></Button>
         <div className="sidebar-note"><span className="signal bg-emerald-500" />本地 Engine 已连接</div>
