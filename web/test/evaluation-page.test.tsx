@@ -172,11 +172,11 @@ it('配置入口常驻展示默认值，并展示 Experiment 采用的配置', a
   expect(container.textContent).toContain('Set up remote experiment trigger in UI');
   expect([...container.querySelectorAll('details')].some(item => item.textContent?.includes('从 Langfuse 管理平台发起 Experiment'))).toBe(false);
 });
-it('需要填写的回调地址与 Default config 不占整行，且内边距与数据集 Metadata 示例一致', async () => {
+it('实验配置的示例框与回调地址、Default config 使用各自合适的代码框样式', async () => {
   await act(async () => root.render(<EvaluationPage />));
   const blocks = [...container.querySelectorAll('code')].map(code => ({ text: code.textContent ?? '', classes: code.className }));
   const metadata = blocks.find(block => block.text === '{"terminal":false,"memorySnapshot":false}');
-  // 数据集 Metadata 示例是块级代码框，内边距 p-3 与内联代码框保持一致
+  // 数据集 Metadata 示例是整行示例，保留块级代码框的内边距
   expect(metadata?.classes).toContain('eval-code-block');
   expect(metadata?.classes).toContain('p-3');
   const webhook = [...container.querySelectorAll('code')].find(code => code.textContent === dashboard.webhookUrl);
@@ -185,13 +185,13 @@ it('需要填写的回调地址与 Default config 不占整行，且内边距与
   expect(webhook!.previousSibling?.nodeType).toBe(Node.TEXT_NODE);
   expect(webhook!.closest('p')?.textContent).toContain('URL 填回调地址');
   expect(webhook!.closest('p')?.querySelector('br')).toBeNull();
-  for (const text of [dashboard.webhookUrl, '{"name":"Everything Agent"}']) {
+  for (const text of [dashboard.webhookUrl, '{"name":"Everything Agent"}', 'authorization']) {
     const block = blocks.find(item => item.text === text);
     expect(block).toBeDefined();
-    // 内联框不能拉满整行（不能是块级样式），但垂直内边距要和块级示例一致，避免两种代码框高度不同
+    // 短值用内联代码框（CSS 里按行高给内边距），不套用块级示例的 p-3，否则框明显大于文字
     expect(block!.classes).toContain('eval-code-inline');
     expect(block!.classes).not.toContain('eval-code-block');
-    expect(block!.classes).toContain('p-3');
+    expect(block!.classes).not.toContain('p-3');
   }
 });
 it('运行区说明用换行分隔用例边界与输入格式', async () => {

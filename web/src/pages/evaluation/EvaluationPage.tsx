@@ -108,11 +108,11 @@ export function EvaluationPage() {
           {/* 步骤编号由 CSS 计数器生成，正文仍是普通段落，长句可在窄屏内正常换行。 */}
           <div className="eval-steps">
             <p><span>打开数据集 → 进入 <strong>Experiments</strong> 标签页 → 右上角 <strong>Run experiment</strong> → 在 Run Experiment 弹窗里选 <strong>via Webhook</strong> 卡片。</span></p>
-            <p><span>首次点击卡片上的 Configure，进入 <strong>Set up remote experiment trigger in UI</strong>：<strong>URL</strong> 填回调地址 <code className="eval-code-inline p-3">{data?.webhookUrl}</code></span></p>
-            <p><span><strong>Default config</strong> 填 <code className="eval-code-inline p-3">{defaultConfigJson}</code></span></p>
+            <p><span>首次点击卡片上的 Configure，进入 <strong>Set up remote experiment trigger in UI</strong>：<strong>URL</strong> 填回调地址 <code className="eval-code-inline">{data?.webhookUrl}</code></span></p>
+            <p><span><strong>Default config</strong> 填 <code className="eval-code-inline">{defaultConfigJson}</code></span></p>
             <p><span><strong>Sign requests</strong> 保持关闭，我们的网关只校验 authorization，不校验 x-langfuse-signature。</span></p>
             <p><span><strong>Enabled</strong> 打开，否则实验无法触发。</span></p>
-            <p><span>展开 <strong>Advanced Options</strong> → <strong>Custom headers</strong>：名称填 <code className="eval-code-inline p-3">authorization</code>，值粘贴下方复制的内容，最后保存。</span></p>
+            <p><span>展开 <strong>Advanced Options</strong> → <strong>Custom headers</strong>：名称填 <code className="eval-code-inline">authorization</code>，值粘贴下方复制的内容，最后保存。</span></p>
           </div>
           <div className="eval-subsection-actions">
             <Button variant="outline" size="sm" onClick={() => void copyHeaders()} disabled={!data?.configured}><Copy size={14} />复制 authorization 值</Button>

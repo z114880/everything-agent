@@ -597,8 +597,8 @@ button:disabled { cursor: not-allowed; }
 .eval-steps strong { color: var(--ink); font-weight: 650; }
 .eval-code-block, .eval-code-inline { border: 1px solid var(--line); border-radius: 8px; background: var(--muted-surface); color: #3f4c63; font-family: var(--font-mono); font-size: 11px; }
 .eval-code-block { display: block; margin: 0; padding: 12px; overflow-wrap: anywhere; line-height: 1.7; }
-/* 内联代码框与块级示例共用 p-3 内边距，两种框在同一段说明里高度一致。 */
-.eval-code-inline { padding: 12px; overflow-wrap: anywhere; }
+/* 内联框只服务短值：内边距按行高留白，避免 12px 内边距把 11px 的字撑成大块。 */
+.eval-code-inline { display: inline-block; border-radius: 6px; padding: 3px 8px; vertical-align: middle; line-height: 1.5; overflow-wrap: anywhere; }
 .eval-config-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 14px; align-items: start; }
 .eval-config-card { display: grid; min-width: 0; gap: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-soft); padding: 18px; }
 .eval-config-card > header { display: grid; min-width: 0; gap: 3px; }
