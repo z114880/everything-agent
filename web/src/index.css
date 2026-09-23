@@ -658,24 +658,26 @@ button:disabled { cursor: not-allowed; }
 .eval-detail-heading p { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .eval-detail > .eval-panel-body { padding: 20px 24px 22px; }
 .eval-detail > .eval-panel-body > * + * { margin-top: 16px; }
-/* 配置事实按标签列对齐，数值用等宽数字，长名称换行而不是撑破卡片。
-   默认（窄屏）每条事实竖向排列：标签在上、值在下，一行只读一条。
-   分档用媒体查询，因此门槛要按详情卡片的真实可用宽度倒推：1180px 以上
-   侧栏占 232px、「Experiment 记录」占 380px，再加页面与面板内边距，
-   两列、三列分别在 1400px、1760px 生效，每档的值列都留得下
-   「tttools 92e7169c」和「2026-09-23T02:55:46.632Z」，不会被拆成逐字换行。 */
-.eval-facts { display: grid; grid-template-columns: minmax(0, 1fr); margin: 0; border: 1px solid var(--line); border-radius: 11px; background: var(--panel-soft); padding: 14px 16px; gap: 10px 20px; }
+/* 配置事实默认三列，宽度不够再退回单列。
+   门槛按详情卡片的真实可用宽度定：1180px 以上侧栏占 232px、
+   「Experiment 记录」占 380px，再扣页面与面板内边距，1360px 以下三格
+   连「2026-09-23T02:55:46.632Z」都放不下，因此 1359px 起退回单列。
+   三列时每格只有 200px 出头，标签横排会把值挤成逐字换行，所以格内
+   标签在上、值在下；单列一行足够宽，1760px 的三列也够宽，标签才回到值的左侧。 */
+.eval-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; border: 1px solid var(--line); border-radius: 11px; background: var(--panel-soft); padding: 14px 16px; gap: 14px 20px; }
 .eval-facts > p { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 2px; margin: 0; color: var(--ink); font-size: 13px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .eval-facts > p > span { min-width: 0; color: var(--muted); font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
-/* 560px 起标签回到值的左侧，一条事实仍占一行，但不必再占两行。 */
-@media (min-width: 560px) {
+/* 宽度不够排三列：单列一条一行。 */
+@media (max-width: 1359px) {
+  .eval-facts { grid-template-columns: minmax(0, 1fr); }
+}
+/* 单列从 560px 起一行放得下「标签 值」，标签在值的左侧。 */
+@media (min-width: 560px) and (max-width: 1359px) {
   .eval-facts > p { grid-template-columns: minmax(96px, max-content) minmax(0, 1fr); align-items: baseline; gap: 10px; }
 }
-@media (min-width: 1400px) {
-  .eval-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
+/* 三列的每格也宽到放得下标签和值时，同样回到一行。 */
 @media (min-width: 1760px) {
-  .eval-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .eval-facts > p { grid-template-columns: minmax(96px, max-content) minmax(0, 1fr); align-items: baseline; gap: 10px; }
 }
 .eval-error-text { margin: 0; color: #be4035; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
 .eval-items { display: grid; gap: 12px; }
