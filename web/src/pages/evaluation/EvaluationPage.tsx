@@ -97,33 +97,6 @@ export function EvaluationPage() {
         </div>
         <div className="eval-panel-actions">
           <Button variant="outline" disabled={busy} loading={connecting} onClick={() => void connect()}><RefreshCw size={14} />连接平台</Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="outline"><BookOpen size={15} />平台配置指南</Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent className="eval-guide-dialog">
-              <AlertDialogHeader>
-                <AlertDialogTitle className="eval-guide-title">从 Langfuse 管理平台发起 Experiment</AlertDialogTitle>
-                <AlertDialogDescription className="eval-guide-note">按下面的顺序在 Langfuse 界面完成一次性配置，之后即可从数据集页直接触发本机评估。</AlertDialogDescription>
-              </AlertDialogHeader>
-              {/* 步骤编号由 CSS 计数器生成，正文仍是普通段落，长句可在窄屏内正常换行。 */}
-              <div className="eval-steps">
-                <p><span>打开数据集 → 进入 <strong>Experiments</strong> 标签页 → 右上角 <strong>Run experiment</strong> → 在 Run Experiment 弹窗里选 <strong>via Webhook</strong> 卡片。</span></p>
-                <p><span>首次点击卡片上的 Configure，进入 <strong>Set up remote experiment trigger in UI</strong>：<strong>URL</strong> 填回调地址 <code className="eval-code-inline">{data?.webhookUrl}</code></span></p>
-                <p><span><strong>Default config</strong> 填 <code className="eval-code-inline">{defaultConfigJson}</code></span></p>
-                <p><span><strong>Sign requests</strong> 保持关闭，我们的网关只校验 authorization，不校验 x-langfuse-signature。</span></p>
-                <p><span><strong>Enabled</strong> 打开，否则实验无法触发。</span></p>
-                <p><span>展开 <strong>Advanced Options</strong> → <strong>Custom headers</strong>：名称填 <code className="eval-code-inline">authorization</code>，值用下方按钮复制后粘贴，最后保存。</span></p>
-              </div>
-              <AlertDialogFooter className="eval-guide-footer">
-                <span>本地 Web 服务需保持运行。平台评估器需在 Langfuse 中配置，目标为本次 Experiment 的根 Agent observation。未收到评分时显示等待评分，不推断通过。</span>
-                <div className="eval-guide-actions">
-                  <AlertDialogCancel className="eval-copy-button" onClick={() => void copyHeaders()} disabled={!data?.configured}><Copy size={14} />复制 authorization 值</AlertDialogCancel>
-                  <AlertDialogCancel>关闭</AlertDialogCancel>
-                </div>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
           {data?.configured && <a className="eval-link" href={projectUrl} target="_blank" rel="noreferrer">打开 Langfuse <ExternalLink size={14} /></a>}
         </div>
       </header>
@@ -182,6 +155,34 @@ export function EvaluationPage() {
             <Input aria-labelledby="evaluation-name-label" className="eval-control" value={name} maxLength={maxNameLength} spellCheck={false} placeholder="留空时使用 Everything Agent" onChange={event => setName(event.target.value)} />
           </div>
           <Button disabled={busy || active || !dataset} onClick={() => void act({ action: 'start', datasetName: dataset, ...(name.trim() ? { name: name.trim() } : {}) })}><Play size={14} />Run Experiment</Button>
+          {/* 平台侧步骤与本地启动同源，入口放在同一行，需要时再展开，首屏不占位。 */}
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline"><BookOpen size={15} />平台启动步骤</Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent className="eval-guide-dialog">
+              <AlertDialogHeader>
+                <AlertDialogTitle className="eval-guide-title">在 Langfuse 管理平台触发 Experiment</AlertDialogTitle>
+                <AlertDialogDescription className="eval-guide-note">按下面的顺序在 Langfuse 界面完成一次性配置，之后即可从数据集页直接触发本机评估；本地启动走上面的 Run Experiment，不需要这些步骤。</AlertDialogDescription>
+              </AlertDialogHeader>
+              {/* 步骤编号由 CSS 计数器生成，正文仍是普通段落，长句可在窄屏内正常换行。 */}
+              <div className="eval-steps">
+                <p><span>打开数据集 → 进入 <strong>Experiments</strong> 标签页 → 右上角 <strong>Run experiment</strong> → 在 Run Experiment 弹窗里选 <strong>via Webhook</strong> 卡片。</span></p>
+                <p><span>首次点击卡片上的 Configure，进入 <strong>Set up remote experiment trigger in UI</strong>：<strong>URL</strong> 填回调地址 <code className="eval-code-inline">{data?.webhookUrl}</code></span></p>
+                <p><span><strong>Default config</strong> 填 <code className="eval-code-inline">{defaultConfigJson}</code></span></p>
+                <p><span><strong>Sign requests</strong> 保持关闭，我们的网关只校验 authorization，不校验 x-langfuse-signature。</span></p>
+                <p><span><strong>Enabled</strong> 打开，否则实验无法触发。</span></p>
+                <p><span>展开 <strong>Advanced Options</strong> → <strong>Custom headers</strong>：名称填 <code className="eval-code-inline">authorization</code>，值用下方按钮复制后粘贴，最后保存。</span></p>
+              </div>
+              <AlertDialogFooter className="eval-guide-footer">
+                <span>本地 Web 服务需保持运行。平台评估器需在 Langfuse 中配置，目标为本次 Experiment 的根 Agent observation。未收到评分时显示等待评分，不推断通过。</span>
+                <div className="eval-guide-actions">
+                  <AlertDialogCancel className="eval-copy-button" onClick={() => void copyHeaders()} disabled={!data?.configured}><Copy size={14} />复制 authorization 值</AlertDialogCancel>
+                  <AlertDialogCancel>关闭</AlertDialogCancel>
+                </div>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
         <p className="eval-note">
           1. 与平台入口共用同一执行过程，但不创建 Langfuse Experiment 记录，只把执行轨迹回传到对应数据集条目；需要审批时暂停该用例。

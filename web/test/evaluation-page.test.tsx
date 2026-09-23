@@ -25,10 +25,13 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); });
 async function click(label: string) { const button = [...container.querySelectorAll('button')].find(button => button.textContent?.includes(label)); expect(button).toBeDefined(); await act(async () => button!.click()); }
-/** 打开平台配置指南弹窗；弹窗内容渲染在 portal 里，因此从 document 查找元素与按钮。 */
+/**
+ * 打开「平台启动步骤」弹窗（位于「数据集与实验」分区）。
+ * 弹窗内容渲染在 portal 里，因此断言与按钮查找都走 document。
+ */
 async function openGuide() {
-  await click('平台配置指南');
-  expect(document.body.textContent).toContain('从 Langfuse 管理平台发起 Experiment');
+  await click('平台启动步骤');
+  expect(document.body.textContent).toContain('在 Langfuse 管理平台触发 Experiment');
 }
 /** 点击弹窗内的按钮：校验它确实挂在页面根节点之外的 portal 容器里。 */
 async function clickInDialog(label: string) {
@@ -182,14 +185,17 @@ it('页面常驻展示数据集 Metadata 默认值与 Experiment 采用的配置
   expect(container.textContent).toContain('{"name":"Everything Agent"}');
   expect(container.textContent).toContain('terminal：true');
   expect(container.textContent).toContain('memorySnapshot：false');
-  // 长说明不再常驻页面，首屏只留连接状态与按钮
+  // 长说明不再常驻页面，入口放在「数据集与实验」分区里
   expect(container.textContent).not.toContain('via Webhook');
   expect(container.textContent).not.toContain('Set up remote experiment trigger in UI');
+  const guideButton = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('平台启动步骤'));
+  expect(guideButton).toBeDefined();
+  expect(guideButton!.closest('[aria-label="数据集与实验"]')).not.toBeNull();
   await openGuide();
   expect(document.body.textContent).toContain('via Webhook');
   expect(document.body.textContent).toContain('Set up remote experiment trigger in UI');
   expect([...document.querySelectorAll('code')].some(code => code.textContent === 'authorization')).toBe(true);
-  expect([...document.querySelectorAll('details')].some(item => item.textContent?.includes('从 Langfuse 管理平台发起 Experiment'))).toBe(false);
+  expect([...document.querySelectorAll('details')].some(item => item.textContent?.includes('在 Langfuse 管理平台触发 Experiment'))).toBe(false);
 });
 it('实验配置的示例框与回调地址、Default config 使用各自合适的代码框样式', async () => {
   await act(async () => root.render(<EvaluationPage />));

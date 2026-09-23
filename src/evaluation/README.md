@@ -67,7 +67,7 @@ Docker 内部网关使用 80 端口，满足 Langfuse 的 Webhook 端口限制�
 
 Experiment 记录每页 10 条，显示总数和页码，翻页与进度轮询保留选中的 Experiment。
 
-平台侧的一次性配置步骤（回调地址、Default config、Custom headers，以及“复制 authorization 值”）收在「平台配置指南」弹窗里，页面不再常驻长说明；弹窗底部的复制按钮同样只在本地入口已配置时可用。
+平台侧的一次性配置步骤（回调地址、Default config、Custom headers，以及“复制 authorization 值”）收在「数据集与实验」分区的「平台启动步骤」弹窗里，与本地启动入口同一行，页面不再常驻长说明；弹窗底部的复制按钮同样只在本地入口已配置时可用。
 
 
 Evaluation 展示连接状态、数据集、运行记录、用例输入与输出、预期结果、平台评分、模型、工具调用次数、耗时、模型返回的输入／输出 Token，以及按 observer 顺序记录的执行事件。Token 统计来自 Agent 主循环模型；未返回用量时显示 `—`，不伪造费用或用量。
