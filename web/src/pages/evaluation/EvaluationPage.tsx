@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { RefreshCw, ExternalLink, Copy, Play, Square } from 'lucide-react';
 import { PageHeading } from '../../components/PageHeading';
+import { SaveMessage } from '../../components/SaveMessage';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
@@ -21,6 +22,9 @@ export function EvaluationPage() {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState('');
   const [error, setError] = useState('');
+  /** 操作失败提示，留在页面内常驻展示，与轮询错误合并显示。 */
+  const [actError, setActError] = useState('');
+  /** 操作成功反馈，交给 SaveMessage 浮层展示并在 2.5 秒后消失，不在页面里占位。 */
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [connected, setConnected] = useState(false);
@@ -36,20 +40,21 @@ export function EvaluationPage() {
     return () => { disposed = true; clearTimeout(timer); };
   }, []);
   const act = async (body: Record<string, unknown>) => {
-    setBusy(true); setMessage('');
+    setBusy(true); setMessage(''); setActError('');
     try { await evaluationRequest('', body); setData(await evaluationRequest<EvaluationDashboard>()); }
-    catch (cause) { setMessage(String(cause)); }
+    catch (cause) { setActError(String(cause)); }
     finally { setBusy(false); }
   };
   const connect = async () => {
-    setBusy(true); setMessage('');
+    setBusy(true); setMessage(''); setActError('');
     try { const result = await evaluationRequest<{ datasets: typeof datasets }>('/datasets'); setDatasets(result.datasets); setDataset(result.datasets[0]?.name ?? ''); setConnected(true); }
-    catch (cause) { setMessage(String(cause)); setConnected(false); }
+    catch (cause) { setActError(String(cause)); setConnected(false); }
     finally { setBusy(false); }
   };
   const copyHeaders = async () => {
+    setActError('');
     try { const headers = await evaluationRequest<{ Authorization: string }>('/webhook-headers', {}); await navigator.clipboard.writeText(headers.Authorization); setMessage('authorization 值已复制。在 Langfuse 添加同名请求头，粘贴该值并标记 Secret。'); }
-    catch (cause) { setMessage(String(cause)); }
+    catch (cause) { setMessage(''); setActError(String(cause)); }
   };
   const run = data?.runs.find(item => item.id === selected) ?? data?.runs[0];
   const pageCount = Math.max(1, Math.ceil((data?.runs.length ?? 0) / 10));
@@ -59,7 +64,8 @@ export function EvaluationPage() {
   const projectUrl = data ? `${data.baseUrl}/project/${encodeURIComponent(data.projectId)}` : '';
   return <div className="p-4 sm:p-6 space-y-6 max-w-[1440px] mx-auto w-full overflow-auto">
     <PageHeading eyebrow="真实环境评估" title="Evaluation" description="用真实 Everything Agent 执行 Langfuse 数据集，独立保存评估会话和记忆。" />
-    {(error || data?.error || message) && <div role="status" className="rounded-lg border p-3 text-sm">{error || data?.error || message}</div>}
+    <SaveMessage message={message} setMessage={setMessage} />
+    {Boolean(error || actError || data?.error) && <div role="alert" className="rounded-lg border p-3 text-sm">{error || actError || data?.error}</div>}
     <section className="rounded-xl border p-5 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-4"><div><h2 className="font-semibold">Langfuse 连接</h2><p className="text-sm text-muted-foreground">{connected ? '平台连接正常' : data?.configured ? '本地入口已就绪，点击连接平台检查' : '等待配置'} · {data?.baseUrl}</p></div>
         <div className="flex gap-2"><Button variant="outline" disabled={busy || !data?.configured} onClick={() => void connect()}><RefreshCw size={14} />连接平台</Button>{data?.configured && <a className="text-sm underline flex items-center gap-1" href={projectUrl} target="_blank" rel="noreferrer">打开 Langfuse <ExternalLink size={14} /></a>}</div></div>

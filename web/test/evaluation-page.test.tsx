@@ -85,7 +85,7 @@ it('审批请求携带 Experiment 和用例身份，离开页面不取消后台�
   await act(async () => root.render(null)); expect(request.mock.calls.some(([, body]) => body?.action === 'cancel')).toBe(false);
 });
 it('连接失败展示错误，不把失败伪装为空数据集', async () => {
-  await act(async () => root.render(<EvaluationPage />)); request.mockRejectedValueOnce(new Error('平台断开')); await click('连接平台'); expect(container.textContent).toContain('平台断开');
+  await act(async () => root.render(<EvaluationPage />)); request.mockRejectedValueOnce(new Error('平台断开')); await click('连接平台'); expect(container.textContent).toContain('平台断开'); expect(container.querySelector('[role="alert"]')?.textContent).toContain('平台断开');
 });
 it('复制的是 Authorization 值，能够直接粘贴到平台请求头字段', async () => {
   const writeText = vi.fn(async () => {});
@@ -95,6 +95,29 @@ it('复制的是 Authorization 值，能够直接粘贴到平台请求头字段'
   await click('复制 authorization 值');
   expect(writeText).toHaveBeenCalledWith('Bearer dedicated-test-token');
   expect(writeText).not.toHaveBeenCalledWith(expect.stringContaining('{'));
+});
+it('复制成功的提示用浮层展示并自动消失，不在页面里占位', async () => {
+  const writeText = vi.fn(async () => {});
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+  await act(async () => root.render(<EvaluationPage />));
+  request.mockResolvedValueOnce({ Authorization: 'Bearer dedicated-test-token' });
+  await click('复制 authorization 值');
+  const toast = container.querySelector('[role="status"]');
+  expect(toast?.className).toBe('save-message');
+  expect(toast?.textContent).toContain('authorization 值已复制');
+  expect(toast?.textContent).toContain('Secret');
+  // 与配置页一致：浮层挂在页面根节点下，不进入任何内容区块
+  expect(toast?.closest('section')).toBeNull();
+  await act(async () => vi.advanceTimersByTimeAsync(2_500));
+  expect(container.querySelector('[role="status"]')).toBeNull();
+});
+it('复制失败按错误提示留在页面内，不显示成功浮层', async () => {
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn(async () => { throw new Error('剪贴板不可用'); }) } });
+  await act(async () => root.render(<EvaluationPage />));
+  request.mockResolvedValueOnce({ Authorization: 'Bearer dedicated-test-token' });
+  await click('复制 authorization 值');
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain('剪贴板不可用');
+  expect(container.querySelector('[role="status"]')).toBeNull();
 });
 
 it('配置入口常驻展示默认值，并展示 Experiment 采用的配置', async () => {
