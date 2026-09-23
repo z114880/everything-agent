@@ -189,7 +189,9 @@ button:disabled { cursor: not-allowed; }
 /* Agent Harness：主画布与右侧持久化会话 Dock。
    主画布的最小宽度按画布自身宽度加两侧页面留白推导，窗口再窄就由布局容器横向滚动，而不是压扁画布。 */
 .agent-main-content { height: 100vh; overflow: hidden; }
-.agent-page-layout { --agent-canvas-min-width: 850px; --agent-main-min-width: calc(var(--agent-canvas-min-width) + 2 * var(--page-padding-inline)); display: grid; height: 100vh; grid-template-columns: minmax(var(--agent-main-min-width), 1fr) 420px; overflow-x: auto; background: transparent; transition: grid-template-columns 180ms ease; }
+/* 页面高度固定为视口高度，纵向不滚动：否则横向滚动条会再撑出一条纵向滚动条，
+   把右侧 Dock 的边界挤离视口边缘，收起聊天区时固定定位的按钮位置就会跟着偏移。 */
+.agent-page-layout { --agent-canvas-min-width: 850px; --agent-main-min-width: calc(var(--agent-canvas-min-width) + 2 * var(--page-padding-inline)); display: grid; height: 100vh; grid-template-columns: minmax(var(--agent-main-min-width), 1fr) 420px; overflow-x: auto; overflow-y: hidden; background: transparent; transition: grid-template-columns 180ms ease; }
 .agent-main-column { min-width: 0; overflow-y: auto; padding: var(--page-padding-top) var(--page-padding-inline) var(--page-padding-bottom); }
 .agent-intro-actions { display: flex; flex: 0 0 auto; align-items: center; flex-direction: row; gap: 10px; }
 .consolidation-action { display: inline-flex; min-height: 40px; align-items: center; justify-content: flex-end; gap: 10px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); padding: 4px; box-shadow: 0 1px 2px #1a1f2c08; }
@@ -579,14 +581,16 @@ button:disabled { cursor: not-allowed; }
 .eval-panel-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 6px 14px; }
 /* 没有操作按钮的分区只用两列，标题区不会被空列挤压。 */
 .eval-panel-config > .eval-panel-header, .eval-launch > .eval-panel-header, .eval-panel-approval > .eval-panel-header { grid-template-columns: auto minmax(0, 1fr); }
-.eval-panel-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 10px; background: var(--accent-soft); color: var(--accent); }
+.eval-panel-icon { display: grid; width: 34px; height: 34px; align-self: center; place-items: center; border-radius: 10px; background: var(--accent-soft); color: var(--accent); }
 .eval-panel-heading { min-width: 0; }
 .eval-panel-heading h2 { margin: 0; color: var(--ink); font-size: 15px; font-weight: 680; letter-spacing: -.01em; line-height: 1.35; }
 .eval-panel-heading p { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 3px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .eval-panel-heading code { min-width: 0; color: var(--accent-foreground); font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
-/* 分区说明与操作左右排列，与页面头部的 page-heading-description 保持同一种读法。 */
+/* 分区说明与操作左右排列，与页面头部的 page-heading-description 保持同一种读法。
+   两者都是普通流内的 flex 项：宽屏并排居中，放不下时按钮整行换到说明下方，不用绝对定位，因此不会与文字重叠。 */
 .eval-panel-description { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; }
-.eval-panel-description-actions { display: flex; align-items: center; flex: 0 0 auto; }
+/* 按钮自成一项，窄屏换行时不会被同行文字挤压缩短。 */
+.eval-guide-trigger { flex: 0 0 auto; }
 .eval-panel-heading > h2:only-child { align-self: center; }
 .eval-panel-actions, .eval-detail-actions, .eval-approval-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .eval-panel-actions { justify-content: flex-end; }
@@ -848,13 +852,16 @@ button:disabled { cursor: not-allowed; }
 .agent-chat-content[hidden] { display: none; }
 .agent-page-layout[data-chat-collapsed="true"] { grid-template-columns: minmax(var(--agent-main-min-width), 1fr) 0; }
 .agent-page-layout[data-chat-collapsed="true"] .agent-chat-dock { overflow: visible; border-left: 0; background: transparent; }
-.agent-page-layout[data-chat-collapsed="true"] .agent-dock-header { position: fixed; top: 18px; right: 8px; z-index: 40; min-height: 0; justify-content: center; margin: 0; border-bottom: 0; padding: 0; }
-.agent-page-layout[data-chat-collapsed="true"] .chat-collapse-toggle { margin-left: 0; border-color: var(--line); border-radius: 9px; background: var(--panel); color: var(--muted); box-shadow: 0 4px 16px #2222; }
+/* 收起后标题区改为贴视口定位：顶到 0 并沿用展开时的标题区盒模型（60px 高度、8px 纵向内边距、
+   1px 底边线占位、14px 外侧留白），按钮因此落在与展开时相同的坐标，收起与展开之间不再漂移。 */
+.agent-page-layout[data-chat-collapsed="true"] .agent-dock-header { position: fixed; top: 0; right: 0; z-index: 40; border-bottom-color: transparent; pointer-events: none; }
 .agent-page-layout[data-chat-collapsed="true"] .agent-dock-header > :not(.chat-collapse-toggle) { display: none; }
+.agent-page-layout[data-chat-collapsed="true"] .chat-collapse-toggle { pointer-events: auto; border-color: var(--line); border-radius: 9px; background: var(--panel); color: var(--muted); box-shadow: 0 4px 16px #2222; }
 @media (max-width: 760px) {
+  /* 窄屏聊天区位于画布下方，收起后按钮固定在视口右上角，与侧边栏展开按钮成对。 */
   .agent-page-layout[data-chat-collapsed="true"] { grid-template-columns: minmax(0, 1fr); }
   .agent-page-layout[data-chat-collapsed="true"] .agent-chat-dock { height: 0; min-height: 0; border-top: 0; }
-  .agent-page-layout[data-chat-collapsed="true"] .agent-dock-header { right: 8px; margin: 0; }
+  .agent-page-layout[data-chat-collapsed="true"] .agent-dock-header { top: 18px; right: 8px; min-height: 0; margin: 0; padding: 0; }
 }
 
 

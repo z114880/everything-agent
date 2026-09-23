@@ -99,7 +99,29 @@ describe("Agent 会话窗口布局", () => {
     expect(ruleFor(css, '.agent-chat-content[hidden]')).toMatch(/display:\s*none/);
     expect(ruleFor(css, '.agent-page-layout[data-chat-collapsed="true"]')).toMatch(/grid-template-columns:\s*minmax\(var\(--agent-main-min-width\), 1fr\) 0/);
     expect(ruleFor(css, '.agent-page-layout[data-chat-collapsed="true"] .agent-chat-dock')).toMatch(/border-left:\s*0/);
-    expect(ruleFor(css, '.agent-page-layout[data-chat-collapsed="true"] .agent-dock-header')).toMatch(/right:\s*8px/);
+  });
+
+  it("收起聊天区时按钮沿用展开时的落点，不在两个状态之间漂移", async () => {
+    const css = await readFile(stylePath, "utf8");
+    const collapsedHeader = ruleFor(css, '.agent-page-layout[data-chat-collapsed="true"] .agent-dock-header');
+
+    // 贴视口定位保证横向滚动时按钮仍可点击，锚点取视口右上角。
+    expect(ruleFor(css, ".agent-dock-header")).toMatch(/margin:\s*0 var\(--chat-inline-padding\)/);
+    // 横向滚动条不能再撑出纵向滚动条，否则 Dock 右边界会离开视口边缘。
+    expect(ruleFor(css, ".agent-page-layout")).toMatch(/overflow-x:\s*auto;\s*overflow-y:\s*hidden/);
+    expect(collapsedHeader).toMatch(/position:\s*fixed/);
+    expect(collapsedHeader).toMatch(/top:\s*0\s*;/);
+    expect(collapsedHeader).toMatch(/right:\s*0\s*;/);
+    // 收起时不再覆盖标题区的高度、内外边距与底边线，按钮纵向落点因此与展开时一致。
+    expect(collapsedHeader).not.toMatch(/min-height/);
+    expect(collapsedHeader).not.toMatch(/margin/);
+    expect(collapsedHeader).not.toMatch(/padding/);
+    expect(collapsedHeader).toMatch(/border-bottom-color:\s*transparent/);
+    // 保持标题区原有的右对齐，不额外覆盖 auto 外边距。
+    expect(ruleFor(css, ".chat-collapse-toggle")).toMatch(/margin-left:\s*auto/);
+    expect(ruleFor(css, '.agent-page-layout[data-chat-collapsed="true"] .chat-collapse-toggle')).not.toMatch(/margin-left/);
+    // 窄屏聊天区在画布下方，收起后按钮固定在视口右上角。
+    expect(css).toContain('.agent-page-layout[data-chat-collapsed="true"] .agent-dock-header { top: 18px; right: 8px; min-height: 0; margin: 0; padding: 0; }');
   });
 
   it("让 Dock 收缩到视口内并把超长会话交给日志区域滚动", async () => {

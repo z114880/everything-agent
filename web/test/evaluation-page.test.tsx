@@ -198,10 +198,13 @@ it('页面常驻展示数据集 Metadata 默认值与 Experiment 采用的配置
   expect(heading!.querySelector('h2')?.textContent).toBe('数据集与实验');
   const description = heading!.querySelector('p');
   expect(description?.textContent).toBe('选择 Langfuse 数据集后在本机启动 Experiment，执行过程与平台入口共用，需要审批时暂停该用例。');
-  // relative 为绝对定位的触发入口提供参照，说明行本身仍走 eval-panel-description 的左右排列
-  expect(description?.parentElement?.classList.contains('eval-panel-description')).toBe(true);
-  expect(description?.parentElement?.classList.contains('relative')).toBe(true);
-  expect(description?.nextElementSibling?.contains(guideButton!)).toBe(true);
+  // 触发入口是说明行的同级 flex 项：宽屏并排、窄屏换行，不再用 absolute 脱离文档流去做偏移
+  const descriptionRow = description?.parentElement;
+  expect(descriptionRow?.classList.contains('eval-panel-description')).toBe(true);
+  expect(descriptionRow?.contains(guideButton!)).toBe(true);
+  expect(guideButton!.parentElement).toBe(descriptionRow);
+  expect(guideButton!.classList.contains('absolute')).toBe(false);
+  expect(descriptionRow!.classList.contains('relative')).toBe(false);
   await openGuide();
   expect(document.body.textContent).toContain('via Webhook');
   expect(document.body.textContent).toContain('Set up remote experiment trigger in UI');
@@ -235,7 +238,8 @@ it('运行区提示列出用例输入支持的三种写法', async () => {
   await act(async () => root.render(<EvaluationPage />));
   const launch = container.querySelector('[aria-label="数据集与实验"]')!;
   const note = [...launch.querySelectorAll('p')].find(item => item.textContent?.includes('输入支持字符串'));
-  expect(note?.className).toBe('eval-note');
+  // 提示段落允许叠加间距工具类（如 pt-2），这里只校验它仍走 eval-note 样式
+  expect(note?.className).toContain('eval-note');
   expect(note?.textContent).toBe('输入支持字符串、{ prompt } 或 { turns: ["第一轮", "第二轮"] }。');
 });
 it('平台启动说明与 Langfuse v4 实际界面一致，不残留不存在的老文案', async () => {
