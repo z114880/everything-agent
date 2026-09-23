@@ -120,8 +120,22 @@ describe("Agent 会话窗口布局", () => {
     // 保持标题区原有的右对齐，不额外覆盖 auto 外边距。
     expect(ruleFor(css, ".chat-collapse-toggle")).toMatch(/margin-left:\s*auto/);
     expect(ruleFor(css, '.agent-page-layout[data-chat-collapsed="true"] .chat-collapse-toggle')).not.toMatch(/margin-left/);
-    // 窄屏聊天区在画布下方，收起后按钮固定在视口右上角。
-    expect(css).toContain('.agent-page-layout[data-chat-collapsed="true"] .agent-dock-header { top: 18px; right: 8px; min-height: 0; margin: 0; padding: 0; }');
+    // 窄屏聊天区在画布下方，收起后按钮固定在视口右上角，与左侧展开侧边栏的按钮同高。
+    expect(css).toContain('.agent-page-layout[data-chat-collapsed="true"] .agent-dock-header { top: var(--panel-toggle-top); right: 8px; min-height: 0; margin: 0; padding: 0; }');
+  });
+
+  it("左右两侧贴视口的展开按钮落在同一条水平线上", async () => {
+    const css = await readFile(stylePath, "utf8");
+    const header = ruleFor(css, ".agent-dock-header");
+    const toggleHeight = pixelsOf(ruleFor(css, ".panel-collapse-toggle"), "height", "面板收起按钮高度");
+    const headerPadding = pixelsOf(header, "padding", "标题区纵向内边距");
+    const headerMinHeight = pixelsOf(header, "min-height", "标题区最小高度");
+    const headerBorder = pixelsOf(header, "border-bottom", "标题区底边线");
+
+    // 右侧按钮的高度线由标题区盒模型推出：内边距 + 内容框内居中。
+    const chatToggleTop = headerPadding + (headerMinHeight - headerPadding * 2 - headerBorder - toggleHeight) / 2;
+    expect(pixelsOf(css, "--panel-toggle-top", "面板按钮水平线")).toBe(chatToggleTop);
+    expect(ruleFor(css, ".panel-collapse-toggle.sidebar-reopen")).toMatch(/top:\s*var\(--panel-toggle-top\)/);
   });
 
   it("让 Dock 收缩到视口内并把超长会话交给日志区域滚动", async () => {
@@ -184,6 +198,14 @@ function ruleFor(css: string, selector: string): string {
   const match = css.match(new RegExp(`${escapedSelector}\\s*\\{([^}]*)\\}`));
   expect(match, `缺少 ${selector} 样式规则`).not.toBeNull();
   return match?.[1] ?? "";
+}
+
+/** 取声明块或整份样式里某个属性/自定义属性的首个 px 数值，用于校验跨组件的对齐关系。 */
+function pixelsOf(source: string, property: string, label: string): number {
+  const escapedProperty = property.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = source.match(new RegExp(`${escapedProperty}\\s*:\\s*(-?\\d+(?:\\.\\d+)?)px`));
+  expect(match, `无法从「${label}」解析 ${property} 的像素值`).not.toBeNull();
+  return Number(match?.[1]);
 }
 
 function compactSource(source: string): string {

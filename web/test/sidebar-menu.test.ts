@@ -53,7 +53,8 @@ describe("侧栏菜单", () => {
     expect(styles).toContain("border: 1px solid transparent; border-radius: 7px; background: transparent;");
     expect(styles).toContain(".panel-collapse-toggle:hover { border-color: var(--line); background: #ffffffb8;");
     expect(styles).toContain(".panel-collapse-toggle.sidebar-reopen { position: fixed;");
-    expect(styles).toContain("top: 18px; left: 8px;");
+    // 与聊天区收起后的展开按钮共用同一条水平线，高度对齐。
+    expect(styles).toContain("top: var(--panel-toggle-top); left: 12px;");
     expect(source).toContain('id="app-sidebar"');
     expect(source).toContain('aria-controls="app-sidebar"');
     expect(source).toContain("aria-expanded={sidebarOpen}");
