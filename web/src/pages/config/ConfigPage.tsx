@@ -71,12 +71,12 @@ type NumericInputValue = number | "";
 export function ConfigPage() {
   const [settings, setSettings] = useState<AgentSettings | null>(null);
   const [agentProvider, setAgentProvider] =
-    useState<AgentProvider>("anthropic");
+    useState<AgentProvider>("openai-compatible");
   const [agentModel, setAgentModel] = useState("");
   const [agentBaseUrl, setAgentBaseUrl] = useState("");
   const [agentApiKey, setAgentApiKey] = useState("");
   const [smallProvider, setSmallProvider] =
-    useState<AgentProvider>("anthropic");
+    useState<AgentProvider>("openai-compatible");
   const [smallModel, setSmallModel] = useState("");
   const [smallBaseUrl, setSmallBaseUrl] = useState("");
   const [smallApiKey, setSmallApiKey] = useState("");
