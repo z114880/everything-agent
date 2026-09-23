@@ -448,6 +448,7 @@ button:disabled { cursor: not-allowed; }
 /* Skills：左侧目录负责选择，右侧编辑器直接映射 SKILL.md。 */
 .tools-page code { font-family: var(--font-mono); font-size: .92em; }
 .save-message, .skills-message, .tools-toast { position: fixed; top: 20px; left: 50%; z-index: 100; display: flex; align-items: center; gap: 7px; border: 1px solid #cfe9dc; border-radius: 9px; box-shadow: 0 8px 24px rgb(32 67 50 / 14%); background: var(--good-soft); padding: 10px 12px; color: #287653; font-size: 11px; pointer-events: none; animation: tools-toast-lifecycle 2.5s ease both; }
+.save-message--error { border-color: #f2c6c1; box-shadow: 0 8px 24px rgb(120 40 40 / 14%); background: #fff0ef; color: #c0392b; }
 .tools-page > .error-message { margin: 0 0 14px; }
 .tools-loading { display: grid; min-height: 240px; place-items: center; color: var(--muted); font-size: 12px; }
 .tools-section { margin-top: 22px; }

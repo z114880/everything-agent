@@ -34,14 +34,18 @@ export function EvaluationPage() {
   const [error, setError] = useState('');
   /** 操作失败提示，留在页面内常驻展示，与轮询错误合并显示。 */
   const [actError, setActError] = useState('');
-  /** 操作成功反馈，交给 SaveMessage 浮层展示并在 2.5 秒后消失，不在页面里占位。 */
+  /** 操作反馈，交给 SaveMessage 浮层展示并在 2.5 秒后消失，不在页面里占位。 */
   const [message, setMessage] = useState('');
+  /** 浮层提示类型：成功默认绿色，错误使用与页面 alert 一致的红色警告样式。 */
+  const [messageVariant, setMessageVariant] = useState<'success' | 'error'>('success');
   const [busy, setBusy] = useState(false);
   /** 连接平台动画：与 busy 分开，避免其他操作顺带在连接按钮上转圈。 */
   const [connecting, setConnecting] = useState(false);
   /** 按运行标识绑定刷新动画，切换记录时不会误显示在其他 Experiment 上。 */
   const [refreshingRunId, setRefreshingRunId] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
+  /** 设置浮层提示并同步其类型，避免上一次错误样式残留到下一次成功反馈上。 */
+  const showMessage = (text: string, variant: 'success' | 'error' = 'success') => { setMessageVariant(variant); setMessage(text); };
   useEffect(() => {
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
@@ -61,7 +65,7 @@ export function EvaluationPage() {
     try {
       const execute = async () => { await evaluationRequest('', body); return evaluationRequest<EvaluationDashboard>(); };
       setData(await (refreshing ? withMinimumDuration(execute) : execute()));
-      if (refreshing) setMessage('评分刷新／同步重试已完成，请查看最新评分与同步状态。');
+      if (refreshing) showMessage('评分刷新／同步重试已完成，请查看最新评分与同步状态。');
     }
     catch (cause) { setActError(errorText(cause)); }
     finally { setBusy(false); if (refreshing) setRefreshingRunId(null); }
@@ -73,20 +77,20 @@ export function EvaluationPage() {
     try {
       const result = await withMinimumDuration(() => evaluationRequest<{ datasets: typeof datasets }>('/datasets'));
       setDatasets(result.datasets); setDataset(result.datasets[0]?.name ?? ''); setConnected(true);
-      setMessage(`平台连接正常，已发现 ${result.datasets.length} 个数据集。`);
+      showMessage(`平台连接正常，已发现 ${result.datasets.length} 个数据集。`);
     }
     catch (cause) {
       setConnected(false);
       const text = errorText(cause);
       // 轮询已在 alert 区常驻展示同一个连接错误时，不再改写 alert（避免文案跳动与页面漂移），改为浮层再提示一次。
-      if (text && text === (error || data?.error)) setMessage(text);
+      if (text && text === (error || data?.error)) showMessage(text, 'error');
       else setActError(text);
     }
     finally { setBusy(false); setConnecting(false); }
   };
   const copyHeaders = async () => {
     setActError('');
-    try { const headers = await evaluationRequest<{ Authorization: string }>('/webhook-headers', {}); await navigator.clipboard.writeText(headers.Authorization); setMessage('authorization 值已复制，请在 Langfuse 添加请求头。'); }
+    try { const headers = await evaluationRequest<{ Authorization: string }>('/webhook-headers', {}); await navigator.clipboard.writeText(headers.Authorization); showMessage('authorization 值已复制，请在 Langfuse 添加请求头。'); }
     catch (cause) { setMessage(''); setActError(errorText(cause)); }
   };
   const run = data?.runs.find(item => item.id === selected) ?? data?.runs[0];
@@ -101,7 +105,7 @@ export function EvaluationPage() {
   const syncedCount = run ? run.items.filter(item => item.sync === 'synced').length : 0;
   return <div className="content-wrap evaluation-page">
     <PageHeading eyebrow="真实环境评估" title="Evaluation" description="用真实 Everything Agent 执行 Langfuse 数据集，独立保存评估会话和记忆。" />
-    <SaveMessage message={message} setMessage={setMessage} />
+    <SaveMessage message={message} setMessage={setMessage} variant={messageVariant} />
     {alert && <div className="error-message" role="alert">{alert}</div>}
 
     <section className="eval-panel" aria-label="Langfuse 连接">

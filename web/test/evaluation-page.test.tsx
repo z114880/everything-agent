@@ -209,7 +209,7 @@ it('未配置时连接失败沿用轮询已展示的同一错误，浮层再提�
   // 相同错误不再覆盖 alert，避免出现「Error: 缺少…」与「缺少…」两种文案导致页面漂移
   expect(container.querySelector('[role="alert"]')?.textContent).toBe('缺少 Langfuse 项目 ID 或 API 凭证');
   const toast = container.querySelector('[role="status"]');
-  expect(toast?.className).toBe('save-message');
+  expect(toast?.className).toContain('save-message--error');
   expect(toast?.textContent).toContain('缺少 Langfuse 项目 ID 或 API 凭证');
 });
 
