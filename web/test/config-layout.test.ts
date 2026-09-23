@@ -22,7 +22,7 @@ describe("配置页布局", () => {
     expect(styles).toContain(".config-retrieval-card { grid-column: 2; }");
     expect(styles).toContain(".config-runtime-card { grid-column: 1 / -1; }");
     expect(styles).toContain(".config-runtime-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }");
-    expect(styles).toContain(".config-grid { grid-template-columns: 1fr; }");
+    expect(styles).toContain(".config-grid { grid-template-columns: minmax(0, 1fr); }");
   });
 
   it("配置、Memory 与 Trace 页面使用和 Agent 主区一致的宽内容布局", async () => {
@@ -110,4 +110,14 @@ it("Sandbox 在运行参数上方全宽显示，输入区不嵌套双列布局",
   expect(section).toContain('className="config-card-content"');
   expect(section).not.toContain('className="config-grid"');
   expect(styles).toContain(".config-sandbox-card { grid-column: 1 / -1; }");
+});
+
+it("窄屏单列不因长路径顶宽轨道，危险区域正文可任意位置断行", async () => {
+  const styles = await readFile(styleSheet, "utf8");
+
+  // 裸 1fr 的最小尺寸取内容的 min-content，危险区域里的 .everything/... 路径会把整页顶出横向滚动。
+  expect(styles).toContain(".config-grid { grid-template-columns: minmax(0, 1fr); }");
+  expect(styles).not.toContain(".config-grid { grid-template-columns: 1fr; }");
+  expect(styles).toMatch(/\.config-danger-body p \{[^}]*overflow-wrap: anywhere;/);
+  expect(styles).toMatch(/\.config-danger-body > div \{ min-width: 0; \}/);
 });

@@ -341,6 +341,10 @@ button:disabled { cursor: not-allowed; }
 .config-runtime-card { grid-column: 1 / -1; }
 .config-sandbox-card { grid-column: 1 / -1; }
 .config-card-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); padding: 18px 20px; }
+/* Badge 换行或被挪到第二列时靠左对齐，避免被同行居中内容挤到中间。 */
+.config-card-header > [data-slot="badge"] { justify-self: start; }
+/* 卡片正文里的子块可以收缩到内容最小宽度以下，防止长字符串顶宽整张卡片。 */
+.config-card-content > * { min-width: 0; }
 .config-card-header h3 { font-size: 14px; }
 .config-card-header p { margin: 5px 0 0; font-size: 11px; }
 .config-card-icon { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 10px; background: var(--accent-soft); color: var(--accent); }
@@ -366,8 +370,11 @@ button:disabled { cursor: not-allowed; }
 .config-feedback { grid-column: 1 / -1; }
 .config-danger-card { grid-column: 1 / -1; border-color: #efd2cf; }
 .config-danger-body { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 20px; padding: 18px 20px 20px; }
+/* 正文块要能收缩到内容最小宽度以下，否则 .everything/... 这类不可断行的路径会把整张卡片撑宽。 */
+.config-danger-body > div { min-width: 0; }
 .config-danger-body strong { color: #673d39; font-size: 12px; }
-.config-danger-body p { max-width: 760px; margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+/* 路径中的 `/` 与连写的 code 不提供断行点，窄屏必须允许在任意位置换行才不产生横向滚动。 */
+.config-danger-body p { max-width: 760px; margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
 .config-danger-message { grid-column: 1 / -1; color: var(--muted); font-size: 11px; }
 .loading-panel, .error-panel { padding: 30px; color: var(--muted); font-size: 12px; }
 .error-panel { color: #be4035; }
@@ -742,7 +749,8 @@ button:disabled { cursor: not-allowed; }
   .workspace-grid { grid-template-columns: 1fr; }
   .analysis-grid { --analysis-height: 518px; grid-template-columns: 1fr; }
   .graph-scroll { height: 500px; }
-  .config-grid { grid-template-columns: 1fr; }
+  /* 单列仍用 minmax(0, 1fr)：裸 1fr 的最小值是内容的 min-content，长路径会把轨道顶出容器。 */
+  .config-grid { grid-template-columns: minmax(0, 1fr); }
   .config-model-card, .config-retrieval-card, .config-runtime-card { grid-column: 1; grid-row: auto; }
   .config-runtime-card { position: static; }
 }
