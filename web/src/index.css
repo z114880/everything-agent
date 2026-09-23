@@ -594,6 +594,10 @@ button:disabled { cursor: not-allowed; }
 /* 分区操作与标题块同行左右排列：宽屏靠右与标题、说明共用一条中线，放不下时整行换到标题块下方。
    按钮不是说明行内的项，因此不会把说明文字挤成额外的行。 */
 .eval-guide-trigger { flex: 0 1 auto; max-width: 100%; }
+/* 按钮组件默认 white-space: nowrap，窄屏时文案只能被挤窄。这里放开换行，同时把固定高度改为自适应，
+   宽度不够时文案在按钮内部折行、按钮随行数长高；宽屏一行放得下时外观与其它 size="sm" 按钮一致。 */
+.eval-guide-trigger > span { white-space: normal; align-items: center; }
+button.eval-guide-trigger { height: auto; min-height: 32px; padding-top: 5px; padding-bottom: 5px; }
 .eval-panel-actions, .eval-detail-actions, .eval-approval-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .eval-panel-body { min-width: 0; }
 .eval-panel-body > * + * { margin-top: 14px; }
