@@ -658,10 +658,20 @@ button:disabled { cursor: not-allowed; }
 .eval-detail-heading p { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .eval-detail > .eval-panel-body { padding: 20px 24px 22px; }
 .eval-detail > .eval-panel-body > * + * { margin-top: 16px; }
-/* 配置事实按标签列对齐，数值用等宽数字，长名称在窄屏换行而不是撑破卡片。 */
-.eval-facts { display: grid; margin: 0; border: 1px solid var(--line); border-radius: 11px; background: var(--panel-soft); padding: 14px 16px; gap: 10px 20px; }
-.eval-facts > p { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; gap: 10px; margin: 0; color: var(--ink); font-size: 13px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.eval-facts > p > span { color: var(--muted); font-family: var(--font-mono); font-size: 11px; }
+/* 配置事实按标签列对齐，数值用等宽数字，长名称换行而不是撑破卡片。
+   列数只取决于卡片自身宽度：详情卡片会被 232px 侧栏和页面内边距压缩，
+   按视口宽度切换列数会让值列在窄卡片里被 max-content 标签挤成逐字换行。 */
+.eval-facts { display: grid; container-type: inline-size; margin: 0; border: 1px solid var(--line); border-radius: 11px; background: var(--panel-soft); padding: 14px 16px; gap: 10px 20px; }
+.eval-facts > p { display: grid; min-width: 0; grid-template-columns: minmax(96px, max-content) minmax(0, 1fr); align-items: start; gap: 10px; margin: 0; color: var(--ink); font-size: 13px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.eval-facts > p > span { min-width: 0; color: var(--muted); font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
+/* 两列阈值保证分列后每列至少 290px，让 Experiment 名称与数据集版本仍有约 190px 可写。 */
+@container eval-facts (width >= 640px) {
+  .eval-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* 卡片过窄时标签退到值上方，避免值列只剩几十像素。 */
+@container eval-facts (width < 400px) {
+  .eval-facts > p { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
 .eval-error-text { margin: 0; color: #be4035; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
 .eval-items { display: grid; gap: 12px; }
 .eval-item { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
@@ -695,10 +705,6 @@ button:disabled { cursor: not-allowed; }
 }
 @media (min-width: 760px) {
   .eval-value-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .eval-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (min-width: 1080px) {
-  .eval-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (min-width: 1180px) {
   .eval-workspace { grid-template-columns: minmax(0, 380px) minmax(0, 1fr); }
@@ -711,7 +717,6 @@ button:disabled { cursor: not-allowed; }
   .eval-detail-header { padding: 16px; }
   .eval-detail > .eval-panel-body { padding: 16px; }
   .eval-field-list > div { grid-template-columns: minmax(0, 1fr); }
-  .eval-facts > p { grid-template-columns: minmax(0, 1fr); gap: 2px; }
 }
 
 /* 可展开的用例与事件用纯 CSS 三角提示展开方向，不额外增加节点或图标依赖。 */
