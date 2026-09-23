@@ -31,7 +31,7 @@ Memory 模块为 classic Agent Loop 提供单用户、本地优先的持久记�
 - .everything/database/state.db 是 Session、Chat Log 和 Semantic Memory 的事实来源；SQLite 生成的 WAL 和 SHM 文件也位于该目录。
 - .everything/EVERYTHING.md 是始终进入 System Prompt 的 Procedural Memory。
 - Episodic Memory 不再保存模型生成的 Session 摘要。Episodic Recall 的唯一事实来源是原始 chat_log。
-- chat_log_fts 只索引 user_message 与最终 assistant_message 的检索投影。Session 与 Semantic 统一使用 nodejieba 搜索模式、英文连续字母数字和 identifier 整体/组成词投影；使用 NFKC 与 lowercase，保留原文词频。
+- chat_log_fts 只索引 user_message 与最终 assistant_message 的检索投影。Session 与 Semantic 统一使用 @node-rs/jieba 搜索模式、英文连续字母数字和 identifier 整体/组成词投影；使用 NFKC 与 lowercase，保留原文词频。
 - 工具调用和工具结果不进入 FTS，但命中范围恢复时会按完整 run 一并返回。
 - FTS5 + BM25 与 Dense 是相互独立的召回路线；Hybrid 使用固定等权 RRF，再用 MMR 去除近似重复结果。
 - API Key、令牌、Authorization 和 Cookie 等凭证字段在写入 Chat Log 前移除。

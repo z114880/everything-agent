@@ -200,7 +200,7 @@ interface TokenEstimator {
 
 Session FTS 与 Semantic FTS 的写入、更新和查询共用同一检索投影：
 
-- 中文使用 `nodejieba.cutForSearch(text, true)`，开启 HMM，使用默认词典；不再自行生成 bigram。不配置停用词表，保留单字词。
+- 中文使用 `@node-rs/jieba` 的 `Jieba.withDict(dict)` 实例调用 `cutForSearch(text, true)`，开启 HMM，使用默认词典；不再自行生成 bigram。不配置停用词表，保留单字词。
 - 英文保留连续字母数字，不做词干化；其他非汉字文字保留连续 Unicode 字母数字。
 - identifier 同时保留整体和组成词，支持 `_`、`-`、`.`、`C++`、`C#`、`@scope/pkg`；驼峰在小写化前拆分，例如 `getUserInfo` → `getuserinfo get user info`。
 - 路径按目录和文件名拆分，不额外索引完整路径。
@@ -209,7 +209,7 @@ Session FTS 与 Semantic FTS 的写入、更新和查询共用同一检索投影
 
 搜索模式仍会输出词典中的短词，不意味着禁用所有二字词。例如当前默认词典会把“数据库”展开为“数据 / 据库 / 数据库”，而“长江大桥”不会自行生成“江大”。短词与完整词按现有 OR 规则召回，完整名称命中可参与 BM25 评分，但不保证在所有语料中总排第一。
 
-本地分词依赖 `nodejieba` 原生扩展，不启动 Python 或远程服务。词典首次使用时加载，安装由 pnpm 配置允许执行原生构建脚本；安装工具链的 tar 通过限定范围的 override 使用修复版本。仓库中的最小 pnpm 补丁让安装脚本直接使用本地锁定的 node-pre-gyp。
+本地分词依赖 `@node-rs/jieba` 原生扩展，不启动 Python 或远程服务。默认词典在模块加载时通过 `Jieba.withDict(dict)` 初始化一次；包通过 optionalDependencies 提供各平台预编译二进制，无需本地编译或构建脚本。
 
 Token 估算不参与 FTS5；Lexical 检索继续使用独立的中英文规范化规则。
 

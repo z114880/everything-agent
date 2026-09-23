@@ -162,7 +162,7 @@ flowchart TD
 
 **启动时提示 Node.js、SQLite 或原生模块错误？**
 
-先用 `node --version` 确认运行版本不低于 24.12，再执行 `npm install` 或 `pnpm install`。项目使用 Node.js 内置 SQLite 和 nodejieba 原生分词模块；如果 nodejieba 安装失败，请根据安装日志检查当前平台的编译环境和依赖构建是否被阻止。
+先用 `node --version` 确认运行版本不低于 24.12，再执行 `npm install` 或 `pnpm install`。项目使用 Node.js 内置 SQLite 和 @node-rs/jieba 原生分词模块（平台预编译二进制，无需本地编译）；如果 @node-rs/jieba 安装失败，请根据安装日志检查当前平台是否有对应的预编译包。
 
 **能打开页面，但无法发送消息？**
 

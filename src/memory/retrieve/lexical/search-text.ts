@@ -1,4 +1,8 @@
-import nodejieba from "nodejieba";
+import { Jieba } from "@node-rs/jieba";
+import { dict } from "@node-rs/jieba/dict.js";
+
+// 使用默认词典初始化一次；实例只读，可在多次调用间复用。
+const jieba = Jieba.withDict(dict);
 
 const HAN_RUN = /^(?:\p{Script=Han})+$/u;
 // 路径分隔符只在 @scope/pkg 中属于整体；其余路径自然分成目录和文件名。
@@ -11,7 +15,7 @@ export function toSearchText(value: string): string {
   for (const run of value.normalize("NFKC").split(/(\p{Script=Han}+)/u)) {
     if (HAN_RUN.test(run)) {
       // 搜索模式按原文位置输出词元，同词在不同位置的重复不能去重。
-      for (const word of nodejieba.cutForSearch(run, true)) tokens.push(word);
+      for (const word of jieba.cutForSearch(run, true)) tokens.push(word);
       continue;
     }
     for (const match of run.matchAll(IDENTIFIERS)) {
