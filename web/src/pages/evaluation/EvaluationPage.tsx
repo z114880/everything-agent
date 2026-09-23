@@ -19,6 +19,10 @@ const maxNameLength = 120;
 const datasetMetadataJson = '{"terminal":false,"memorySnapshot":false}';
 /** Remote experiment trigger 的 Default config 文本，同样只保留一份。 */
 const defaultConfigJson = '{"name":"Everything Agent"}';
+/** 提取错误文案：Error 对象只取 message，避免 String(error) 自带的「Error:」前缀让同一条提示出现两种写法。 */
+function errorText(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
 /** 真实评估控制台；运行留在服务端，离开页面不会取消 Experiment。 */
 export function EvaluationPage() {
   const [data, setData] = useState<EvaluationDashboard>();
@@ -43,7 +47,7 @@ export function EvaluationPage() {
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try { const result = await evaluationRequest<EvaluationDashboard>(); if (!disposed) { setData(result); setError(''); } }
-      catch (cause) { if (!disposed) setError(String(cause)); }
+      catch (cause) { if (!disposed) setError(errorText(cause)); }
       finally { if (!disposed) timer = setTimeout(() => { void poll(); }, 2000); }
     };
     void poll();
@@ -59,7 +63,7 @@ export function EvaluationPage() {
       setData(await (refreshing ? withMinimumDuration(execute) : execute()));
       if (refreshing) setMessage('评分刷新／同步重试已完成，请查看最新评分与同步状态。');
     }
-    catch (cause) { setActError(String(cause)); }
+    catch (cause) { setActError(errorText(cause)); }
     finally { setBusy(false); if (refreshing) setRefreshingRunId(null); }
   };
   /** 连接平台：最短反馈时长保证旋转动画可见，成功后给出已发现的数据集数量。 */
@@ -71,13 +75,19 @@ export function EvaluationPage() {
       setDatasets(result.datasets); setDataset(result.datasets[0]?.name ?? ''); setConnected(true);
       setMessage(`平台连接正常，已发现 ${result.datasets.length} 个数据集。`);
     }
-    catch (cause) { setActError(String(cause)); setConnected(false); }
+    catch (cause) {
+      setConnected(false);
+      const text = errorText(cause);
+      // 轮询已在 alert 区常驻展示同一个连接错误时，不再改写 alert（避免文案跳动与页面漂移），改为浮层再提示一次。
+      if (text && text === (error || data?.error)) setMessage(text);
+      else setActError(text);
+    }
     finally { setBusy(false); setConnecting(false); }
   };
   const copyHeaders = async () => {
     setActError('');
     try { const headers = await evaluationRequest<{ Authorization: string }>('/webhook-headers', {}); await navigator.clipboard.writeText(headers.Authorization); setMessage('authorization 值已复制，请在 Langfuse 添加请求头。'); }
-    catch (cause) { setMessage(''); setActError(String(cause)); }
+    catch (cause) { setMessage(''); setActError(errorText(cause)); }
   };
   const run = data?.runs.find(item => item.id === selected) ?? data?.runs[0];
   const pageCount = Math.max(1, Math.ceil((data?.runs.length ?? 0) / 10));

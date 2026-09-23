@@ -198,6 +198,20 @@ it('连接平台失败时停止动画，只用页面内错误提示', async () =
   expect(container.querySelector('[role="alert"]')?.textContent).toContain('平台断开');
   expect(container.querySelector('[role="status"]')).toBeNull();
 });
+it('未配置时连接失败沿用轮询已展示的同一错误，浮层再提示而不改写 alert', async () => {
+  const unconfigured = structuredClone(dashboard); unconfigured.configured = false; unconfigured.error = '缺少 Langfuse 项目 ID 或 API 凭证';
+  request.mockResolvedValue(unconfigured);
+  await act(async () => root.render(<EvaluationPage />));
+  // 轮询已把连接错误常驻展示在 alert 区，且不带「Error:」前缀
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe('缺少 Langfuse 项目 ID 或 API 凭证');
+  request.mockRejectedValueOnce(new Error('缺少 Langfuse 项目 ID 或 API 凭证'));
+  await connectToPlatform();
+  // 相同错误不再覆盖 alert，避免出现「Error: 缺少…」与「缺少…」两种文案导致页面漂移
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe('缺少 Langfuse 项目 ID 或 API 凭证');
+  const toast = container.querySelector('[role="status"]');
+  expect(toast?.className).toBe('save-message');
+  expect(toast?.textContent).toContain('缺少 Langfuse 项目 ID 或 API 凭证');
+});
 
 it('页面常驻展示数据集 Metadata 默认值与 Experiment 采用的配置，平台步骤只在弹窗出现', async () => {
   const data = structuredClone(dashboard); data.runs[0]!.terminalEnabled = true; request.mockResolvedValue(data);
