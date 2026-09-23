@@ -93,6 +93,26 @@ it('执行完成但没有评分时明确等待，不宣称质量通过', async (
   expect(container.textContent).toContain('执行完成不代表质量通过'); expect(container.textContent).toContain('等待平台评分');
   await click('刷新评分'); expect(request).toHaveBeenCalledWith('', { action: 'refresh', runId: 'run' });
 });
+it.each([false, true])('刷新评分显示独立加载反馈并在结束后恢复，失败=%s', async (failed) => {
+  await act(async () => root.render(<EvaluationPage />));
+  if (failed) request.mockRejectedValueOnce(new Error('评分刷新失败'));
+  const button = [...container.querySelectorAll('button')].find(item => item.textContent?.includes('刷新评分'))!;
+  await click('刷新评分');
+  expect(button.getAttribute('aria-busy')).toBe('true');
+  expect(button.disabled).toBe(true);
+  expect(button.querySelector('[data-slot="button-loading-indicator"]')).not.toBeNull();
+  expect(connectButton().spinning).toBe(false);
+  await click('刷新评分');
+  expect(request.mock.calls.filter(([, body]) => body?.action === 'refresh')).toHaveLength(1);
+  await act(async () => vi.advanceTimersByTimeAsync(MINIMUM_FEEDBACK_DURATION_MS - 1));
+  expect(button.disabled).toBe(true);
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  expect(button.getAttribute('aria-busy')).not.toBe('true');
+  expect(button.disabled).toBe(false);
+  expect(button.querySelector('[data-slot="button-loading-indicator"]')).toBeNull();
+  if (failed) expect(container.querySelector('[role="alert"]')?.textContent).toContain('评分刷新失败');
+  else expect(container.textContent).toContain('评分刷新／同步重试已完成');
+});
 it('审批请求携带 Experiment 和用例身份，离开页面不取消后台运行', async () => {
   const waiting = structuredClone(dashboard); waiting.runs[0]!.status = 'running'; waiting.approvals = [{ id: 'approval', runId: 'run', itemId: 'item', command: 'git push', reason: '外部写入' }]; request.mockResolvedValue(waiting);
   await act(async () => root.render(<EvaluationPage />));

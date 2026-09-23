@@ -13,6 +13,8 @@ pnpm run dev:web
 
 打开 Evaluation → 连接平台，选择数据集，可按需填写 Experiment 名称前缀，点击「Run Experiment」即可从本地发起运行。
 
+「刷新评分／重试同步」与「连接平台」使用相同的加载反馈：请求期间按钮转圈并禁用，至少显示 300ms；请求完成后显示提示，失败时在页面内展示错误。刷新请求完成不代表已经收到评分或全部同步成功，具体结果以记录中的状态为准。
+
 在 Langfuse 中选择数据集 → 进入 **Experiments** 标签页 → 右上角 **Run experiment** → 在 **Run Experiment** 弹窗里选 **via Webhook** 卡片：
 
 - 首次点击卡片上的 Configure，进入 **Set up remote experiment trigger in UI**。URL 填回调地址 `http://evaluation-gateway/trigger`。该地址是 Docker 内部网关，平台会提示明文 HTTP，属预期提示。

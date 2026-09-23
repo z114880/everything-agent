@@ -623,9 +623,9 @@ button:disabled { cursor: not-allowed; }
 .eval-config-card > header { display: grid; min-width: 0; gap: 3px; }
 .eval-config-card > header > span { color: var(--muted); font-size: 11px; font-weight: 500; line-height: 1.5; }
 .eval-field-list { display: grid; gap: 8px; margin: 0; }
-.eval-field-list > div { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; gap: 4px 10px; }
-.eval-field-list dt { border-radius: 6px; background: var(--accent-soft); padding: 2px 7px; color: var(--accent-foreground); font-family: var(--font-mono); font-size: 11px; }
-.eval-field-list dd { margin: 0; color: #3f4c63; font-size: 13px; line-height: 1.7; }
+.eval-field-list > div { color: #3f4c63; font-size: 13px; line-height: 1.7; }
+.eval-field-list dt, .eval-field-list dd { display: inline; margin: 0; }
+.eval-field-list dt::after { content: "："; }
 .eval-config-footnote { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.65; }
 .eval-launch-form { display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
 .eval-field { display: grid; min-width: 0; gap: 7px; }
@@ -665,7 +665,7 @@ button:disabled { cursor: not-allowed; }
 .eval-status-failed, .eval-status-cancelled { border-color: #f3cdd2; background: var(--destructive-soft); color: #b23a48; }
 .eval-status-waiting_approval, .eval-status-interrupted { border-color: #f0d8bd; background: var(--warn-soft); color: #995c10; }
 .eval-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid var(--line); padding-top: 14px; }
-.eval-pagination-page { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.eval-pagination-page, .trace-pagination-page { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .eval-detail { gap: 0; padding: 0; overflow: hidden; }
 .eval-detail > .eval-empty { padding: 26px 24px; }
 .eval-detail-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 18px; border-bottom: 1px solid var(--line); background: var(--panel-soft); padding: 18px 24px; }
@@ -727,14 +727,12 @@ button:disabled { cursor: not-allowed; }
 }
 @media (max-width: 760px) {
   .eval-panel { padding: 18px 16px; }
-  /* 手机模式下入口按钮排到说明文字下方并铺满一行：flex 换行本就落在最后一行，这里再显式排到最后，
-     同时强制不收缩，按钮文字保持单行、不被折行或被压窄。 */
-  .eval-guide-trigger { order: 3; width: 100%; flex: 0 0 auto; }
-  .eval-guide-trigger > span { white-space: nowrap; }
+  /* 手机模式下图标与文字保持两列，配置入口放在下方并保留原始大小，避免挤压说明文字。 */
+  .eval-launch > .eval-panel-header { display: grid; grid-template-columns: 34px minmax(0, 1fr); }
+  .eval-guide-trigger { grid-column: 2; justify-self: start; }
   .eval-detail { padding: 0; }
   .eval-detail-header { padding: 16px; }
   .eval-detail > .eval-panel-body { padding: 16px; }
-  .eval-field-list > div { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* 可展开的用例用纯 CSS 三角提示展开方向，不额外增加节点或图标依赖。 */
@@ -904,5 +902,11 @@ button:disabled { cursor: not-allowed; }
 /* 分页位于记录列表底部，小屏自动换行，避免遮挡展开的 JSON。 */
 .trace-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 20px; padding: 14px 0; border-top: 1px solid var(--line); }
 .trace-pagination-summary { color: var(--muted); font-size: 12px; }
-.trace-pagination-controls { display: flex; align-items: center; gap: 12px; }
-.trace-pagination-page { min-width: 64px; text-align: center; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.trace-pagination-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+@media (min-width: 761px) {
+  .trace-pagination-controls { gap: 24px; }
+}
+@media (max-width: 760px) {
+  /* 窄屏分页与 Experiment 记录一致：上一页靠左、页码居中、下一页靠右。 */
+  .trace-pagination-controls { width: 100%; }
+}

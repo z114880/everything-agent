@@ -35,6 +35,8 @@ export function EvaluationPage() {
   const [busy, setBusy] = useState(false);
   /** 连接平台动画：与 busy 分开，避免其他操作顺带在连接按钮上转圈。 */
   const [connecting, setConnecting] = useState(false);
+  /** 按运行标识绑定刷新动画，切换记录时不会误显示在其他 Experiment 上。 */
+  const [refreshingRunId, setRefreshingRunId] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   useEffect(() => {
     let disposed = false;
@@ -48,10 +50,17 @@ export function EvaluationPage() {
     return () => { disposed = true; clearTimeout(timer); };
   }, []);
   const act = async (body: Record<string, unknown>) => {
+    if (busy) return;
+    const refreshing = body.action === 'refresh';
     setBusy(true); setMessage(''); setActError('');
-    try { await evaluationRequest('', body); setData(await evaluationRequest<EvaluationDashboard>()); }
+    if (refreshing) setRefreshingRunId(String(body.runId));
+    try {
+      const execute = async () => { await evaluationRequest('', body); return evaluationRequest<EvaluationDashboard>(); };
+      setData(await (refreshing ? withMinimumDuration(execute) : execute()));
+      if (refreshing) setMessage('评分刷新／同步重试已完成，请查看最新评分与同步状态。');
+    }
     catch (cause) { setActError(String(cause)); }
-    finally { setBusy(false); }
+    finally { setBusy(false); if (refreshing) setRefreshingRunId(null); }
   };
   /** 连接平台：最短反馈时长保证旋转动画可见，成功后给出已发现的数据集数量。 */
   const connect = async () => {
@@ -144,7 +153,7 @@ export function EvaluationPage() {
         {/* 入口是标题块的兄弟项：宽屏与标题、说明共用一条中线，放不下时整行换到标题块下方，不撑高说明行。 */}
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button variant="outline" size="sm" className="eval-guide-trigger">Langfuse Experiment 配置说明</Button>
+            <Button variant="outline" className="eval-guide-trigger">Langfuse Experiment 配置说明</Button>
           </AlertDialogTrigger>
           <AlertDialogContent className="eval-guide-dialog">
             <AlertDialogHeader>
@@ -183,7 +192,7 @@ export function EvaluationPage() {
             <span id="evaluation-name-label" className="eval-field-label">Experiment 名称前缀（可选）</span>
             <Input aria-labelledby="evaluation-name-label" className="eval-control" value={name} maxLength={maxNameLength} spellCheck={false} placeholder="留空时使用 Everything Agent" onChange={event => setName(event.target.value)} />
           </div>
-          <Button disabled={busy || active || !dataset} onClick={() => void act({ action: 'start', datasetName: dataset, ...(name.trim() ? { name: name.trim() } : {}) })}><Play size={14} />Run Experiment</Button>
+          <Button className="h-10" disabled={busy || active || !dataset} onClick={() => void act({ action: 'start', datasetName: dataset, ...(name.trim() ? { name: name.trim() } : {}) })}><Play size={14} />Run Experiment</Button>
         </div>
         <p className="eval-note pt-2">输入支持字符串、{'{ prompt }'} 或 {'{ turns: ["第一轮", "第二轮"] }'}。</p>
       </div>
@@ -251,7 +260,7 @@ export function EvaluationPage() {
             <div className="eval-detail-actions">
               {['queued', 'running'].includes(run.status)
                 ? <Button variant="outline" disabled={busy} onClick={() => void act({ action: 'cancel', runId: run.id })}><Square size={14} />取消运行</Button>
-                : <Button variant="outline" disabled={busy} onClick={() => void act({ action: 'refresh', runId: run.id })}><RefreshCw size={14} />刷新评分／重试同步</Button>}
+                : <Button variant="outline" disabled={busy} loading={refreshingRunId === run.id} onClick={() => void act({ action: 'refresh', runId: run.id })}><RefreshCw size={14} />刷新评分／重试同步</Button>}
             </div>
           </header>
           <div className="eval-panel-body">

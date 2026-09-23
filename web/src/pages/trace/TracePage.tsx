@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, FileJson, RefreshCw } from "lucide-react";
+import { ChevronRight, FileJson, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { loadTraces, loadTraceRun, type TraceFile, type TraceDashboard } from "../../agent-api";
 import { MINIMUM_FEEDBACK_DURATION_MS, withMinimumDuration } from "../../lib/minimum-duration";
@@ -100,9 +100,9 @@ export function TracePage() {
         {loading ? "正在加载…" : `本页 ${dashboard.runs.length} 次运行 · ${files.length} 个文件`}
       </span>
       <div className="trace-pagination-controls">
-        <Button variant="outline" size="sm" disabled={loading || cursors.length < 2} onClick={() => { const next = cursors.slice(0, -1); void reload(0, next.at(-1)).then((success) => { if (success) setCursors(next); }); }}><ChevronLeft size={14} />上一页</Button>
+        <Button variant="outline" size="sm" disabled={loading || cursors.length < 2} onClick={() => { const next = cursors.slice(0, -1); void reload(0, next.at(-1)).then((success) => { if (success) setCursors(next); }); }}>上一页</Button>
         <span className="trace-pagination-page" aria-current="page">第 {cursors.length} 页</span>
-        <Button variant="outline" size="sm" disabled={loading || !dashboard.nextCursor} onClick={() => { const cursor = dashboard.nextCursor!; void reload(0, cursor).then((success) => { if (success) setCursors([...cursors, cursor]); }); }}>下一页<ChevronRight size={14} /></Button>
+        <Button variant="outline" size="sm" disabled={loading || !dashboard.nextCursor} onClick={() => { const cursor = dashboard.nextCursor!; void reload(0, cursor).then((success) => { if (success) setCursors([...cursors, cursor]); }); }}>下一页</Button>
       </div>
     </nav>
   </div>;
