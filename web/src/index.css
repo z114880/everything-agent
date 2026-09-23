@@ -76,6 +76,8 @@
   /* 侧边栏与聊天区收起后，贴视口的两枚展开按钮共用这一条水平线：
      聊天区标题区高 60px、纵向内边距 8px、底边线 1px，32px 按钮在内容框内居中后落在 13.5px。 */
   --panel-toggle-top: 13.5px;
+  /* 窄屏下两枚展开按钮分居视口左右上角，距屏幕边缘的留白共用这一条间距线。 */
+  --panel-toggle-inset: 12px;
 }
 
 * { box-sizing: border-box; }
@@ -109,7 +111,7 @@ button:disabled { cursor: not-allowed; }
 .sidebar-note { position: absolute; right: 14px; bottom: 16px; left: 14px; display: flex; min-height: 38px; align-items: center; gap: 8px; border: 1px solid #dfe8f5; border-radius: 9px; background: #ffffffbd; padding: 0 11px; color: #687991; font-size: 10px; box-shadow: 0 4px 12px #1e40af0d; }
 .sidebar-note .signal { box-shadow: 0 0 0 3px #22c55e18; }
 .signal { display: inline-block; width: 7px; height: 7px; flex: 0 0 auto; border-radius: 999px; }
-.panel-collapse-toggle.sidebar-reopen { position: fixed; top: var(--panel-toggle-top); left: 12px; z-index: 40; border-color: var(--line); border-radius: 9px; background: var(--panel); color: var(--muted); box-shadow: 0 4px 16px #2222; }
+.panel-collapse-toggle.sidebar-reopen { position: fixed; top: var(--panel-toggle-top); left: var(--panel-toggle-inset); z-index: 40; border-color: var(--line); border-radius: 9px; background: var(--panel); color: var(--muted); box-shadow: 0 4px 16px #2222; }
 .main-content { min-height: 100vh; margin-left: 232px; transition: margin 180ms ease; }
 .sidebar.closed ~ .main-content { margin-left: 0; }
 .content-wrap { width: 100%; max-width: none; margin: 0 auto; padding: var(--page-padding-top) var(--page-padding-inline) var(--page-padding-bottom); }
@@ -855,10 +857,10 @@ button:disabled { cursor: not-allowed; }
 .agent-page-layout[data-chat-collapsed="true"] .agent-dock-header > :not(.chat-collapse-toggle) { display: none; }
 .agent-page-layout[data-chat-collapsed="true"] .chat-collapse-toggle { pointer-events: auto; border-color: var(--line); border-radius: 9px; background: var(--panel); color: var(--muted); box-shadow: 0 4px 16px #2222; }
 @media (max-width: 760px) {
-  /* 窄屏聊天区位于画布下方，收起后按钮固定在视口右上角，与左侧展开侧边栏的按钮同高。 */
+  /* 窄屏聊天区位于画布下方，收起后按钮固定在视口右上角，与左侧展开侧边栏的按钮同高、同边距。 */
   .agent-page-layout[data-chat-collapsed="true"] { grid-template-columns: minmax(0, 1fr); }
   .agent-page-layout[data-chat-collapsed="true"] .agent-chat-dock { height: 0; min-height: 0; border-top: 0; }
-  .agent-page-layout[data-chat-collapsed="true"] .agent-dock-header { top: var(--panel-toggle-top); right: 8px; min-height: 0; margin: 0; padding: 0; }
+  .agent-page-layout[data-chat-collapsed="true"] .agent-dock-header { top: var(--panel-toggle-top); right: var(--panel-toggle-inset); min-height: 0; margin: 0; padding: 0; }
 }
 
 

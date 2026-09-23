@@ -120,8 +120,8 @@ describe("Agent 会话窗口布局", () => {
     // 保持标题区原有的右对齐，不额外覆盖 auto 外边距。
     expect(ruleFor(css, ".chat-collapse-toggle")).toMatch(/margin-left:\s*auto/);
     expect(ruleFor(css, '.agent-page-layout[data-chat-collapsed="true"] .chat-collapse-toggle')).not.toMatch(/margin-left/);
-    // 窄屏聊天区在画布下方，收起后按钮固定在视口右上角，与左侧展开侧边栏的按钮同高。
-    expect(css).toContain('.agent-page-layout[data-chat-collapsed="true"] .agent-dock-header { top: var(--panel-toggle-top); right: 8px; min-height: 0; margin: 0; padding: 0; }');
+    // 窄屏聊天区在画布下方，收起后按钮固定在视口右上角，与左侧展开侧边栏的按钮同高、同边距。
+    expect(css).toContain('.agent-page-layout[data-chat-collapsed="true"] .agent-dock-header { top: var(--panel-toggle-top); right: var(--panel-toggle-inset); min-height: 0; margin: 0; padding: 0; }');
   });
 
   it("左右两侧贴视口的展开按钮落在同一条水平线上", async () => {
@@ -136,6 +136,16 @@ describe("Agent 会话窗口布局", () => {
     const chatToggleTop = headerPadding + (headerMinHeight - headerPadding * 2 - headerBorder - toggleHeight) / 2;
     expect(pixelsOf(css, "--panel-toggle-top", "面板按钮水平线")).toBe(chatToggleTop);
     expect(ruleFor(css, ".panel-collapse-toggle.sidebar-reopen")).toMatch(/top:\s*var\(--panel-toggle-top\)/);
+  });
+
+  it("窄屏下左右两侧展开按钮距屏幕边缘的留白一致", async () => {
+    const css = await readFile(stylePath, "utf8");
+    const mobileCollapsedHeader = css.match(/\.agent-page-layout\[data-chat-collapsed="true"\] \.agent-dock-header \{ top: var\(--panel-toggle-top\); ([^}]*)\}/)?.[1] ?? "";
+
+    expect(pixelsOf(css, "--panel-toggle-inset", "面板按钮边缘留白")).toBeGreaterThan(0);
+    // 两枚按钮引用同一条间距线：左侧贴左边缘，窄屏收起后右侧贴右边缘。
+    expect(ruleFor(css, ".panel-collapse-toggle.sidebar-reopen")).toMatch(/left:\s*var\(--panel-toggle-inset\)/);
+    expect(mobileCollapsedHeader).toMatch(/right:\s*var\(--panel-toggle-inset\)/);
   });
 
   it("让 Dock 收缩到视口内并把超长会话交给日志区域滚动", async () => {
