@@ -192,19 +192,20 @@ it('页面常驻展示数据集 Metadata 默认值与 Experiment 采用的配置
   const guideButton = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('Langfuse Experiment 配置说明'));
   expect(guideButton).toBeDefined();
   expect(guideButton!.closest('[aria-label="数据集与实验"]')).not.toBeNull();
-  // 入口与分区说明左右排列（同 page-heading-description），按钮文案不再与描述重复
-  const heading = guideButton!.closest('.eval-panel-heading');
+  // 入口与标题块同行左右排列，按钮文案不再与描述重复；标题块本身仍是「标题 + 说明」两行
+  const header = guideButton!.closest('.eval-panel-header');
+  expect(header).not.toBeNull();
+  const heading = header!.querySelector('.eval-panel-heading');
   expect(heading).not.toBeNull();
   expect(heading!.querySelector('h2')?.textContent).toBe('数据集与实验');
   const description = heading!.querySelector('p');
   expect(description?.textContent).toBe('选择 Langfuse 数据集后在本机启动 Experiment，执行过程与平台入口共用，需要审批时暂停该用例。');
-  // 触发入口是说明行的同级 flex 项：宽屏并排、窄屏换行，不再用 absolute 脱离文档流去做偏移
-  const descriptionRow = description?.parentElement;
-  expect(descriptionRow?.classList.contains('eval-panel-description')).toBe(true);
-  expect(descriptionRow?.contains(guideButton!)).toBe(true);
-  expect(guideButton!.parentElement).toBe(descriptionRow);
+  // 入口是标题块的兄弟项：说明留在标题块内（不会被按钮撑高），宽度不足时按钮整行换到标题块下方
+  expect(heading!.contains(guideButton!)).toBe(false);
+  expect(guideButton!.parentElement).toBe(header);
   expect(guideButton!.classList.contains('absolute')).toBe(false);
-  expect(descriptionRow!.classList.contains('relative')).toBe(false);
+  expect(description!.parentElement).toBe(heading);
+  expect(description!.parentElement!.classList.contains('relative')).toBe(false);
   await openGuide();
   expect(document.body.textContent).toContain('via Webhook');
   expect(document.body.textContent).toContain('Set up remote experiment trigger in UI');
