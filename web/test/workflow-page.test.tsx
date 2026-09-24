@@ -42,3 +42,36 @@ it.each([true, false])("编辑权限=%s 时页面保持选择和运行入口，�
     container.remove();
   }
 });
+
+it.each([true, false])("重新读取成功=%s 时显示统一加载动效并在完成后提示结果", async (success) => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  vi.useFakeTimers();
+  const loaded = { editable: true, files: ["first.ts"], selectedFile: "first.ts", source: "原始代码", workflow: { name: "示例", nodes: [], edges: [] } };
+  api.loadLocalWorkflow.mockResolvedValueOnce(loaded);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(<WorkflowPage />));
+    expect(container.querySelector('[role="status"]')).toBeNull();
+    if (success) api.loadLocalWorkflow.mockResolvedValueOnce({ ...loaded, source: "最新代码" });
+    else api.loadLocalWorkflow.mockRejectedValueOnce(new Error("读取失败"));
+    const button = container.querySelector<HTMLButtonElement>('[title="从本地文件重新读取"]')!;
+    await act(async () => button.click());
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute("aria-busy")).toBe("true");
+    expect(button.querySelector('[data-slot="button-loading-indicator"]')).not.toBeNull();
+    await act(async () => { button.click(); await vi.advanceTimersByTimeAsync(299); });
+    expect(api.loadLocalWorkflow).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[role="status"]')).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(button.disabled).toBe(false);
+    expect(button.querySelector('[data-slot="button-loading-indicator"]')).toBeNull();
+    expect(container.querySelector('[role="status"]')?.textContent).toBe(success ? "已重新读取" : "读取失败");
+    expect(container.querySelector<HTMLTextAreaElement>('[aria-label="工作流代码"]')!.value).toBe(success ? "最新代码" : "原始代码");
+    await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
+    expect(container.querySelector('[role="status"]')).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});

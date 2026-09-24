@@ -9,13 +9,14 @@ interface CodeEditorProps {
   workflowFiles: string[];
   selectedFile: string;
   switching: boolean;
+  refreshing: boolean;
   onChange: (code: string) => void;
   onSelect: (file: string) => void;
   onReset: () => void;
 }
 
 export function CodeEditor(props: CodeEditorProps) {
-  const { editable, code, error, workflowFiles, selectedFile, switching, onChange, onSelect, onReset } = props;
+  const { editable, code, error, workflowFiles, selectedFile, switching, refreshing, onChange, onSelect, onReset } = props;
   const gutterRef = useRef<HTMLDivElement>(null);
   const lineNumbers = useMemo(() => code.split("\n").map((_, index) => index + 1), [code]);
 
@@ -40,7 +41,7 @@ export function CodeEditor(props: CodeEditorProps) {
             </select>
           </label>
         </div>
-        <Button variant="ghost" size="sm" className="icon-button" onClick={onReset} title="从本地文件重新读取">
+        <Button variant="ghost" size="sm" className="icon-button" loading={refreshing} disabled={switching} onClick={onReset} title="从本地文件重新读取">
           <RefreshCw size={14} />
           重新读取
         </Button>

@@ -167,7 +167,7 @@ function parseModelConnection(
   const baseUrl = optionalText(input.baseUrl, `${label} Base URL`, 2_000);
   if (baseUrl) validateBaseUrl(baseUrl);
   const inputApiKey = optionalText(input.apiKey, `${label} API Key`, 10_000);
-  const currentProvider = before[`EVERYTHING_${prefix}_PROVIDER`] || "anthropic";
+  const currentProvider = before[`EVERYTHING_${prefix}_PROVIDER`] || "openai-compatible";
   // Provider 改变后旧凭证不属于新连接；未显式输入新密钥时直接清除。
   const clearApiKey = input.clearApiKey === true || (provider !== currentProvider && !inputApiKey);
   const currentApiKey = before[`EVERYTHING_${prefix}_API_KEY`] ?? "";
@@ -194,7 +194,7 @@ async function probeChangedConnection(label: string, connection: ParsedConnectio
 
 function loadModelConnection(values: Record<string, string>, prefix: "AGENT" | "SMALL"): ModelConnectionSettings {
   return {
-    provider: parseProvider(values[`EVERYTHING_${prefix}_PROVIDER`] || "anthropic"),
+    provider: parseProvider(values[`EVERYTHING_${prefix}_PROVIDER`] || "openai-compatible"),
     model: values[`EVERYTHING_${prefix}_MODEL`] ?? "",
     baseUrl: values[`EVERYTHING_${prefix}_BASE_URL`] ?? "",
     apiKey: values[`EVERYTHING_${prefix}_API_KEY`] ?? "",

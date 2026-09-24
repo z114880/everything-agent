@@ -12,19 +12,16 @@
 
 需要 **Node.js 24.12 或更高版本**，以及支持 Anthropic Messages、OpenAI Compatible 或 Google Gemini 原生协议的模型服务。
 
-开发推荐使用 **pnpm**，启动支持 Node.js 自带的 **npm**，无需额外安装 pnpm。clone 仓库后，在项目根目录执行：
+首次使用推荐选择与电脑操作系统和 CPU 架构匹配的发布包，进入对应的 release 目录执行 `npm start`。发布包已包含生产依赖，无需安装依赖或重新构建。例如 Apple Silicon Mac：
 
 ```bash
-npm install
-npm run build
+cd release/everything-agent-darwin-arm64
 npm start
 ```
 
-如果已经安装 pnpm，也可以执行 `pnpm install`、`pnpm run build`、`pnpm start`。
+如果收到的是压缩包，先解压，再进入其中包含 `package.json` 的目录执行 `npm start`。其他平台请使用对应的发布目录；Node.js 需要自行安装。
 
-开发时使用 `npm run dev:web`，可以在 Workflow 页面直接编辑 `src/workflows/*.ts`。生产环境通过 `npm start` 运行构建产物 `dist-server/src/workflows/*.js`，仅支持查看、选择和执行工作流；保存接口返回 403。工作流不放入 `.everything`，修改后需重新构建和重启生产服务。生产执行不依赖 Vite 或 esbuild 动态编译。
-
-执行 `npm run package` 可将已构建的服务与前端打包到 `release/` 并安装生产依赖；进入生成的目录后运行 `npm start`。个人数据仍由启动目录或 `EVERYTHING_HOME` 定位，独立于工作流构建产物。交付前执行 `npm run verify:package` 验证发布包；环境要求、平台限制、接收者启动、数据位置及故障排查见 [生产构建、打包与交付](docs/production.md)。
+生产环境的 Workflow 页面支持查看、选择和执行工作流，不支持编辑。个人数据默认保存在启动目录下的 `.everything/`，也可通过 `EVERYTHING_HOME` 指定数据根目录。平台限制、数据位置及故障排查见 [生产构建、打包与交付](docs/production.md)。开发启动和打包命令见下方“开发与检查”。
 
 按终端输出打开本地地址。此命令同时启动 Web 控制台与本地后端，使用期间保持终端运行；按 `Ctrl+C` 停止。
 
@@ -171,7 +168,7 @@ flowchart TD
 
 **启动时提示 Node.js、SQLite 或原生模块错误？**
 
-先用 `node --version` 确认运行版本不低于 24.12，再执行 `npm install` 或 `pnpm install`。项目使用 Node.js 内置 SQLite 和 @node-rs/jieba 原生分词模块（平台预编译二进制，无需本地编译）；如果 @node-rs/jieba 安装失败，请根据安装日志检查当前平台是否有对应的预编译包。
+先用 `node --version` 确认运行版本不低于 24.12，再执行 `pnpm install`。项目使用 Node.js 内置 SQLite 和 @node-rs/jieba 原生分词模块（平台预编译二进制，无需本地编译）；如果 @node-rs/jieba 安装失败，请根据安装日志检查当前平台是否有对应的预编译包。
 
 **能打开页面，但无法发送消息？**
 
@@ -191,7 +188,18 @@ flowchart TD
 
 ## 开发与检查
 
-项目推荐使用 pnpm 开发，同时支持 npm；仓库同时维护 `pnpm-lock.yaml` 和 `package-lock.json`，变更依赖时应同步更新两份锁文件。项目使用 ESM 和严格模式 TypeScript。开发时后端使用 TypeScript 源码；生产构建将后端和工作流编译到 `dist-server/`，由 Node.js 运行，前端由 Vite 构建到 `dist-web/`。
+项目开发使用 pnpm，仓库只维护 `pnpm-lock.yaml`，变更依赖时应同步更新该锁文件。发布包通过 Node.js 自带的 npm 启动，无需安装 pnpm。项目使用 ESM 和严格模式 TypeScript。开发时后端使用 TypeScript 源码；生产构建将后端和工作流编译到 `dist-server/`，由 Node.js 运行，前端由 Vite 构建到 `dist-web/`。
+
+克隆仓库后，在项目根目录安装依赖并启动开发服务：
+
+```bash
+pnpm install
+pnpm run dev:web
+```
+
+开发环境可以在 Workflow 页面直接编辑 `src/workflows/*.ts`。“重新读取”按钮使用与“刷新数据”一致的加载动效，读取完成后显示成功或失败消息。生产运行对应的构建产物，修改源码后需重新构建、打包并重启。
+
+检查与打包命令：
 
 ```bash
 pnpm run typecheck      # 后端类型检查
@@ -199,6 +207,8 @@ pnpm test              # Vitest 行为测试
 pnpm run test:coverage # 覆盖率检查
 pnpm run build         # 后端与工作流编译 + 前端类型检查与构建
 pnpm run example       # 最小 Graph 示例，无需模型密钥
+pnpm run package       # 将已有构建产物打包到 release/
+pnpm run verify:package # 验证发布包可独立启动
 ```
 
 测试通过公开接口验证行为，放在对应模块的 `test/` 目录中。覆盖率门槛为语句、函数和行 85%，分支 80%。开发约束见 [AGENTS.md](AGENTS.md)。

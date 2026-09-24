@@ -76,7 +76,7 @@ try {
 
 ## 本地配置
 
-Agent Model 与 Small Model 均支持 `anthropic`、`openai-compatible` 和 `gemini`，两者独立选择协议。Gemini 默认 Base URL 为 `https://generativelanguage.googleapis.com/v1beta`，使用 `x-goog-api-key` 请求头；连接测试读取分页模型列表，仅返回支持 `generateContent` 的模型 ID。API Key 仍分别保存为 `.everything/.env` 中的 `EVERYTHING_AGENT_API_KEY` 与 `EVERYTHING_SMALL_API_KEY`，公开配置只返回状态与末四位。协议与限制见 [模型文档](../model/README.md)。
+Agent Model 与 Small Model 均支持 `anthropic`、`openai-compatible` 和 `gemini`，两者独立选择协议；未配置 Provider 时默认 `openai-compatible`。Gemini 默认 Base URL 为 `https://generativelanguage.googleapis.com/v1beta`，使用 `x-goog-api-key` 请求头；连接测试读取分页模型列表，仅返回支持 `generateContent` 的模型 ID。API Key 仍分别保存为 `.everything/.env` 中的 `EVERYTHING_AGENT_API_KEY` 与 `EVERYTHING_SMALL_API_KEY`，公开配置只返回状态与末四位。协议与限制见 [模型文档](../model/README.md)。
 
 `local-config.ts` 负责文件持久化。非敏感配置按领域结构保存到 `.everything/config.json`，模型、Embedding 与 Tavily 密钥单独保存到同目录的 `.everything/.env`；文件值覆盖允许的同名进程环境变量。两类文件都采用临时文件加 rename，不修改 `process.env`。清除密钥时持久化空值，防止下次读取重新继承环境密钥。首次 `start()` 会创建 `.everything`、默认 JSON 配置、`EVERYTHING.md`、`skills/`、数据库和 `.everything/.env`（仅含注释占位，不覆盖环境密钥）。缺少默认提示词模板时使用内置中文提示词；重复初始化保留已有配置、密钥和提示词。Web 开发服务器在接受请求前完成初始化；没有 Tavily 密钥时拒绝启用 `search_web`。
 

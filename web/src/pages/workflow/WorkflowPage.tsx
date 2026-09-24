@@ -1,5 +1,7 @@
 import { GitBranch } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { SaveMessage } from "../../components/SaveMessage";
+import { MINIMUM_FEEDBACK_DURATION_MS, withMinimumDuration } from "../../lib/minimum-duration";
 import { PageHeading } from "../../components/PageHeading";
 import type { VisualNodeState } from "../../visual-node-state";
 import {
@@ -16,6 +18,9 @@ import { ResultPanel, RunPanel } from "./RunPanel";
 
 /** 编辑、展示并执行本地工作流。 */
 export function WorkflowPage() {
+  const [refreshing, setRefreshing] = useState(false);
+  const [message, setMessage] = useState("");
+  const [messageVariant, setMessageVariant] = useState<"success" | "error">("success");
   const [editable, setEditable] = useState(false);
   const [code, setCode] = useState("");
   const [workflowFiles, setWorkflowFiles] = useState<string[]>([]);
@@ -53,11 +58,27 @@ export function WorkflowPage() {
     wavesRef.current = [];
   }
 
-  async function reloadFromDisk(file = selectedFile || undefined) {
+  async function reloadFromDisk(file = selectedFile || undefined, notify = false) {
+    if (notify && (refreshing || switchingWorkflow)) return;
+    if (notify) {
+      setRefreshing(true);
+      setMessage("");
+    }
     try {
-      applyLoadedWorkflow(await loadLocalWorkflow(file));
+      applyLoadedWorkflow(await withMinimumDuration(() => loadLocalWorkflow(file), notify ? MINIMUM_FEEDBACK_DURATION_MS : 0));
+      if (notify) {
+        setMessageVariant("success");
+        setMessage("已重新读取");
+      }
     } catch (error) {
-      setCompileError(error instanceof Error ? error.message : String(error));
+      const detail = error instanceof Error ? error.message : String(error);
+      setCompileError(detail);
+      if (notify) {
+        setMessageVariant("error");
+        setMessage(detail);
+      }
+    } finally {
+      if (notify) setRefreshing(false);
     }
   }
 
@@ -190,12 +211,13 @@ export function WorkflowPage() {
   return (
     <div className="content-wrap workflow-page">
       <PageHeading eyebrow="工作流 / 可视化执行" title="Workflow" description="用代码定义智能体工作流，并实时观察节点、路由、并行 wave 和最终结果。" />
+      <SaveMessage message={message} setMessage={setMessage} variant={messageVariant} />
       <div className="intro-note"><GitBranch size={16} /><p><strong>本地代码是事实来源。</strong> {editable ? "下方编辑器直接读写" : "生产环境只读查看"} <code>{editable ? "src/workflows/" : "dist-server/src/workflows/"}{selectedFile || "…"}</code>；拓扑来自 <code>Graph.describe()</code>，执行过程来自本地 <code>runGraph()</code> 的 observer 事件。</p></div>
       <div className="workspace-grid">
         {workflow ? <GraphCanvas workflow={workflow} nodeStates={nodeStates} activeEdges={activeEdges} /> : <div className="panel grid min-h-[580px] place-items-center text-sm text-[var(--muted)]">等待有效的工作流代码…</div>}
       </div>
       <div className="analysis-grid">
-        <CodeEditor editable={editable} code={code} error={compileError} workflowFiles={workflowFiles} selectedFile={selectedFile} switching={switchingWorkflow} onChange={setCode} onSelect={(file) => void selectWorkflow(file)} onReset={() => void reloadFromDisk()} />
+        <CodeEditor editable={editable} code={code} error={compileError} workflowFiles={workflowFiles} selectedFile={selectedFile} switching={switchingWorkflow || refreshing} refreshing={refreshing} onChange={setCode} onSelect={(file) => void selectWorkflow(file)} onReset={() => void reloadFromDisk(undefined, true)} />
         {workflow && <RunPanel workflow={workflow} input={input} running={running} runError={runError} result={result} waves={waves} nodeStates={nodeStates} elapsed={elapsed} onInput={setInput} onRun={run} />}
       </div>
       {workflow && <ResultPanel result={result} />}

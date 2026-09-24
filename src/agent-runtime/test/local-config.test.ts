@@ -13,17 +13,19 @@ it("首次启动会创建完整的 .everything 基础目录", async () => {
   try {
     await runtime.start();
     expect(JSON.parse(await readFile(join(home, "config.json"), "utf8"))).toMatchObject({
-      models: { agent: {}, small: {} },
+      models: { agent: { provider: "openai-compatible" }, small: { provider: "openai-compatible" } },
       sandbox: { workspaceRoot: join(home, "sandbox") },
       maxTokens: 32_768, maxIterations: 100,
       modelContextWindow: 262_144, sessionRecall: { searchWindow: 5, entryTokenLimit: 8_192 },
-      retrieval: { mode: "lexical_only", embedding: {} },
+      retrieval: { mode: "lexical_only", embedding: { provider: "openai-compatible" } },
       tools: { getCurrentTimeEnabled: true, searchWebEnabled: false },
     });
-    expect(await readFile(join(home, "EVERYTHING.md"), "utf8")).toContain("个人助理");
+    expect(await readFile(join(home, "EVERYTHING.md"), "utf8")).toContain("行为约束");
     expect((await stat(join(home, ".env"))).isFile()).toBe(true);
     await expect(runtime.getSettings()).resolves.toMatchObject({
       sandbox: { workspaceRoot: join(home, "sandbox") },
+      agentModel: { provider: "openai-compatible" },
+      smallModel: { provider: "openai-compatible" },
     });
     expect((await stat(join(home, "sandbox"))).isDirectory()).toBe(true);
     expect((await stat(join(home, "skills"))).isDirectory()).toBe(true);
@@ -52,7 +54,7 @@ it("缺失配置时可创建，文件系统错误向调用方传播", async () =
       'EVERYTHING_AGENT_API_KEY="secret"\nEVERYTHING_SMALL_API_KEY="keep"\n',
     );
     expect(await readFile(join(home, "config.json"), "utf8")).not.toContain("secret");
-    await expect(config.readSystemPrompt()).resolves.toContain("个人助理");
+    await expect(config.readSystemPrompt()).resolves.toContain("行为约束");
     await rm(join(home, "EVERYTHING.md"));
     await mkdir(join(home, "EVERYTHING.md"));
     await expect(config.readSystemPrompt()).rejects.toThrow();

@@ -2,7 +2,7 @@
 
 ## 环境与支持范围
 
-构建电脑和接收者电脑都需要 Node.js **24.12 或更高版本**，包含 npm。开发推荐 pnpm；下面的命令使用 npm，两者均可用。
+构建电脑和接收者电脑都需要 Node.js **24.12 或更高版本**，包含 npm。开发和打包推荐 pnpm；接收者使用 Node.js 自带的 npm 启动，无需安装 pnpm。
 
 发布包包含前端、后端、工作流和生产依赖，**不包含 Node.js 运行时**。它不是双击即开的桌面安装程序。
 
@@ -13,10 +13,10 @@
 在仓库根目录执行：
 
 ```bash
-npm install
-npm run build
-npm run package
-npm run verify:package
+pnpm install
+pnpm run build
+pnpm run package
+pnpm run verify:package
 ```
 
 各命令的职责：
@@ -40,11 +40,15 @@ release/everything-agent-<platform>-<arch>/
 ├── node_modules/
 ├── package.json
 ├── package-lock.json
-├── EVERYTHING.md
-└── README.md
+├── README.md
+├── langfuse.md
+└── .langfuse/
+    └── compose.env
 ```
 
 例如 Apple Silicon Mac 生成 `release/everything-agent-darwin-arm64/`。打包脚本只生成目录，不自动生成 ZIP；压缩并发送**整个目录**，包括 `node_modules`。不会从项目复制 `.everything`、密钥或聊天数据。
+
+`langfuse.md` 说明如何用仓库的 `deploy/langfuse/` 自托管 Langfuse。`.langfuse/compose.env` 不是打包脚本复制的：在仓库执行 `pnpm run langfuse:up` 部署时，若已存在 release 产物，脚本会把同一份私有凭证同步到每个产物目录；未部署时产物不含该文件。它是敏感凭证，不提交 Git。
 
 重复打包会删除并重建相同平台的发布目录。日常运行应把包解压到单独的安装目录，或用 `EVERYTHING_HOME` 把数据放到发布目录以外，避免重新打包时丢失数据。
 

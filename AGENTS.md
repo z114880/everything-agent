@@ -88,7 +88,7 @@
 
 ## 编码规范
 
-- 开发默认使用 `pnpm`；面向用户同时支持 npm，快速开始默认展示 `npm install`、`npm start`，并说明推荐 pnpm。项目脚本不得硬编码依赖 pnpm。允许使用 npm 验证安装、启动及维护锁文件；仓库同时提交 `pnpm-lock.yaml` 和 `package-lock.json`，变更依赖时同步更新两份锁文件。
+- 开发使用 `pnpm`，仓库只维护 `pnpm-lock.yaml`，变更依赖时同步更新该锁文件，不提交 `package-lock.json`。面向用户的快速开始默认展示发布包的使用方式：进入匹配操作系统和 CPU 架构的发布目录后执行 `npm start`，无需安装依赖或重新构建。项目脚本不得硬编码依赖 pnpm；允许打包脚本使用 npm 安装发布包的生产依赖，并使用 npm 验证发布包启动。
 - 当前 Engine 使用 Node.js 24.12+、ESM 和严格模式 TypeScript；后端由 Node.js 原生类型擦除直接运行，不生成 JavaScript 构建目录。
 - Engine 核心保持零运行时依赖；其他后端模块可以为明确的产品能力引入必要依赖，但应控制依赖范围，避免为简单功能增加大型框架或未经使用的间接层。测试和开发工具可以作为 `devDependencies`。
 - 公共类和函数需要简洁的中文 JSDoc，解释接口约定和重要错误模式。

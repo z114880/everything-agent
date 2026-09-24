@@ -144,7 +144,7 @@ button:disabled { cursor: not-allowed; }
 .code-shell { display: grid; height: 528px; grid-template-columns: 42px 1fr; overflow: hidden; background: #fafbfc; }
 .line-numbers { overflow: hidden; border-right: 1px solid var(--line); padding: 14px 10px; color: #b0b5be; font-family: var(--font-mono); font-size: 11px; line-height: 1.72; text-align: right; user-select: none; }
 .code-input { width: 100%; height: 100%; resize: none; border: 0; outline: 0; background: transparent; padding: 14px 16px; color: #343944; font-family: var(--font-mono); font-size: 11px; line-height: 1.72; tab-size: 2; white-space: pre; }
-.editor-footer { display: flex; height: 36px; align-items: center; gap: 7px; border-top: 1px solid var(--line); padding: 0 14px; background: white; font-size: 10px; }
+.editor-footer { display: flex; height: 30px; align-items: center; gap: 7px; border-top: 1px solid var(--line); padding: 0 14px; background: white; font-size: 10px; }
 .graph-scroll { display: flex; height: 564px; align-items: center; overflow: auto; padding: 18px; background-color: #fafdff; background-image: radial-gradient(#d2def0 0.7px, transparent 0.7px); background-size: 16px 16px; }
 .graph-svg { min-width: 900px; max-width: none; flex: 0 0 auto; overflow: visible; }
 .graph-edge { fill: none; stroke: #c9cdd5; stroke-width: 1.4; transition: stroke 180ms ease, stroke-width 180ms ease; }

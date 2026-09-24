@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
-import { initializeLangfuseEnvironment } from './configuration.ts';
+import { initializeLangfuseEnvironment, syncComposeEnvToReleases } from './configuration.ts';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -18,7 +18,9 @@ execFileSync('docker', [...args, 'config', '--quiet'], { stdio: 'inherit' });
 const action = command === 'up' ? ['up', '-d', '--wait', '--wait-timeout', '240'] : command === 'down' ? ['down'] : ['ps'];
 execFileSync('docker', [...args, ...action], { stdio: 'inherit' });
 if (command === 'up') {
+  const synced = await syncComposeEnvToReleases(root, envFile);
   console.log('Langfuse 已启动：http://localhost:3300');
   console.log('登录邮箱及随机密码位于 .langfuse/compose.env 的 LANGFUSE_INIT_USER_EMAIL / LANGFUSE_INIT_USER_PASSWORD。');
   console.log('启动 Agent：pnpm run dev:web，然后打开 Evaluation 页面。');
+  if (synced > 0) console.log(`已将 compose.env 同步到 ${synced} 个 release 产物目录。`);
 }
