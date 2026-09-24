@@ -188,6 +188,8 @@ flowchart TD
 
 ## 开发与检查
 
+前端已接入 Tailwind v4，基础 UI、PageHeading 和 Tools 页面主体使用工具类；其余页面按模块增量迁移。设计尺度与语义颜色统一定义在 `web/src/index.css`，新旧样式共用变量。SVG、滚动条、details/summary、动画、Markdown 排版与动态几何保留手写样式，Tools 仍复用共享页面容器、表单和提示动画。迁移规范见 [AGENTS.md](AGENTS.md#前端样式规范)。
+
 项目开发使用 pnpm，仓库只维护 `pnpm-lock.yaml`，变更依赖时应同步更新该锁文件。发布包通过 Node.js 自带的 npm 启动，无需安装 pnpm。项目使用 ESM 和严格模式 TypeScript。开发时后端使用 TypeScript 源码；生产构建将后端和工作流编译到 `dist-server/`，由 Node.js 运行，前端由 Vite 构建到 `dist-web/`。
 
 克隆仓库后，在项目根目录安装依赖并启动开发服务：

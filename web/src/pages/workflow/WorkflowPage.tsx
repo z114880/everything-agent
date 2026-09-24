@@ -214,7 +214,7 @@ export function WorkflowPage() {
       <SaveMessage message={message} setMessage={setMessage} variant={messageVariant} />
       <div className="intro-note"><GitBranch size={16} /><p><strong>本地代码是事实来源。</strong> {editable ? "下方编辑器直接读写" : "生产环境只读查看"} <code>{editable ? "src/workflows/" : "dist-server/src/workflows/"}{selectedFile || "…"}</code>；拓扑来自 <code>Graph.describe()</code>，执行过程来自本地 <code>runGraph()</code> 的 observer 事件。</p></div>
       <div className="workspace-grid">
-        {workflow ? <GraphCanvas workflow={workflow} nodeStates={nodeStates} activeEdges={activeEdges} /> : <div className="panel grid min-h-[580px] place-items-center text-sm text-[var(--muted)]">等待有效的工作流代码…</div>}
+        {workflow ? <GraphCanvas workflow={workflow} nodeStates={nodeStates} activeEdges={activeEdges} /> : <div className="panel grid min-h-[580px] place-items-center text-sm text-[var(--muted-foreground)]">等待有效的工作流代码…</div>}
       </div>
       <div className="analysis-grid">
         <CodeEditor editable={editable} code={code} error={compileError} workflowFiles={workflowFiles} selectedFile={selectedFile} switching={switchingWorkflow || refreshing} refreshing={refreshing} onChange={setCode} onSelect={(file) => void selectWorkflow(file)} onReset={() => void reloadFromDisk(undefined, true)} />

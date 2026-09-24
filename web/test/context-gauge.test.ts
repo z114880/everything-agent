@@ -71,8 +71,8 @@ describe("上下文水位圆环放置与配色", () => {
   it("颜色只作用于弧线，圆环中心不显示数字", async () => {
     const css = await readFile(new URL("../src/index.css", import.meta.url), "utf8");
 
-    expect(css).toContain("--warn: #b45309;");
-    expect(ruleFor(css, ".context-gauge.level-warn .context-gauge-arc")).toMatch(/stroke:\s*var\(--warn\)/);
+    expect(css).toContain("--warning: #b45309;");
+    expect(ruleFor(css, ".context-gauge.level-warn .context-gauge-arc")).toMatch(/stroke:\s*var\(--warning\)/);
     expect(ruleFor(css, ".context-gauge.level-critical .context-gauge-arc")).toMatch(/stroke:\s*var\(--destructive\)/);
     const component = await readFile(new URL("../src/components/ContextGauge.tsx", import.meta.url), "utf8");
     expect(component).not.toContain("context-gauge-value");

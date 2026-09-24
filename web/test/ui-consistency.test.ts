@@ -11,7 +11,6 @@ const textareaSource = fileURLToPath(new URL("../src/components/ui/textarea.tsx"
 const styleSheet = fileURLToPath(new URL("../src/index.css", import.meta.url));
 const indexDocument = fileURLToPath(new URL("../index.html", import.meta.url));
 const faviconSource = fileURLToPath(new URL("../public/favicon.svg", import.meta.url));
-const pageHeadingSource = fileURLToPath(new URL("../src/components/PageHeading.tsx", import.meta.url));
 const componentsDirectory = fileURLToPath(new URL("../src/components", import.meta.url));
 const pageSources = [
   "pages/agent/AgentPage.tsx",
@@ -55,18 +54,9 @@ describe("管理页面视觉一致性", () => {
     expect(textarea).not.toMatch(/focus-visible:ring(?:-|\b)/);
   });
 
-  it("统一页面标题层级，并让标准与危险操作按钮使用清晰的语义层级", async () => {
-    const [buttons, styles, pageHeading] = await Promise.all([
-      readFile(buttonSource, "utf8"),
-      readFile(styleSheet, "utf8"),
-      readFile(pageHeadingSource, "utf8"),
-    ]);
+  it("标准与危险操作按钮使用清晰的语义层级", async () => {
+    const buttons = await readFile(buttonSource, "utf8");
 
-    expect(pageHeading).toContain('className="page-heading"');
-    expect(pageHeading).toContain('className="page-heading-actions"');
-    expect(styles).toMatch(/\.eyebrow\s*\{[^}]*font-size:\s*11px/);
-    expect(styles).toMatch(/\.page-heading h1\s*\{[^}]*font-size:\s*30px/);
-    expect(styles).toMatch(/\.page-heading p\s*\{[^}]*font-size:\s*13px/);
     expect(buttons).toContain('outline: "border-input bg-card');
     expect(buttons).toContain('"destructive-outline": "border-destructive/35 bg-[var(--destructive-soft)]');
     expect(buttons).toContain("disabled:bg-[var(--button-disabled)]");
@@ -173,7 +163,7 @@ describe("管理页面视觉一致性", () => {
 
     expect(styles).toContain("--primary: #2563eb;");
     expect(styles).toContain("--accent-surface: #e8f0ff;");
-    expect(styles).toContain("--good: #1f9d72;");
+    expect(styles).toContain("--success: #1f9d72;");
     expect(styles).toContain("--button-disabled: #e7ecf3;");
     expect(styles).toContain("--button-disabled-foreground: #8b98aa;");
     expect(styles).toContain(".brand-mark");

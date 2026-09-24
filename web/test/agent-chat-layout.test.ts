@@ -60,8 +60,8 @@ describe("Agent 会话窗口布局", () => {
     expect(source).toContain('setSessionRailCollapsed((collapsed) => !collapsed)');
     expect(source).toContain('sessionRailCollapsed ? "展开对话列表" : "收起对话列表"');
     expect(source.indexOf('aria-controls="agent-session-rail"')).toBeGreaterThan(source.indexOf('<div className="chat-pane">'));
-    expect(ruleFor(await readFile(stylePath, "utf8"), '.new-session:not(:disabled):hover')).toMatch(/background:\s*var\(--accent-soft\)/);
-    expect(ruleFor(await readFile(stylePath, "utf8"), '.history-toggle:hover, .history-toggle[aria-expanded="true"]')).toMatch(/background:\s*var\(--accent-soft\)/);
+    expect(ruleFor(await readFile(stylePath, "utf8"), '.new-session:not(:disabled):hover')).toMatch(/background:\s*var\(--accent-surface\)/);
+    expect(ruleFor(await readFile(stylePath, "utf8"), '.history-toggle:hover, .history-toggle[aria-expanded="true"]')).toMatch(/background:\s*var\(--accent-surface\)/);
   });
 
   it("新建对话与历史对话复用同一套按钮尺寸和排版", async () => {

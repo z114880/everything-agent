@@ -13,7 +13,6 @@ describe("Tools 页面", () => {
     expect(source).toContain("固定内置能力");
     expect(source).toContain("Tavily API Key");
     expect(source).toContain("tavilyDialogOpen");
-    expect(source).toContain('className="tool-configure"');
     expect(source).not.toContain("tavily-config-card");
     expect(source).toContain('role="switch"');
     expect(source).not.toContain("调用历史");
@@ -46,11 +45,8 @@ describe("Tools 页面", () => {
   });
 });
 
-it("终端弹窗说明按段落排版，路径和沙箱信息分行且长路径可换行", async () => {
+it("终端弹窗展示当前工作区和沙箱信息", async () => {
   const source = await readFile(page, "utf8");
-  const css = await readFile(styles, "utf8");
-  expect(source).toContain('className="terminal-config-note"');
   expect(source).toContain("<dt>当前工作区</dt>");
   expect(source).toContain("<dt>沙箱</dt>");
-  expect(css).toContain("overflow-wrap: anywhere");
 });

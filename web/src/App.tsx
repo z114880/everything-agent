@@ -1,6 +1,6 @@
 import { EvaluationPage } from "./pages/evaluation/EvaluationPage";
 import { Activity, FlaskConical, Bot, BookOpen, Brain, ChevronLeft, ChevronRight, Database, GitBranch, Settings, Sparkles, Wrench } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Button } from "./components/ui/button";
 import { AgentPage } from "./pages/agent/AgentPage";
 import { ConfigPage } from "./pages/config/ConfigPage";
@@ -17,23 +17,17 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [page, setPage] = useState<Page>("agent");
 
-  const pageContent = page === "agent"
-    ? null
-    : page === "evaluation"
-      ? <EvaluationPage />
-      : page === "config"
-      ? <ConfigPage />
-      : page === "skills"
-        ? <SkillsPage />
-        : page === "tools"
-          ? <ToolsPage />
-          : page === "memory"
-            ? <MemoryPage />
-            : page === "database"
-              ? <DatabasePage />
-              : page === "traces"
-                ? <TracePage />
-                : <WorkflowPage />;
+  const pageContent = {
+    agent: null,
+    evaluation: <EvaluationPage />,
+    config: <ConfigPage />,
+    skills: <SkillsPage />,
+    tools: <ToolsPage />,
+    memory: <MemoryPage />,
+    database: <DatabasePage />,
+    traces: <TracePage />,
+    workflow: <WorkflowPage />,
+  } satisfies Record<Page, ReactNode>;
 
   return (
     <div className="app-shell">
@@ -61,7 +55,7 @@ export default function App() {
       <main className="main-content agent-main-content" hidden={page !== "agent"}>
         <AgentPage active={page === "agent"} onOpenConfig={() => setPage("config")} />
       </main>
-      {page !== "agent" && <main className="main-content">{pageContent}</main>}
+      {page !== "agent" && <main className="main-content">{pageContent[page]}</main>}
     </div>
   );
 }

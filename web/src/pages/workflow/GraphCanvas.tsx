@@ -36,7 +36,7 @@ export function GraphCanvas({ workflow, nodeStates, activeEdges }: GraphCanvasPr
       <div className="panel-header">
         <div>
           <div className="flex items-center gap-2"><GitBranch size={15} /> 动态拓扑</div>
-          <p className="mt-1 text-[11px] font-normal text-[var(--muted)]">由当前代码生成 · 节点会随执行状态实时变化</p>
+          <p className="mt-1 text-[11px] font-normal text-[var(--muted-foreground)]">由当前代码生成 · 节点会随执行状态实时变化</p>
         </div>
         <span className="status-pill">{workflow.nodes.length} 个节点 · {workflow.edges.length} 条边</span>
       </div>
