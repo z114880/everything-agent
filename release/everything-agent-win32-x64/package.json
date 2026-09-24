@@ -1,0 +1,16 @@
+{
+  "name": "everything-agent-dist",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.12"
+  },
+  "scripts": {
+    "start": "node dist-server/web/server/prod-server.js"
+  },
+  "dependencies": {
+    "@node-rs/jieba": "^2.0.3",
+    "@langfuse/client": "^5.11.1"
+  }
+}

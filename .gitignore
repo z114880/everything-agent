@@ -13,4 +13,3 @@ dist-web/
 .langfuse/
 
 dist-server/
-release/
