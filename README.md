@@ -10,7 +10,7 @@
 
 ### 1. 准备环境并启动
 
-需要 **Node.js 24.12 或更高版本**，以及支持 Anthropic Messages、OpenAI Compatible 或 Google Gemini 原生协议的模型服务。
+需要 **Node.js 24.12 或更高版本**，以及支持 OpenAI Compatible、Anthropic Messages 或 Google Gemini 原生协议的模型服务。
 
 首次使用推荐选择与电脑操作系统和 CPU 架构匹配的发布包，进入对应的 release 目录执行 `npm start`。发布包已包含生产依赖，无需安装依赖或重新构建。例如 Apple Silicon Mac：
 
@@ -21,7 +21,7 @@ npm start
 
 如果收到的是压缩包，先解压，再进入其中包含 `package.json` 的目录执行 `npm start`。其他平台请使用对应的发布目录；Node.js 需要自行安装。
 
-如果发布包 `npm start` 无法启动（例如平台不匹配、缺少对应平台的预编译原生模块），可以改用开发模式：回到**仓库根目录**执行 `pnpm install` 安装依赖，再执行 `pnpm run dev:web` 启动。开发模式直接运行源码，同样提供 Web 控制台与本地后端，并支持在 Workflow 页面编辑工作流；相关命令见下方“开发与检查”。
+如果发布包 `npm start` 无法启动（例如平台不匹配、缺少对应平台的预编译原生模块），可以改用开发模式：回到**仓库根目录**执行 `pnpm install` 安装依赖，再执行 `pnpm run dev` 启动。开发模式直接运行源码，同样提供 Web 控制台与本地后端，并支持在 Workflow 页面编辑工作流；相关命令见下方“开发与检查”。
 
 生产环境的 Workflow 页面支持查看、选择和执行工作流，不支持编辑。个人数据默认保存在启动目录下的 `.everything/`，也可通过 `EVERYTHING_HOME` 指定数据根目录。平台限制、数据位置及故障排查见 [生产构建、打包与交付](docs/production.md)。开发启动和打包命令见下方“开发与检查”。
 
@@ -194,7 +194,7 @@ flowchart TD
 
 ```bash
 pnpm install
-pnpm run dev:web
+pnpm run dev
 ```
 
 开发环境可以在 Workflow 页面直接编辑 `src/workflows/*.ts`。“重新读取”按钮使用与“刷新数据”一致的加载动效，读取完成后显示成功或失败消息。生产运行对应的构建产物，修改源码后需重新构建、打包并重启。

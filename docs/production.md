@@ -96,7 +96,7 @@ npm start
 
 ## 工作流和开发模式
 
-- 开发：在仓库执行 `npm run dev:web`，页面可直接编辑 `src/workflows/*.ts`。
+- 开发：在仓库执行 `npm run dev`，页面可直接编辑 `src/workflows/*.ts`。
 - 生产：运行 `dist-server/src/workflows/*.js`；页面仅支持查看、切换和执行，保存接口返回 403。
 - 更新工作流：修改项目源码后重新构建、打包并重启生产服务。
 - 工作流属于项目代码，不放入 `.everything/workflows`。生产不需要 Vite 或 esbuild 动态加载。

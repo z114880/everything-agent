@@ -6,7 +6,7 @@
 
 ```bash
 pnpm run langfuse:up
-pnpm run dev:web
+pnpm run dev
 ```
 
 首次部署自动生成 `.langfuse/compose.env`，包含项目 API 凭证和管理员随机密码。Langfuse 地址为 `http://localhost:3300`。后端读取该文件中的 `LANGFUSE_INIT_PROJECT_*`，不把平台密钥发送给浏览器。详见 [Docker 部署说明](../../deploy/langfuse/README.md)。
@@ -111,7 +111,7 @@ pnpm run test:coverage
 启动 Web 后端时设置进程环境变量（修改后需重启）：
 
 ```bash
-EVERYTHING_EVALUATION_CONCURRENCY=5 pnpm run dev:web
+EVERYTHING_EVALUATION_CONCURRENCY=5 pnpm run dev
 ```
 
 未设置时默认 3，必须是正安全整数；空值、零、负数、小数及非数字会导致评估服务初始化失败，页面显示配置错误。实际 worker 数不超过用例数。本地页面和 Langfuse remote experiment trigger 回调共享此配置，远程 Default config 不能覆盖；该变量不从 `.everything/.env` 或 `.langfuse/compose.env` 读取。直接使用公开接口时传入 `new EvaluationService({ directory, sourceHome, client, concurrency: 5 })`，省略 `concurrency` 同样默认 3。

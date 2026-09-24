@@ -20,7 +20,7 @@ pnpm run mock-data
 | `--consolidate` | 结束后触发一次 consolidation |
 | `--list` | 只列出可用数据集 |
 
-运行前请先停掉 `pnpm run dev:web`，避免两个进程同时写同一个 SQLite 库。
+运行前请先停掉 `pnpm run dev`，避免两个进程同时写同一个 SQLite 库。
 
 ## 目录
 

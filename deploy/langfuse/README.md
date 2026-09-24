@@ -4,7 +4,7 @@
 
 ```bash
 pnpm run langfuse:up
-pnpm run dev:web
+pnpm run dev
 ```
 
 `langfuse:up` 自动完成：生成随机凭证、校验 Compose、启动服务并等待健康检查。首次需要下载镜像，建议为 Docker 预留至少 4 GB 内存。它不会启动 Agent 本身，Agent 模型和工具继续在本地运行。
@@ -63,7 +63,7 @@ docker compose --env-file .langfuse/compose.env -f deploy/langfuse/compose.yaml 
 
 - Docker 未启动：启动 Docker Desktop，再执行 `pnpm run langfuse:up`。
 - 3300 或 9390 被其他服务占用：先释放端口。
-- 平台显示 502：确认 `pnpm run dev:web` 正在运行，本机 4319 可被 Docker 访问。
+- 平台显示 502：确认 `pnpm run dev` 正在运行，本机 4319 可被 Docker 访问。
 - 平台显示 401：在 Evaluation 页面重新复制 Authorization 值，并更新数据集的 Custom headers。
 - 没有评分：先在 Langfuse 配置面向 Experiment 根 Agent observation 的评估器，再在 Evaluation 点击刷新评分。
 - 启动超时：用 `docker compose --env-file .langfuse/compose.env -f deploy/langfuse/compose.yaml logs --tail 100` 检查服务，不要公开含凭证的配置或日志。
