@@ -1,13 +1,13 @@
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { parseEnv } from '../../src/agent-runtime/index.ts';
 import { EvaluationService, LangfuseEvaluationClient, evaluationWebhook } from '../../src/evaluation/index.ts';
 import type { EvaluationInput, LangfuseConfiguration } from '../../src/evaluation/index.ts';
+import { resolveLocalHome } from './local-home.ts';
 
-const root = fileURLToPath(new URL('../../', import.meta.url));
+const root = resolveLocalHome();
 const directory = join(root, '.evaluations', 'langfuse-v4');
 let service: EvaluationService | undefined;
 let client: LangfuseEvaluationClient | undefined;

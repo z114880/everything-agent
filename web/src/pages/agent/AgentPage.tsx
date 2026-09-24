@@ -71,7 +71,9 @@ interface AssistantChatMessage {
   pending: boolean;
   error?: string;
   tools: ToolView[];
-  startedAt: number;
+  startedAt?: number;
+  /** 已结束回合使用固定耗时，不能随其他回合的刷新继续计时。 */
+  elapsedMs?: number;
   result?: AgentRunResult;
   streamFallback?: boolean;
   compactions?: CompactionView[];
@@ -507,6 +509,7 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
       "everything_md->procedural_memory",
       "skills_catalog->procedural_memory",
     ]);
+    const startedAt = performance.now();
     setMessages((current) => [
       ...current,
       { id: crypto.randomUUID(), role: "user", content: prompt },
@@ -516,7 +519,7 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
         content: "",
         pending: true,
         tools: [],
-        startedAt: performance.now(),
+        startedAt,
       },
     ]);
     try {
@@ -569,6 +572,7 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
       setSessions(refreshed.sessions);
       setMessages(toChatMessages(refreshed.messages));
     } catch (error) {
+      const elapsedMs = Math.max(0, Math.round(performance.now() - startedAt));
       const message = controller.signal.aborted
         ? "本轮运行已停止"
         : error instanceof Error
@@ -579,6 +583,7 @@ export function AgentPage({ active = true, onOpenConfig }: AgentPageProps) {
           ...assistant,
           pending: false,
           error: message,
+          elapsedMs,
         })),
       );
       setNodeStates((states) => ({
@@ -935,7 +940,10 @@ function AssistantCard({
   tick: number;
 }) {
   const elapsed =
-    message.result?.ms ?? Math.round(performance.now() - message.startedAt);
+    message.result?.ms ?? message.elapsedMs ??
+    (message.pending && message.startedAt !== undefined
+      ? Math.max(0, Math.round(performance.now() - message.startedAt))
+      : undefined);
   return (
     <div className={`assistant-card ${message.error ? "has-error" : ""}`}>
       <div className="assistant-stages">
@@ -996,11 +1004,11 @@ function AssistantCard({
         </div>
       ) : (
         <div className="assistant-thinking">
-          思考中… <span>{(elapsed / 1_000).toFixed(0)}s</span>
+          思考中… <span>{((elapsed ?? 0) / 1_000).toFixed(0)}s</span>
         </div>
       )}
       <div className="assistant-meta">
-        <Clock3 size={11} /> {(elapsed / 1_000).toFixed(1)}s
+        <Clock3 size={11} /> {elapsed === undefined ? "耗时未知" : `${(elapsed / 1_000).toFixed(1)}s`}
         {message.result && (
           <>
             {" "}
@@ -1143,6 +1151,8 @@ function toChatMessages(entries: ChatLogEntry[]): ChatMessage[] {
     const toolResults = rows
       .filter((row) => row.kind === "tool_result")
       .flatMap((row) => blocks(row.content, "tool_result"));
+    // 历史回合使用持久化记录的时间差；未完成或缺少有效时间时不伪造耗时。
+    const elapsedMs = final ? Date.parse(final.createdAt) - Date.parse(user.createdAt) : NaN;
     messages.push({
       id: `${runId}-assistant`,
       role: "assistant",
@@ -1150,7 +1160,7 @@ function toChatMessages(entries: ChatLogEntry[]): ChatMessage[] {
       compactions: user.compactions?.map((item) => ({ ...item, status: "done" })),
       pending: false,
       ...(final ? {} : { error: "此回合未完成" }),
-      startedAt: performance.now(),
+      ...(Number.isFinite(elapsedMs) && elapsedMs >= 0 ? { elapsedMs } : {}),
       tools: toolCalls.map((call) => {
         const result = toolResults.find((item) => item.tool_use_id === call.id);
         return {

@@ -1,20 +1,20 @@
 import { listTraceRuns, readTraceRun } from "../../src/tracing/run-reader.ts";
 import { describeHarnessRetrieval, harnessEdgeLabels } from "../../src/agent-graph/harness-graph.ts";
-import { fileURLToPath, URL } from "node:url";
 import { join } from "node:path";
 import { agentHarnessGraph, createAgentRuntime } from "../../src/index.ts";
 import type { AgentObserver, AgentSettingsInput, AgentProvider, ModelConnectionInput, ModelConnectionTarget, RetrievalMode } from "../../src/index.ts";
+import { resolveEverythingHome, resolveLocalHome } from "./local-home.ts";
 export { AgentConfigError } from "../../src/index.ts";
 
 // 页面手动搜索不属于 Agent 执行，显式覆盖默认 observer，避免写入 trace。
 const manualSearchObserver: AgentObserver = () => {};
 
-export const localAgentHome = fileURLToPath(new URL("../../.everything/", import.meta.url));
+export const localAgentHome = resolveEverythingHome();
 export const localAgentDatabasePath = join(localAgentHome, "database", "state.db");
 
 const runtime = createAgentRuntime({
   home: localAgentHome,
-  defaultSystemPromptPath: fileURLToPath(new URL("../../EVERYTHING.md", import.meta.url)),
+  defaultSystemPromptPath: join(resolveLocalHome(), "EVERYTHING.md"),
 });
 export const { subscribeBackgroundEvents, clearEmbeddingApiKey,
   resetRuntimeSettings, rebuildEmbeddingIndex, cancelEmbeddingIndexRebuild,
@@ -36,7 +36,7 @@ export function loadSkills() {
 /** 校验并原子保存 Skill；originalName 存在时允许重命名目录。 */
 export function saveSkill(body: Record<string, unknown>) {
   return runtime.saveSkill({
-    originalName: body.originalName === undefined ? undefined : optionalText(body.originalName, "Original Skill Name", 200),
+    ...(body.originalName === undefined ? {} : { originalName: optionalText(body.originalName, "Original Skill Name", 200) }),
     name: requiredText(body.name, "Skill Name", 200),
     description: requiredText(body.description, "Skill Description", 500),
     instructions: requiredText(body.instructions, "Skill Instructions", 100_000),
@@ -61,9 +61,7 @@ export function saveTools(body: Record<string, unknown>) {
     tavilyApiKey: optionalText(body.tavilyApiKey, "Tavily API Key", 10_000),
     clearTavilyApiKey: body.clearTavilyApiKey === true,
     // 工作区根目录属于 Sandbox 配置，只能从配置页面保存。
-    terminalEnabled: body.terminalEnabled === undefined
-      ? undefined
-      : requiredBoolean(body.terminalEnabled, "run_terminal enabled"),
+    ...(body.terminalEnabled === undefined ? {} : { terminalEnabled: requiredBoolean(body.terminalEnabled, "run_terminal enabled") }),
   });
 }
 
@@ -129,16 +127,16 @@ export async function handleMemoryAction(body: Record<string, unknown>): Promise
   if (action === "session_search") {
     const recall = await runtime.prepareMemory();
     return memory.searchSessions({
-      query: body.query === undefined ? undefined : requiredText(body.query, "Query", 2_000),
+      ...(body.query === undefined ? {} : { query: requiredText(body.query, "Query", 2_000) }),
       recent: body.recent === true,
-      limit: body.limit === undefined ? undefined : Number(body.limit),
+      ...(body.limit === undefined ? {} : { limit: Number(body.limit) }),
     }, recall, undefined, undefined, manualSearchObserver);
   }
   if (action === "session_read") {
     const recall = await runtime.prepareMemory();
     return memory.readSession({
-      sessionId: body.sessionId === undefined ? undefined : requiredText(body.sessionId, "Session ID", 200),
-      cursor: body.cursor === undefined ? undefined : requiredText(body.cursor, "Cursor", 10_000),
+      ...(body.sessionId === undefined ? {} : { sessionId: requiredText(body.sessionId, "Session ID", 200) }),
+      ...(body.cursor === undefined ? {} : { cursor: requiredText(body.cursor, "Cursor", 10_000) }),
     }, recall);
   }
   throw new TypeError("未知 Memory action");

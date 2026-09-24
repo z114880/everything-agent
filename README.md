@@ -16,10 +16,15 @@
 
 ```bash
 npm install
+npm run build
 npm start
 ```
 
-如果已经安装 pnpm，也可以执行 `pnpm install`、`pnpm start`。
+如果已经安装 pnpm，也可以执行 `pnpm install`、`pnpm run build`、`pnpm start`。
+
+开发时使用 `npm run dev:web`，可以在 Workflow 页面直接编辑 `src/workflows/*.ts`。生产环境通过 `npm start` 运行构建产物 `dist-server/src/workflows/*.js`，仅支持查看、选择和执行工作流；保存接口返回 403。工作流不放入 `.everything`，修改后需重新构建和重启生产服务。生产执行不依赖 Vite 或 esbuild 动态编译。
+
+执行 `npm run package` 可将已构建的服务与前端打包到 `release/` 并安装生产依赖；进入生成的目录后运行 `npm start`。个人数据仍由启动目录或 `EVERYTHING_HOME` 定位，独立于工作流构建产物。交付前执行 `npm run verify:package` 验证发布包；环境要求、平台限制、接收者启动、数据位置及故障排查见 [生产构建、打包与交付](docs/production.md)。
 
 按终端输出打开本地地址。此命令同时启动 Web 控制台与本地后端，使用期间保持终端运行；按 `Ctrl+C` 停止。
 
@@ -118,6 +123,8 @@ npm start
 
 ## 项目架构
 
+Agent 聊天区仅对运行中的回复实时计时；完成后使用运行耗时，停止或失败时冻结耗时。重新加载历史记录时，耗时取用户消息与最终回复的记录时间差；未完成或时间无效的历史回合显示“耗时未知”。
+
 Web 控制台连接本地 Node.js 后端。个人助理由 Agent Runtime 组合模型、工具和记忆；Graph 工作流通过独立入口运行。下图展示当前已实现的模块关系：
 
 ```mermaid
@@ -180,17 +187,17 @@ flowchart TD
 
 **构建后可以只部署静态文件吗？**
 
-当前执行依赖本地后端，`pnpm run build:web` 只生成浏览器资源，不能替代 `pnpm run dev:web` 提供的 Engine / Agent 接口。日常使用请运行开发服务器。
+不能。`npm run build:web` 只生成浏览器资源；Engine / Agent 接口仍需要后端。执行 `npm run build` 后通过 `npm start` 启动生产服务，它同时提供静态页面和后端接口。
 
 ## 开发与检查
 
-项目推荐使用 pnpm 开发，同时支持 npm；仓库同时维护 `pnpm-lock.yaml` 和 `package-lock.json`，变更依赖时应同步更新两份锁文件。项目使用 ESM 和严格模式 TypeScript。后端由 Node.js 原生类型擦除直接运行，不生成 JavaScript 构建目录；前端由 Vite 构建。
+项目推荐使用 pnpm 开发，同时支持 npm；仓库同时维护 `pnpm-lock.yaml` 和 `package-lock.json`，变更依赖时应同步更新两份锁文件。项目使用 ESM 和严格模式 TypeScript。开发时后端使用 TypeScript 源码；生产构建将后端和工作流编译到 `dist-server/`，由 Node.js 运行，前端由 Vite 构建到 `dist-web/`。
 
 ```bash
 pnpm run typecheck      # 后端类型检查
 pnpm test              # Vitest 行为测试
 pnpm run test:coverage # 覆盖率检查
-pnpm run build         # 后端类型检查 + 前端类型检查与构建
+pnpm run build         # 后端与工作流编译 + 前端类型检查与构建
 pnpm run example       # 最小 Graph 示例，无需模型密钥
 ```
 

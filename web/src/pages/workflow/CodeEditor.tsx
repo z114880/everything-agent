@@ -3,6 +3,7 @@ import { useMemo, useRef } from "react";
 import { Button } from "../../components/ui/button";
 
 interface CodeEditorProps {
+  editable: boolean;
   code: string;
   error: string;
   workflowFiles: string[];
@@ -14,7 +15,7 @@ interface CodeEditorProps {
 }
 
 export function CodeEditor(props: CodeEditorProps) {
-  const { code, error, workflowFiles, selectedFile, switching, onChange, onSelect, onReset } = props;
+  const { editable, code, error, workflowFiles, selectedFile, switching, onChange, onSelect, onReset } = props;
   const gutterRef = useRef<HTMLDivElement>(null);
   const lineNumbers = useMemo(() => code.split("\n").map((_, index) => index + 1), [code]);
 
@@ -24,7 +25,7 @@ export function CodeEditor(props: CodeEditorProps) {
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <Code2 size={15} />
           <span>工作流代码</span>
-          <label className="workflow-picker" title="选择 src/workflows 中的本地工作流">
+          <label className="workflow-picker" title="选择工作流">
             <Check size={11} />
             <span>已连接本地 Engine ·</span>
             <select
@@ -34,7 +35,7 @@ export function CodeEditor(props: CodeEditorProps) {
               onChange={(event) => onSelect(event.target.value)}
             >
               {workflowFiles.map((file) => (
-                <option key={file} value={file}>src/workflows/{file}</option>
+                <option key={file} value={file}>{file}</option>
               ))}
             </select>
           </label>
@@ -49,11 +50,12 @@ export function CodeEditor(props: CodeEditorProps) {
           {lineNumbers.map((line) => <div key={line}>{line}</div>)}
         </div>
         <textarea
-          aria-label="TypeScript 工作流代码"
+          aria-label="工作流代码"
+          readOnly={!editable}
           className="code-input"
           value={code}
           spellCheck={false}
-          onChange={(event) => onChange(event.target.value)}
+          onChange={(event) => { if (editable) onChange(event.target.value); }}
           onScroll={(event) => {
             if (gutterRef.current) gutterRef.current.scrollTop = event.currentTarget.scrollTop;
           }}
@@ -61,7 +63,7 @@ export function CodeEditor(props: CodeEditorProps) {
       </div>
       <div className={`editor-footer ${error ? "text-red-600" : "text-emerald-700"}`}>
         <span className={`signal ${error ? "bg-red-500" : "bg-emerald-500"}`} />
-        {error || "已保存到本地，拓扑来自 Graph.describe()"}
+        {error || (editable ? "已保存到本地，拓扑来自 Graph.describe()" : "生产环境只读，修改请在开发环境完成后重新构建")}
       </div>
     </section>
   );

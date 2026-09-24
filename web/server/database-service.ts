@@ -132,7 +132,9 @@ function readRows(database: DatabaseSync, sql: string): Pick<DatabaseQueryResult
   statement.setReturnArrays(true);
   const columns = statement.columns().map((column) => column.name);
   const rows: unknown[][] = [];
-  for (const row of statement.iterate() as NodeJS.Iterator<SQLOutputValue[]>) {
+  for (const row of statement.iterate()) {
+    // Node 的类型声明未随 setReturnArrays 收窄，显式核对实际返回格式。
+    if (!Array.isArray(row)) throw new Error("数据库未返回预期的数组行");
     if (rows.length === MAX_ROWS) return { columns, rows, truncated: true };
     rows.push(row.map(jsonValue));
   }

@@ -60,8 +60,9 @@ export interface GraphEvent {
 
 const endpoint = "/api/local-workflow";
 
-/** 从工作区读取真实的 TypeScript 源码及 Graph.describe() 拓扑。 */
+/** 读取工作流代码、编辑权限及 Graph.describe() 拓扑。 */
 export async function loadLocalWorkflow(file?: string): Promise<{
+  editable: boolean;
   files: string[];
   selectedFile: string;
   source: string;

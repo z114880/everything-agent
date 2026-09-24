@@ -16,6 +16,7 @@ import { ResultPanel, RunPanel } from "./RunPanel";
 
 /** 编辑、展示并执行本地工作流。 */
 export function WorkflowPage() {
+  const [editable, setEditable] = useState(false);
   const [code, setCode] = useState("");
   const [workflowFiles, setWorkflowFiles] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState("");
@@ -43,6 +44,7 @@ export function WorkflowPage() {
     setWorkflowFiles(loaded.files);
     setSelectedFile(loaded.selectedFile);
     setCode(loaded.source);
+    setEditable(loaded.editable);
     setWorkflow(loaded.workflow);
     setCompileError("");
     setNodeStates(Object.fromEntries(loaded.workflow.nodes.map((node) => [node.id, "idle"])));
@@ -64,7 +66,7 @@ export function WorkflowPage() {
   }, []);
 
   useEffect(() => {
-    if (!selectedFile || switchingWorkflow || !code || code === lastSavedSourceRef.current) return;
+    if (!editable || !selectedFile || switchingWorkflow || !code || code === lastSavedSourceRef.current) return;
     const revision = ++saveRevisionRef.current;
     saveTimerRef.current = window.setTimeout(() => {
       saveLocalWorkflow(selectedFile, code).then(({ workflow: next }) => {
@@ -84,7 +86,7 @@ export function WorkflowPage() {
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
     };
-  }, [code, selectedFile, switchingWorkflow]);
+  }, [code, editable, selectedFile, switchingWorkflow]);
 
   useEffect(() => {
     if (!running) return;
@@ -109,7 +111,7 @@ export function WorkflowPage() {
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
     saveTimerRef.current = null;
     try {
-      if (code !== lastSavedSourceRef.current) {
+      if (editable && code !== lastSavedSourceRef.current) {
         await saveLocalWorkflow(selectedFile, code);
         lastSavedSourceRef.current = code;
       }
@@ -188,12 +190,12 @@ export function WorkflowPage() {
   return (
     <div className="content-wrap workflow-page">
       <PageHeading eyebrow="工作流 / 可视化执行" title="Workflow" description="用代码定义智能体工作流，并实时观察节点、路由、并行 wave 和最终结果。" />
-      <div className="intro-note"><GitBranch size={16} /><p><strong>本地代码是事实来源。</strong> 下方编辑器直接读写 <code>src/workflows/{selectedFile || "…"}</code>；拓扑来自 <code>Graph.describe()</code>，执行过程来自本地 <code>runGraph()</code> 的 observer 事件。</p></div>
+      <div className="intro-note"><GitBranch size={16} /><p><strong>本地代码是事实来源。</strong> {editable ? "下方编辑器直接读写" : "生产环境只读查看"} <code>{editable ? "src/workflows/" : "dist-server/src/workflows/"}{selectedFile || "…"}</code>；拓扑来自 <code>Graph.describe()</code>，执行过程来自本地 <code>runGraph()</code> 的 observer 事件。</p></div>
       <div className="workspace-grid">
         {workflow ? <GraphCanvas workflow={workflow} nodeStates={nodeStates} activeEdges={activeEdges} /> : <div className="panel grid min-h-[580px] place-items-center text-sm text-[var(--muted)]">等待有效的工作流代码…</div>}
       </div>
       <div className="analysis-grid">
-        <CodeEditor code={code} error={compileError} workflowFiles={workflowFiles} selectedFile={selectedFile} switching={switchingWorkflow} onChange={setCode} onSelect={(file) => void selectWorkflow(file)} onReset={() => void reloadFromDisk()} />
+        <CodeEditor editable={editable} code={code} error={compileError} workflowFiles={workflowFiles} selectedFile={selectedFile} switching={switchingWorkflow} onChange={setCode} onSelect={(file) => void selectWorkflow(file)} onReset={() => void reloadFromDisk()} />
         {workflow && <RunPanel workflow={workflow} input={input} running={running} runError={runError} result={result} waves={waves} nodeStates={nodeStates} elapsed={elapsed} onInput={setInput} onRun={run} />}
       </div>
       {workflow && <ResultPanel result={result} />}

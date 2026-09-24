@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist-server",
+    "rootDir": ".",
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "incremental": false,
+    "tsBuildInfoFile": null
+  },
+  "include": ["src/**/*.ts", "web/server/**/*.ts"],
+  "exclude": [
+    "src/**/test/**",
+    "web/test/**",
+    "web/server/local-engine-plugin.ts"
+  ]
+}

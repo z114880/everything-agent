@@ -165,3 +165,80 @@ it("整理进行中发起新对话，只清空记忆写入连线，保留整理�
   expect(edges()).toContain("consolidate_trigger->consolidate_snapshot");
   expect(states().consolidate_snapshot).toBe("running");
 });
+
+it("历史回复按记录时间计算耗时，新回合计时不会改变旧回复", async () => {
+  api.memoryAction.mockResolvedValue({
+    sessions: [{ id: "session-1", title: "当前会话", messageCount: 2 }],
+    messages: [
+      { runId: "history", kind: "user_message", content: "历史问题", createdAt: "2026-09-24T00:00:00.000Z" },
+      { runId: "history", kind: "assistant_message", content: "历史回复", createdAt: "2026-09-24T00:00:12.500Z" },
+    ],
+  });
+  await act(async () => { root.unmount(); root = createRoot(container); root.render(<App />); });
+  const elapsed = () => container.querySelector(".assistant-meta")!.textContent;
+  expect(elapsed()).toContain("12.5s");
+  vi.useFakeTimers();
+  try {
+    api.runAgent.mockImplementation(() => new Promise(() => {}));
+    await enterMessage("下一轮");
+    await click("发送");
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(elapsed()).toContain("12.5s");
+  } finally { vi.useRealTimers(); }
+});
+
+it("停止生成时冻结耗时，后续回合不会继续累计", async () => {
+  let now = 1000;
+  const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+  try {
+    api.runAgent.mockImplementation((_prompt, _session, _onEvent, signal: AbortSignal) => new Promise((_resolve, reject) => {
+      signal.addEventListener("abort", () => reject(new Error("已停止")), { once: true });
+    }));
+    await enterMessage("停止的任务");
+    await click("发送");
+    now = 3500;
+    await click("停止生成");
+    expect(container.querySelector(".assistant-meta")!.textContent).toContain("2.5s");
+    now = 11000;
+    await enterMessage("下一轮");
+    await click("发送");
+    expect(container.querySelector(".assistant-meta")!.textContent).toContain("2.5s");
+  } finally { clock.mockRestore(); }
+});
+
+it.each([
+  ["缺少时间", undefined, undefined, true],
+  ["无效时间", "invalid", "invalid", true],
+  ["时间倒序", "2026-09-24T00:00:02Z", "2026-09-24T00:00:01Z", true],
+  ["未完成", "2026-09-24T00:00:00Z", undefined, false],
+])("历史回合%s时显示耗时未知", async (_label, start, end, completed) => {
+  api.memoryAction.mockResolvedValue({
+    sessions: [{ id: "session-1", title: "当前会话", messageCount: 2 }],
+    messages: [
+      { runId: "history", kind: "user_message", content: "历史问题", createdAt: start },
+      ...(completed ? [{ runId: "history", kind: "assistant_message", content: "历史回复", createdAt: end }] : []),
+    ],
+  });
+  await act(async () => { root.unmount(); root = createRoot(container); root.render(<App />); });
+  expect(container.querySelector(".assistant-meta")!.textContent).toContain("耗时未知");
+});
+
+it("运行中实时计时，请求失败后固定耗时", async () => {
+  vi.useFakeTimers();
+  let now = 1000;
+  const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+  try {
+    let fail!: (error: Error) => void;
+    api.runAgent.mockImplementation(() => new Promise((_resolve, reject) => { fail = reject; }));
+    await enterMessage("运行中的任务");
+    await click("发送");
+    now = 4000;
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(container.querySelector(".assistant-meta")!.textContent).toContain("3.0s");
+    await act(async () => { fail(new Error("连接中断")); });
+    now = 9000;
+    await enterMessage("下一轮");
+    await click("发送");
+    expect(container.querySelector(".assistant-meta")!.textContent).toContain("3.0s");
+  } finally { clock.mockRestore(); vi.useRealTimers(); }
+});

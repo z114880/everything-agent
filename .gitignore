@@ -11,3 +11,6 @@ dist-web/
 
 .evaluations/
 .langfuse/
+
+dist-server/
+release/
