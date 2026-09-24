@@ -26,7 +26,7 @@ export interface MemoryModelOptions {
   currentSessionId: string;
   recall: SessionRecallSettings;
   observer?: AgentObserver;
-  runId?: string;
+  turnId?: string;
 }
 
 /** 注入 MemoryRuntime 的 Dense 检索依赖；未提供时仅允许 lexical-only。 */
@@ -41,13 +41,13 @@ export interface MemoryRetrievalConfiguration {
   allowIncompleteIndex?: boolean;
 }
 export interface SessionSummary {
-  id: string; title: string; messageCount: number; completedRunCount: number; incompleteRunCount: number;
+  id: string; title: string; messageCount: number; completedTurnCount: number; incompleteTurnCount: number;
   createdAt: string; updatedAt: string;
 }
 export interface ChatLogEntry {
   compactions?: Omit<import("../agent-loop/agent-loop.ts").ContextCompaction, "messages">[];
-  id: number; sessionId: string; runId: string; role: string; kind: string; content: unknown; createdAt: string;
-  runComplete?: boolean; contentTruncated?: boolean; contentFragment?: boolean; contentOffset?: number;
+  id: number; sessionId: string; turnId: string; role: string; kind: string; content: unknown; createdAt: string;
+  turnComplete?: boolean; contentTruncated?: boolean; contentFragment?: boolean; contentOffset?: number;
   /** 正文被截断时给出原文总长与「继续读这一条」的 cursor。 */
   contentLength?: number; contentCursor?: string;
 }
@@ -75,19 +75,19 @@ export interface SessionReadResult {
   returnedMessageCount: number; returnedRanges: RecallRange[]; isComplete: boolean; truncated: boolean;
   nextCursor: string | null;
 }
-export interface ConsolidationRun {
-  id: number; runId: string; trigger: string; status: string; totalBatches: number; completedBatches: number; unresolvedConflicts: number;
+export interface ConsolidationTask {
+  id: number; taskId: string; trigger: string; status: string; totalBatches: number; completedBatches: number; unresolvedConflicts: number;
   factsCreated: number; factsUpdated: number; factsSkipped: number; factsDeleted: number; factsMerged: number; errorType: string | null;
   startedAt: string; completedAt: string | null;
 }
 export interface MemoryOverview {
   semanticCount: number; indexedSessionCount: number; indexedMessageCount: number; sessionCount: number;
-  databasePath: string; latestConsolidation: ConsolidationRun | null;
+  databasePath: string; latestConsolidation: ConsolidationTask | null;
 }
 export interface RetrievalResult {
   context: string; retrieved: boolean; semantic: SemanticMemory[]; sessionRecall: SessionSearchResult | null;
 }
-export interface StoredRun { sessionId: string; runId: string; prompt: string; messages: AgentMessage[] }
+export interface StoredTurn { sessionId: string; turnId: string; prompt: string; messages: AgentMessage[] }
 
 /** 主模型只提交事实或忘记意图，不能直接选择数据库操作。 */
 export interface MemoryCandidate {
@@ -126,15 +126,17 @@ export interface MemoryManagementResult {
   deletedIds: number[];
 }
 export interface MemoryManagementOptions {
+  /** 独立后台任务标识，不作为聊天回合标识使用。 */
+  taskId?: string;
   /** 持久任务的稳定操作标识，用于恢复时查询已提交结果。 */
   candidateId?: string;
   modelContextWindow?: number;
   tokenEstimator?: TokenEstimator;
-  sourceRunId?: string;
+  sourceTurnId?: string;
   client: AgentModelClient;
   model: string;
   currentSessionId: string;
-  runId?: string;
+  turnId?: string;
   observer?: AgentObserver;
   signal?: AbortSignal;
   source?: "agent" | "consolidation";

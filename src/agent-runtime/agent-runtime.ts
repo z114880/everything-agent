@@ -25,7 +25,7 @@ import type { DailyConsolidationCheck } from "./daily-consolidation.ts";
 import { formatSkillCatalog, SkillStore } from "../skills/index.ts";
 import { createToolSettings } from "../tools/tool-settings.ts";
 import type { ToolSettingsInput } from "../tools/tool-settings.ts";
-import type { AgentRunInput, AgentRunOptions, AgentRunResult } from "./types.ts";
+import type { AgentTurnInput, AgentTurnOptions, AgentTurnResult } from "./types.ts";
 
 import { RUNTIME_SYSTEM_PROMPT } from "./system-prompt.ts";
 
@@ -134,9 +134,9 @@ export function createAgentRuntime(paths: LocalConfigPaths, options: { langfuse?
 
   /** 执行一次真实 Agent 回合，并通过 observer 流式暴露可观察事件。 */
   async function runLocalAgent(
-    input: AgentRunInput,
-    { observer, signal }: AgentRunOptions,
-  ): Promise<AgentRunResult> {
+    input: AgentTurnInput,
+    { observer, signal }: AgentTurnOptions,
+  ): Promise<AgentTurnResult> {
     assertOpen();
     if (dataClearing) throw new Error("本地数据正在清理，请稍后重试");
     const prompt = requiredText(input.prompt, "User Prompt", 40_000);
@@ -153,11 +153,11 @@ export function createAgentRuntime(paths: LocalConfigPaths, options: { langfuse?
       const trace = getTracer();
       const agentClient = createRuntimeClient(settings.agentModel, settings.modelContextWindow, tokenEstimator);
       const smallClient = createRuntimeClient(settings.smallModel, settings.modelContextWindow, tokenEstimator);
-      const runId = crypto.randomUUID();
+      const turnId = crypto.randomUUID();
       const startedAt = performance.now();
-      const userEvidence = memory.startRun(sessionId, runId, prompt);
-      await trace.record("run_started", {
-        runId,
+      const userEvidence = memory.startTurn(sessionId, turnId, prompt);
+      await trace.record("turn_started", {
+        turnId,
         sessionId,
         userInput: prompt,
         provider: settings.agentModel.provider,
@@ -170,7 +170,7 @@ export function createAgentRuntime(paths: LocalConfigPaths, options: { langfuse?
           timeoutMs: DEFAULT_TIMEOUT_MS,
           stream: true,
         },
-        runtime: { nodeVersion: process.version, traceSchemaVersion: 2 },
+        runtime: { nodeVersion: process.version, traceSchemaVersion: 3 },
       });
       let contextMetadata: Record<string, unknown> = {};
       // 检索在 try 之外声明，失败回合也能报告已经花掉的检索时间。
@@ -180,7 +180,7 @@ export function createAgentRuntime(paths: LocalConfigPaths, options: { langfuse?
       const derivedTaskIds = new Set<string>();
       // 在执行边界统一关联回合与会话；observer 保持完整事件流，trace 只保存选定事件。
       const emit: AgentObserver = async (kind, event) => {
-        const enriched = { ...event, ...(kind === "context_assembled" ? contextMetadata : {}), runId, sessionId };
+        const enriched = { ...event, ...(kind === "context_assembled" ? contextMetadata : {}), turnId, sessionId };
         collectDerivedTaskId(derivedTaskIds, kind, enriched);
         await observer(kind, enriched);
         if ([
@@ -207,7 +207,7 @@ export function createAgentRuntime(paths: LocalConfigPaths, options: { langfuse?
           currentSessionId: sessionId,
           recall: recallSettings(settings, tokenEstimator),
           observer: emit,
-          runId,
+          turnId,
         });
         retrievalMs = Math.round(performance.now() - retrievalStartedAt);
         const messages: AgentMessage[] = [...history, { role: "user", content: prompt }];
@@ -238,7 +238,7 @@ export function createAgentRuntime(paths: LocalConfigPaths, options: { langfuse?
           messages,
           tools: new LocalToolRegistry(memory, new ManageMemoryTool(memory, {
             client: agentClient, model: settings.agentModel.model, currentSessionId: sessionId,
-            runId, evidenceMessageId: userEvidence.id, observer: emit,
+            turnId, evidenceMessageId: userEvidence.id, observer: emit,
           }), {
             currentSessionId: sessionId,
             settings: recallSettings(settings, tokenEstimator),
@@ -256,19 +256,19 @@ export function createAgentRuntime(paths: LocalConfigPaths, options: { langfuse?
           timeoutMs: DEFAULT_TIMEOUT_MS,
           stream: true,
           modelContextWindow: settings.modelContextWindow,
-          onCompacted: (compaction) => memory.saveCompaction(sessionId, runId, messages.slice(appendedFrom), compaction),
+          onCompacted: (compaction) => memory.saveCompaction(sessionId, turnId, messages.slice(appendedFrom), compaction),
           tokenEstimator,
           signal,
           observer: emit,
           serializeToolEvent: publicToolEvent,
-          runId,
+          turnId,
         });
         // Loop 原地追加消息；只提交本轮新增内容，避免重复写入历史或用户证据。
         const appended = messages.slice(appendedFrom);
         if (!isFinalAssistantMessage(appended.at(-1))) {
           appended.push({ role: "assistant", content: [{ type: "text", text: result.reply }] });
         }
-        await memory.completeRun(sessionId, runId, appended);
+        await memory.completeTurn(sessionId, turnId, appended);
         const ms = Math.round(performance.now() - startedAt);
         const context = contextWaterline(
           settings.modelContextWindow,
@@ -276,8 +276,8 @@ export function createAgentRuntime(paths: LocalConfigPaths, options: { langfuse?
           result.peakEstimatedInputTokens,
           result.peakInputTokens,
         );
-        await trace.record("run_completed", {
-          runId,
+        await trace.record("turn_completed", {
+          turnId,
           sessionId,
           provider: settings.agentModel.provider,
           model: settings.agentModel.model,
@@ -307,11 +307,11 @@ export function createAgentRuntime(paths: LocalConfigPaths, options: { langfuse?
           modelMs: result.modelMs,
           toolMs: result.toolMs,
           ...context,
-          runId,
+          turnId,
         };
       } catch (error) {
-        await trace.record("run_failed", {
-          runId,
+        await trace.record("turn_failed", {
+          turnId,
           sessionId,
           provider: settings.agentModel.provider,
           model: settings.agentModel.model,

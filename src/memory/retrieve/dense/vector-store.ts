@@ -75,7 +75,7 @@ export class SqliteVectorStore {
       .run(generationId, corpus, sourceId);
   }
 
-  /** 删除 active generation 中属于一个 Session 的全部 run 向量。 */
+  /** 删除 active generation 中属于一个 Session 的全部 turn 向量。 */
   deleteActiveSession(sessionId: string): void {
     const generationId = this.activeGenerationId();
     if (generationId) {

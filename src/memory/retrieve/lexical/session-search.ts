@@ -11,19 +11,19 @@ export interface LexicalSessionCandidate {
   totalMatches: number;
 }
 
-/** 检索消息级 FTS 命中，并在进入融合前按成功 run 聚合最佳 BM25。 */
+/** 检索消息级 FTS 命中，并在进入融合前按成功 turn 聚合最佳 BM25。 */
 export function searchSessionLexical(database: DatabaseSync, query: string, currentSessionId?: string): LexicalSessionCandidate[] {
   const match = toMatchQuery(query);
   if (!match) return [];
   const rows = database.prepare(`
-    SELECT c.session_id, c.run_id, c.id AS message_id, bm25(chat_log_fts) AS bm25, s.updated_at
+    SELECT c.session_id, c.turn_id, c.id AS message_id, bm25(chat_log_fts) AS bm25, s.updated_at
     FROM chat_log_fts f JOIN chat_log c ON c.id = f.rowid JOIN sessions s ON s.id = c.session_id
     WHERE chat_log_fts MATCH ? AND (? = '' OR c.session_id <> ?)
     ORDER BY bm25 ASC, s.updated_at DESC, c.session_id ASC, c.id ASC LIMIT 2000
   `).all(match, currentSessionId ?? "", currentSessionId ?? "") as Row[];
   const grouped = new Map<string, LexicalSessionCandidate>();
   for (const row of rows) {
-    const sourceId = String(row.run_id);
+    const sourceId = String(row.turn_id);
     const current = grouped.get(sourceId);
     if (current) current.totalMatches += 1;
     else grouped.set(sourceId, {

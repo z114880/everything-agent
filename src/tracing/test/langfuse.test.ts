@@ -9,7 +9,7 @@ const directories: string[] = [];
 afterEach(async () => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers(); await Promise.all(directories.splice(0).map((p) => rm(p, { recursive: true, force: true }))); });
 const config = { baseUrl: "http://localhost:3300", publicKey: "public", secretKey: "secret", captureContent: false };
 function event(type: string, payload: Record<string, unknown> = {}, extra: Record<string, unknown> = {}): TraceRecord {
-  return { version: 2, eventId: crypto.randomUUID(), runId: "run-1", sessionId: "session-1", timestamp: "2026-09-16T01:00:00.000Z", type, payload, ...extra };
+  return { version: 3, traceId: String(extra.taskId ?? extra.turnId ?? "turn-1"), eventId: crypto.randomUUID(), turnId: "turn-1", sessionId: "session-1", timestamp: "2026-09-16T01:00:00.000Z", type, payload, ...extra };
 }
 function receiver(status = 200, body = "{}") {
   const requests: { url: string; body: any; headers: any }[] = [];
@@ -21,7 +21,7 @@ function attributes(span: any) { return Object.fromEntries(span.attributes.map((
 
 it("真实生命周期映射为模型、工具、召回和技能记录，默认不上传正文", async () => {
   const requests = receiver(); const tracer = createLangfuseTracer(config);
-  tracer.record(event("run_started", { userInput: "私人问题" }));
+  tracer.record(event("turn_started", { userInput: "私人问题" }));
   tracer.record(event("model_request", { model: "model-a", request: { messages: "私人提示词" } }, { modelCallId: "model-1" }));
   tracer.record(event("model_response", { model: "model-a", response: "私人回答", tokenUsage: { inputTokens: 7, outputTokens: 3 } }, { modelCallId: "model-1", timestamp: "2026-09-16T01:00:01.000Z" }));
   tracer.record(event("tool_started", { tool: "read_skill" }, { toolCallId: "tool-1" }));
@@ -31,9 +31,9 @@ it("真实生命周期映射为模型、工具、召回和技能记录，默认�
   tracer.record(event("retrieval_completed", { semanticCount: 2, semantic: { denseQuery: "私人查询" } }, { operationId: "search-1" }));
   tracer.record(event("tool_completed", { tool: "external", result: "私人字符串结果" }, { toolCallId: "external" }));
   tracer.record(event("tool_completed", { tool: "external", result: ["私人数组结果"] }, { toolCallId: "external-array" }));
-  tracer.record(event("run_completed", { reply: "私人结果" }));
+  tracer.record(event("turn_completed", { reply: "私人结果" }));
   expect(await tracer.flush(true)).toEqual([]);
-  const all = spans(requests); const root = all.find((s) => s.name === "run");
+  const all = spans(requests); const root = all.find((s) => s.name === "turn");
   expect(root.parentSpanId).toBeUndefined();
   expect(all.find((s) => s.name === "model").parentSpanId).toBe(root.spanId);
   const skill = all.find((s) => s.name === "skill_loaded"), tool = all.find((s) => s.name === "read_skill");
@@ -48,11 +48,11 @@ it("真实生命周期映射为模型、工具、召回和技能记录，默认�
 
 it("并发调用按调用标识匹配，后台任务使用独立 trace 并保留来源", async () => {
   const requests = receiver(); const tracer = createLangfuseTracer({ ...config, captureContent: true });
-  tracer.record(event("run_started"));
+  tracer.record(event("turn_started"));
   for (const id of ["a", "b"]) tracer.record(event("model_request", { request: id }, { modelCallId: id }));
   for (const id of ["b", "a"]) tracer.record(event("model_response", { response: id }, { modelCallId: id }));
-  tracer.record(event("run_completed"));
-  const background = { runId: "task-run", taskId: "task-run", sourceRunId: "run-1" };
+  tracer.record(event("turn_completed"));
+  const background = { turnId: undefined, taskId: "task-run", sourceTurnId: "turn-1" };
   tracer.record(event("memory_task_started", { attempt: 1 }, background));
   tracer.record(event("memory_change_completed", { action: "update", targetId: 3 }, background));
   tracer.record(event("memory_task_completed", { attempt: 1 }, background));
@@ -62,7 +62,7 @@ it("并发调用按调用标识匹配，后台任务使用独立 trace 并保留
   expect(models[0].spanId).not.toBe(models[1].spanId);
   const task = all.find((s) => s.name === "task");
   expect(task.traceId).not.toBe(models[0].traceId);
-  expect(attributes(task)["langfuse.observation.metadata.execution"]).toContain('"sourceRunId":"run-1"');
+  expect(attributes(task)["langfuse.observation.metadata.execution"]).toContain('"sourceTurnId":"turn-1"');
   expect(all.find((s) => s.name === "memory_change_completed").parentSpanId).toBe(task.spanId);
 });
 
@@ -80,7 +80,7 @@ it("只有完成事件不推算起点，未完成操作关闭时明确标错", a
 it("网络和部分接收故障可观察，不把服务端正文和密钥带入错误", async () => {
   for (const [status, body] of [[401, "secret"], [200, '{"partialSuccess":{"rejectedSpans":"1","errorMessage":"secret"}}'], [200, "invalid"]] as const) {
     receiver(status, body); const warning = vi.fn(); const tracer = createLangfuseTracer(config, warning);
-    tracer.record(event("run_started")); tracer.record(event("run_failed"));
+    tracer.record(event("turn_started")); tracer.record(event("turn_failed"));
     const errors = await tracer.flush(true);
     expect(errors.length).toBeGreaterThan(0); expect(errors.join()).not.toContain("secret"); expect(warning).toHaveBeenCalled();
   }
@@ -93,7 +93,7 @@ it("定时发送不会结束活跃步骤，队列满时报告丢失", async () =
   let release!: (value: Response) => void;
   vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { release = resolve; })));
   const warning = vi.fn(); const blocked = createLangfuseTracer(config, warning);
-  for (let index = 0; index < 260; index++) blocked.record(event("run_completed", {}, { runId: `run-${index}` }));
+  for (let index = 0; index < 260; index++) blocked.record(event("turn_completed", {}, { turnId: `run-${index}` }));
   expect(warning).toHaveBeenCalledWith(expect.stringContaining("队列已满"));
   await Promise.resolve();
   vi.stubGlobal("fetch", vi.fn(async () => new Response("{}")));
@@ -145,13 +145,13 @@ it("整理批次、模型与变更保持父子关系，不同调用与重试不�
 
 it("并发 Gate 和 Embedding 按 operationId 配对，并保留模型与真实用量", async () => {
   const requests = receiver(); const tracer = createLangfuseTracer(config);
-  tracer.record(event("run_started"));
+  tracer.record(event("turn_started"));
   for (const operationId of ["gate-a", "gate-b"]) tracer.record(event("gate_start", { model: operationId }, { operationId }));
   for (const operationId of ["gate-b", "gate-a"]) tracer.record(event("gate_end", { tokenUsage: { inputTokens: 5, outputTokens: 1 } }, { operationId }));
   for (const operationId of ["embed-a", "embed-b"]) tracer.record(event("embedding_started", { model: operationId }, { operationId }));
   tracer.record(event("embedding_failed", { errorType: "TimeoutError" }, { operationId: "embed-b" }));
   tracer.record(event("embedding_completed", { tokenUsage: { inputTokens: 12, totalTokens: 12 } }, { operationId: "embed-a" }));
-  tracer.record(event("run_completed")); await tracer.flush(true);
+  tracer.record(event("turn_completed")); await tracer.flush(true);
   const all = spans(requests);
   const gates = all.filter(span => span.name === "gate"), embeddings = all.filter(span => span.name === "embedding");
   expect(gates.map(span => attributes(span)["langfuse.observation.model.name"])).toEqual(["gate-b", "gate-a"]);
@@ -163,18 +163,18 @@ it("并发 Gate 和 Embedding 按 operationId 配对，并保留模型与真实�
 it("压缩摘要调用归属压缩步骤，保留模型用量和水位且不上传摘要", async () => {
   const requests = receiver(); const tracer = createLangfuseTracer(config);
   const common = { compactionId: "compact-1" };
-  tracer.record(event("run_started"));
+  tracer.record(event("turn_started"));
   tracer.record(event("compact_started", { beforeTokens: 7000, targetTokens: 3000, availableInputTokens: 10000 }, common));
   tracer.record(event("compact_model_started", { model: "main" }, { ...common, modelCallId: "summary-call" }));
   tracer.record(event("compact_model_completed", { model: "main", tokenUsage: { inputTokens: 7000, outputTokens: 100 }, summary: "私人摘要" }, { ...common, modelCallId: "summary-call" }));
   tracer.record(event("compact_completed", { beforeTokens: 7000, afterTokens: 2000, targetReached: true, ms: 200 }, common));
-  tracer.record(event("run_completed"));
+  tracer.record(event("turn_completed"));
   await tracer.flush(true);
   const all = spans(requests);
   const compact = all.find((s) => s.name === "compact");
   const generation = all.find((s) => s.name === "compact_model");
   expect(generation.parentSpanId).toBe(compact.spanId);
-  expect(compact.parentSpanId).toBe(all.find((s) => s.name === "run").spanId);
+  expect(compact.parentSpanId).toBe(all.find((s) => s.name === "turn").spanId);
   expect(attributes(generation)["langfuse.observation.type"]).toBe("generation");
   expect(attributes(generation)["langfuse.observation.usage_details"]).toBe('{"input":7000,"output":100}');
   expect(attributes(compact)["langfuse.observation.metadata.execution"]).toContain('"afterTokens":2000');

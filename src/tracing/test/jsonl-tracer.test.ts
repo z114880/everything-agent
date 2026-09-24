@@ -9,22 +9,22 @@ describe("JSONL 运行记录", () => {
     const home = await mkdtemp(join(tmpdir(), "everything-trace-"));
     const tracer = new JsonlTracer(home, { now: () => new Date("2026-09-03T08:09:10Z") });
     const longMessage = `请使用 Bearer abc.def，${"很长的内容".repeat(200)}`;
-    await tracer.record("run_started", {
-      runId: "r1",
+    await tracer.record("turn_started", {
+      turnId: "r1",
       sessionId: "s1",
       userInput: longMessage,
       provider: "openai-compatible",
       model: "test-model",
     });
     await tracer.record("model_request", {
-      runId: "r1",
+      turnId: "r1",
       sessionId: "s1",
       iteration: 1,
       modelCallId: "model-1",
       request: { system: "完整 System Prompt", messages: [{ role: "user", content: longMessage }], tools: [], maxTokens: 2_048 },
     });
     await tracer.record("model_response", {
-      runId: "r1",
+      turnId: "r1",
       sessionId: "s1",
       iteration: 1,
       modelCallId: "model-1",
@@ -32,7 +32,7 @@ describe("JSONL 运行记录", () => {
       tokenUsage: { inputTokens: 12, outputTokens: 3, totalTokens: 15 },
     });
     await tracer.record("tool_completed", {
-      runId: "r1",
+      turnId: "r1",
       sessionId: "s1",
       tool: "manage_memory",
       toolCallId: "tool-1",
@@ -43,7 +43,7 @@ describe("JSONL 运行记录", () => {
     const records = await readTraceRecords(home);
 
     expect(records).toEqual([
-      expect.objectContaining({ version: 2, type: "run_started", runId: "r1", sessionId: "s1", sequence: 1 }),
+      expect.objectContaining({ version: 3, type: "turn_started", turnId: "r1", sessionId: "s1", sequence: 1 }),
       expect.objectContaining({
         type: "model_request",
         modelCallId: "model-1",
@@ -71,22 +71,22 @@ describe("JSONL 运行记录", () => {
     expect(records[2]?.payload?.response).toMatchObject({ tokenUsage: { inputTokens: 12, outputTokens: 3, totalTokens: 15 } });
     expect(records[2]?.payload?.tokenUsage).toEqual({ inputTokens: 12, outputTokens: 3, totalTokens: 15 });
     expect(JSON.stringify(records)).not.toContain('"authorization":"secret"');
-    expect(await readFile(join(home, "traces", "2026-09-03", "001-run-r1.jsonl"), "utf8"))
-      .toContain('"type":"run_started"');
+    expect(await readFile(join(home, "traces", "2026-09-03", "001-turn-r1.jsonl"), "utf8"))
+      .toContain('"type":"turn_started"');
   });
 
   it("同一 Session 的不同 run 独立存储", async () => {
     const home = await mkdtemp(join(tmpdir(), "everything-trace-"));
     const tracer = new JsonlTracer(home, { now: () => new Date("2026-09-03T08:09:10Z") });
-    await tracer.record("run_started", { runId: "r1", sessionId: "s1" });
-    await tracer.record("run_started", { runId: "r2", sessionId: "s1" });
-    await tracer.record("trace_read_error", { runId: "r3" });
+    await tracer.record("turn_started", { turnId: "r1", sessionId: "s1" });
+    await tracer.record("turn_started", { turnId: "r2", sessionId: "s1" });
+    await tracer.record("trace_read_error", { operationId: "r3" });
 
     const dateDirectory = join(home, "traces", "2026-09-03");
-    expect((await readdir(dateDirectory)).sort()).toEqual(["001-run-r1.jsonl", "002-run-r2.jsonl", expect.stringMatching(/^003-system-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.jsonl$/)]);
+    expect((await readdir(dateDirectory)).sort()).toEqual(["001-turn-r1.jsonl", "002-turn-r2.jsonl", expect.stringMatching(/^003-system-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.jsonl$/)]);
     expect((await readTraceFiles(home)).map((file) => file.path)).toEqual([
-      "2026-09-03/001-run-r1.jsonl",
-      "2026-09-03/002-run-r2.jsonl",
+      "2026-09-03/001-turn-r1.jsonl",
+      "2026-09-03/002-turn-r2.jsonl",
       expect.stringMatching(/^2026-09-03\/003-system-[0-9a-f-]{36}\.jsonl$/),
     ]);
   });
@@ -95,17 +95,17 @@ describe("JSONL 运行记录", () => {
     const home = await mkdtemp(join(tmpdir(), "everything-trace-"));
     let now = new Date(2026, 8, 3, 23, 59, 59);
     const tracer = new JsonlTracer(home, { now: () => now });
-    await tracer.record("run_started", { runId: "r1", sessionId: "s1" });
+    await tracer.record("turn_started", { turnId: "r1", sessionId: "s1" });
     now = new Date(2026, 8, 4, 0, 0, 1);
-    await tracer.record("model_response", { runId: "r1", sessionId: "s1", ms: 2 });
-    await tracer.record("run_completed", { runId: "r1", sessionId: "s1", ms: 2000 });
-    await tracer.record("run_started", { runId: "r2", sessionId: "s1" });
+    await tracer.record("model_response", { turnId: "r1", sessionId: "s1", ms: 2 });
+    await tracer.record("turn_completed", { turnId: "r1", sessionId: "s1", ms: 2000 });
+    await tracer.record("turn_started", { turnId: "r2", sessionId: "s1" });
     const files = await readTraceFiles(home);
     expect(files.map((file) => file.path)).toEqual([
-      "2026-09-03/001-run-r1.jsonl",
-      "2026-09-04/001-run-r2.jsonl",
+      "2026-09-03/001-turn-r1.jsonl",
+      "2026-09-04/001-turn-r2.jsonl",
     ]);
-    expect(files[0]?.records.map((record) => record.type)).toEqual(["run_started", "model_response", "run_completed"]);
+    expect(files[0]?.records.map((record) => record.type)).toEqual(["turn_started", "model_response", "turn_completed"]);
     expect(files[0]?.records.map((record) => record.sequence)).toEqual([1, 2, 3]);
     expect(files.every((file) => file.records.every((record) => record.sessionId === "s1"))).toBe(true);
   });
@@ -114,40 +114,40 @@ describe("JSONL 运行记录", () => {
     const home = await mkdtemp(join(tmpdir(), "everything-trace-"));
     const options = { now: () => new Date("2026-09-03T08:00:00Z") };
     const tracer = new JsonlTracer(home, options);
-    await tracer.record("run_started", { runId: "r1" });
-    await tracer.record("run_completed", { runId: "r1" });
-    await tracer.record("run_started", { runId: "r2" });
-    await new JsonlTracer(home, options).record("run_started", { runId: "r3" });
+    await tracer.record("embedding_started", { operationId: "r1" });
+    await tracer.record("embedding_completed", { operationId: "r1" });
+    await tracer.record("embedding_started", { operationId: "r2" });
+    await new JsonlTracer(home, options).record("embedding_started", { operationId: "r3" });
 
     const files = await readTraceFiles(home);
     expect(files).toHaveLength(2);
     expect(files[0]?.path).toMatch(/^2026-09-03\/001-system-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.jsonl$/);
-    expect(files[0]?.records.map((record) => record.runId).sort()).toEqual(["r1", "r1", "r2"]);
+    expect(files[0]?.records.map((record) => record.operationId).sort()).toEqual(["r1", "r1", "r2"]);
     expect(files[1]?.path).toMatch(/^2026-09-03\/002-system-[0-9a-f-]{36}\.jsonl$/);
-    expect(files[1]?.records[0]?.runId).toBe("r3");
+    expect(files[1]?.records[0]?.operationId).toBe("r3");
   });
 
   it("重启后继续写入原 run 编号，并保留完整事件", async () => {
     const home = await mkdtemp(join(tmpdir(), "everything-trace-"));
     const firstTracer = new JsonlTracer(home, { now: () => new Date("2026-09-03T08:00:00Z") });
-    await firstTracer.record("run_started", { runId: "r1", sessionId: "s1" });
+    await firstTracer.record("turn_started", { turnId: "r1", sessionId: "s1" });
 
     let now = new Date("2026-09-03T09:00:00Z");
     const restartedTracer = new JsonlTracer(home, { now: () => now });
-    await restartedTracer.record("run_completed", { runId: "r1", sessionId: "s1" });
+    await restartedTracer.record("turn_completed", { turnId: "r1", sessionId: "s1" });
     now = new Date("2026-09-03T10:00:00Z");
-    await restartedTracer.record("run_started", { runId: "r2", sessionId: "s1" });
+    await restartedTracer.record("turn_started", { turnId: "r2", sessionId: "s1" });
 
     const directory = join(home, "traces", "2026-09-03");
-    expect((await readdir(directory)).sort()).toEqual(["001-run-r1.jsonl", "002-run-r2.jsonl"]);
+    expect((await readdir(directory)).sort()).toEqual(["001-turn-r1.jsonl", "002-turn-r2.jsonl"]);
     expect(await readTraceFiles(home)).toEqual([
       expect.objectContaining({
-        path: "2026-09-03/001-run-r1.jsonl",
-        records: [expect.objectContaining({ runId: "r1" }), expect.objectContaining({ runId: "r1" })],
+        path: "2026-09-03/001-turn-r1.jsonl",
+        records: [expect.objectContaining({ turnId: "r1" }), expect.objectContaining({ turnId: "r1" })],
       }),
       expect.objectContaining({
-        path: "2026-09-03/002-run-r2.jsonl",
-        records: [expect.objectContaining({ runId: "r2" })],
+        path: "2026-09-03/002-turn-r2.jsonl",
+        records: [expect.objectContaining({ turnId: "r2" })],
       }),
     ]);
   });
@@ -156,15 +156,15 @@ describe("JSONL 运行记录", () => {
     const home = await mkdtemp(join(tmpdir(), "everything-trace-"));
     const directory = join(home, "traces", "2026-09-03");
     await mkdir(directory, { recursive: true });
-    await writeFile(join(directory, "001-run-r1.jsonl"), "broken\n", "utf8");
+    await writeFile(join(directory, "001-turn-r1.jsonl"), "broken\n", "utf8");
     const warning = vi.fn();
     const tracer = new JsonlTracer(home, { onWarning: warning, now: () => new Date("2026-09-03T08:09:10Z") });
-    await tracer.record("run_completed", { runId: "r1", sessionId: "s1", iterations: 1 });
+    await tracer.record("turn_completed", { turnId: "r1", sessionId: "s1", iterations: 1 });
 
     expect(warning).toHaveBeenCalled();
-    const recovered = (await readdir(directory)).find((file) => file.startsWith("001-run-r1.recovered-"));
+    const recovered = (await readdir(directory)).find((file) => file.startsWith("001-turn-r1.recovered-"));
     expect(recovered).toBeTruthy();
-    expect(await readFile(join(directory, recovered!), "utf8")).toContain('"type":"run_completed"');
+    expect(await readFile(join(directory, recovered!), "utf8")).toContain('"type":"turn_completed"');
   });
 
   it("目录不存在时返回空数组，损坏行转换为可见错误", async () => {
@@ -173,10 +173,10 @@ describe("JSONL 运行记录", () => {
 
     const directory = join(home, "traces", "2026-09-03");
     await mkdir(directory, { recursive: true });
-    await writeFile(join(directory, "001-run-r1.jsonl"), '{"version":1,"type":"turn_end","timestamp":"2026-09-03T08:00:00Z","runId":"r1"}\n损坏\n', "utf8");
+    await writeFile(join(directory, "001-turn-r1.jsonl"), '{"version":3,"traceId":"r1","type":"turn_end","timestamp":"2026-09-03T08:00:00Z","turnId":"r1"}\n损坏\n', "utf8");
     expect(await readTraceRecords(home)).toEqual([
-      expect.objectContaining({ type: "turn_end", runId: "r1" }),
-      expect.objectContaining({ type: "trace_read_error", payload: { file: "2026-09-03/001-run-r1.jsonl" } }),
+      expect.objectContaining({ type: "turn_end", turnId: "r1" }),
+      expect.objectContaining({ type: "trace_read_error", payload: { file: "2026-09-03/001-turn-r1.jsonl" } }),
     ]);
   });
 
@@ -184,7 +184,7 @@ describe("JSONL 运行记录", () => {
     const home = await mkdtemp(join(tmpdir(), "everything-trace-"));
     const directory = join(home, "traces");
     await mkdir(directory);
-    await writeFile(join(directory, "2026-09-03.jsonl"), '{"version":1,"type":"turn_end","timestamp":"2026-09-03T08:00:00Z","runId":"legacy"}\n', "utf8");
+    await writeFile(join(directory, "2026-09-03.jsonl"), '{"version":3,"traceId":"r1","type":"turn_end","timestamp":"2026-09-03T08:00:00Z","turnId":"legacy"}\n', "utf8");
 
     expect(await readTraceRecords(home)).toEqual([]);
   });
@@ -201,7 +201,7 @@ describe("JSONL 运行记录", () => {
     await tracer.flush();
     const [record] = await readTraceRecords(home);
 
-    expect(record?.runId).toEqual(expect.any(String));
+    expect(record?.traceId).toEqual(expect.any(String));
     expect(JSON.stringify(record?.payload?.semantic)).toContain("凭证已移除");
     expect(JSON.stringify(record)).not.toContain("不能出现");
   });
@@ -209,9 +209,9 @@ describe("JSONL 运行记录", () => {
   it("未知事件只保留关联标识", async () => {
     const home = await mkdtemp(join(tmpdir(), "everything-trace-"));
     const tracer = new JsonlTracer(home);
-    await tracer.record("custom", { runId: "r1", sessionId: "s1", private: "内容" });
+    await tracer.record("custom", { turnId: "r1", sessionId: "s1", private: "内容" });
     expect(await readTraceRecords(home)).toEqual([
-      expect.objectContaining({ type: "custom", runId: "r1", sessionId: "s1" }),
+      expect.objectContaining({ type: "custom", turnId: "r1", sessionId: "s1" }),
     ]);
     expect(JSON.stringify(await readTraceRecords(home))).not.toContain("内容");
   });
@@ -220,11 +220,11 @@ describe("JSONL 运行记录", () => {
     const home = await mkdtemp(join(tmpdir(), "everything-trace-"));
     const tracer = new JsonlTracer(home);
     await tracer.record("embedding_completed", {
-      runId: "r1", purpose: "query", itemCount: 1, estimatedTokens: 8, tokenUsage: null, dimensions: 1024,
+      turnId: "r1", purpose: "query", itemCount: 1, estimatedTokens: 8, tokenUsage: null, dimensions: 1024,
       text: "私人正文", vector: [1, 2], apiKey: "secret",
     });
     await tracer.record("mmr_completed", {
-      runId: "r1", corpus: "semantic",
+      turnId: "r1", corpus: "semantic",
       selected: [{ id: "1", relevance: 0.8, redundancy: 0.1, mmrScore: 0.53 }],
       rawText: "私人正文",
     });
@@ -240,9 +240,9 @@ describe("JSONL 运行记录", () => {
 it("记忆管理事件可回放决策及合并结果，不记录自由文本理由和事实正文", async () => {
   const home = await mkdtemp(join(tmpdir(), "memory-trace-"));
   const tracer = new JsonlTracer(home);
-  await tracer.record("memory_search_completed", { runId: "run", sessionId: "session", candidateId: "candidate", attempt: 1, revision: 2, candidateIds: [12, 35], query: "私人查询" });
-  await tracer.record("memory_decision_completed", { runId: "run", sessionId: "session", candidateId: "candidate", action: "merge", reasonCode: "redundant", targetId: 12, sourceIds: [35], evidenceMessageIds: [1], reason: "私人理由", content: "私人内容" });
-  await tracer.record("memory_change_completed", { runId: "run", sessionId: "session", candidateId: "candidate", action: "merge", reasonCode: "redundant", targetId: 12, deletedIds: [35], durationMs: 8 });
+  await tracer.record("memory_search_completed", { turnId: "run", sessionId: "session", candidateId: "candidate", attempt: 1, revision: 2, candidateIds: [12, 35], query: "私人查询" });
+  await tracer.record("memory_decision_completed", { turnId: "run", sessionId: "session", candidateId: "candidate", action: "merge", reasonCode: "redundant", targetId: 12, sourceIds: [35], evidenceMessageIds: [1], reason: "私人理由", content: "私人内容" });
+  await tracer.record("memory_change_completed", { turnId: "run", sessionId: "session", candidateId: "candidate", action: "merge", reasonCode: "redundant", targetId: 12, deletedIds: [35], durationMs: 8 });
   const records = await readTraceRecords(home);
   expect(records.map((item) => item.sequence)).toEqual([1, 2, 3]);
   expect(records[1]?.payload).toMatchObject({ action: "merge", targetId: 12, sourceIds: [35], reasonCode: "redundant" });
@@ -254,22 +254,22 @@ it("一个 consolidation 批次跨 Session 和日期仍写入同一个独立 JSO
   const home = await mkdtemp(join(tmpdir(), "trace-batch-"));
   let date = new Date("2026-09-05T12:00:00+08:00");
   const tracer = new JsonlTracer(home, { now: () => date });
-  const task = { runId: "batch-run", createdAt: "2026-09-05T12:00:00+08:00" };
+  const task = { taskId: "batch-task", createdAt: "2026-09-05T12:00:00+08:00" };
   await tracer.record("consolidation_started", { ...task, trigger: "manual", attempt: 1 });
   for (let index = 0; index < 6; index++) {
     date = new Date("2026-09-06T12:00:00+08:00");
-    await tracer.record("consolidation_batch_completed", { runId: task.runId, batchIndex: index, totalBatches: 6, completedBatches: index + 1 });
+    await tracer.record("consolidation_batch_completed", { taskId: task.taskId, batchIndex: index, totalBatches: 6, completedBatches: index + 1 });
   }
-  await tracer.record("embedding_completed", { runId: task.runId, batchIndex: 0, ms: 2 });
-  await tracer.record("tool_completed", { runId: "chat", sessionId: "session-0", result: { status: "queued", taskId: "write" } });
-  await tracer.record("memory_task_completed", { runId: "write", taskId: "write", taskKind: "memory_write", taskCreatedAt: task.createdAt, sessionId: "session-0", sourceRunId: "chat", attempt: 1 });
+  await tracer.record("embedding_completed", { taskId: task.taskId, batchIndex: 0, ms: 2 });
+  await tracer.record("tool_completed", { turnId: "chat", sessionId: "session-0", result: { status: "queued", taskId: "write" } });
+  await tracer.record("memory_task_completed", { taskId: "write", taskKind: "memory_write", taskCreatedAt: task.createdAt, sessionId: "session-0", sourceTurnId: "chat", attempt: 1 });
   const files = await readTraceFiles(home);
   expect(files).toHaveLength(3);
-  const batch = files.find((file) => file.path.includes("consolidation-batch-run"))!;
+  const batch = files.find((file) => file.path.includes("consolidation-batch-task"))!;
   expect(batch.path).toContain("2026-09-05/");
   expect(batch.records).toHaveLength(8);
   expect(batch.records.at(-1)?.type).toBe("embedding_completed");
-  expect(batch.records.every((record) => !record.taskId && !record.taskKind && !record.taskCreatedAt)).toBe(true);
+  expect(batch.records.every((record) => record.taskId === "batch-task" && record.traceId === "batch-task" && !record.turnId && !record.taskKind && !record.taskCreatedAt)).toBe(true);
   expect(batch.records[1]?.payload).toEqual({ batchIndex: 0, totalBatches: 6, completedBatches: 1 });
-  expect(files.find((file) => file.path.includes("memory_write-write"))?.records[0]).toMatchObject({ sourceRunId: "chat" });
+  expect(files.find((file) => file.path.includes("memory_write-write"))?.records[0]).toMatchObject({ sourceTurnId: "chat" });
 });

@@ -143,7 +143,7 @@ function nonNegativeInteger(value: unknown): number | null {
 }
 
 function metadata(context: EmbeddingCallContext, value: Record<string, unknown>): Record<string, unknown> {
-  return { purpose: context.purpose, ...(context.runId ? { runId: context.runId } : {}), ...(context.rebuildId ? { rebuildId: context.rebuildId } : {}), ...value };
+  return { purpose: context.purpose, ...(context.turnId ? { turnId: context.turnId } : {}), ...(context.rebuildId ? { rebuildId: context.rebuildId } : {}), ...value };
 }
 
 function sanitizedError(error: unknown): string { return sanitizeText(error instanceof Error ? error.message : String(error)) }

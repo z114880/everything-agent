@@ -1,13 +1,13 @@
 import { AlertMessage } from "../../components/AlertMessage";
 import { ChevronRight, FileJson, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { loadTraces, loadTraceRun, type TraceFile, type TraceDashboard } from "../../agent-api";
+import { loadTraces, loadTrace, type TraceFile, type TraceDashboard } from "../../agent-api";
 import { MINIMUM_FEEDBACK_DURATION_MS, withMinimumDuration } from "../../lib/minimum-duration";
 import { Button } from "../../components/ui/button";
 import { PageHeading } from "../../components/PageHeading";
 import { SaveMessage } from "../../components/SaveMessage";
 
-const EMPTY_DASHBOARD: TraceDashboard = { runs: [], nextCursor: null };
+const EMPTY_DASHBOARD: TraceDashboard = { traces: [], nextCursor: null };
 
 /** 按 JSONL 文件原样列出 Trace，不在页面中推导 Session 或回合结构。 */
 export function TracePage() {
@@ -26,8 +26,8 @@ export function TracePage() {
     try {
       const result = await withMinimumDuration(async () => {
         const page = await loadTraces(cursor);
-        const details = await Promise.all(page.runs.map((run) => loadTraceRun(run.runId)));
-        // 关联后台任务可能出现在多个运行详情中，同一文件中的事件只展示一次。
+        const details = await Promise.all(page.traces.map((trace) => loadTrace(trace.traceId)));
+        // 关联后台任务可能出现在多个轨迹详情中，同一文件中的事件只展示一次。
         const grouped = new Map<string, Map<string, TraceFile["records"][number]>>();
         for (const detail of details) for (const file of detail.files) {
           const records = grouped.get(file.path) ?? new Map();
@@ -74,7 +74,7 @@ export function TracePage() {
     <PageHeading eyebrow="JSONL traces" title="Traces" description="按文件查看已脱敏的 JSONL 事件。" descriptionActions={<Button size="sm" loading={refreshing} onClick={() => void refresh()}><RefreshCw size={14} /> 刷新数据</Button>} />
     <SaveMessage message={saveMessage} setMessage={setSaveMessage} />
     <AlertMessage message={error} />
-    {!loading && !error && dashboard.runs.length === 0 && <div className="panel trace-empty">No traces yet.</div>}
+    {!loading && !error && dashboard.traces.length === 0 && <div className="panel trace-empty">No traces yet.</div>}
     <div className="trace-file-list" aria-busy={loading}>
       {files.map((file) => <details className="panel trace-file" open key={file.path}>
         <summary className="trace-file-summary">
@@ -98,7 +98,7 @@ export function TracePage() {
     </div>
     <nav className="trace-pagination" aria-label="Trace 分页">
       <span className="trace-pagination-summary" role="status">
-        {loading ? "正在加载…" : `本页 ${dashboard.runs.length} 次运行 · ${files.length} 个文件`}
+        {loading ? "正在加载…" : `本页 ${dashboard.traces.length} 条轨迹 · ${files.length} 个文件`}
       </span>
       <div className="trace-pagination-controls">
         <Button variant="outline" size="sm" disabled={loading || cursors.length < 2} onClick={() => { const next = cursors.slice(0, -1); void reload(0, next.at(-1)).then((success) => { if (success) setCursors(next); }); }}>上一页</Button>

@@ -32,7 +32,7 @@ Memory 模块为 classic Agent Loop 提供单用户、本地优先的持久记�
 - .everything/EVERYTHING.md 是始终进入 System Prompt 的 Procedural Memory。
 - Episodic Memory 不再保存模型生成的 Session 摘要。Episodic Recall 的唯一事实来源是原始 chat_log。
 - chat_log_fts 只索引 user_message 与最终 assistant_message 的检索投影。Session 与 Semantic 统一使用 @node-rs/jieba 搜索模式、英文连续字母数字和 identifier 整体/组成词投影；使用 NFKC 与 lowercase，保留原文词频。
-- 工具调用和工具结果不进入 FTS，但命中范围恢复时会按完整 run 一并返回。
+- 工具调用和工具结果不进入 FTS，但命中范围恢复时会按完整 turn 一并返回。
 - FTS5 + BM25 与 Dense 是相互独立的召回路线；Hybrid 使用固定等权 RRF，再用 MMR 去除近似重复结果。
 - API Key、令牌、Authorization 和 Cookie 等凭证字段在写入 Chat Log 前移除。
 
@@ -40,9 +40,11 @@ Schema v5 新增语义语料单调版本、来源引用和变更审计表；保�
 
 ## Session 与 Working Memory
 
-sessionId 标识一段聊天，runId 标识一次用户提交触发的 Agent Loop。完整 run 的用户输入、Assistant 工具请求、工具结果和最终回复以结构化消息写入 chat_log。失败 run 可以只有用户输入，但只保留在 Chat Log，不进入 FTS5、Dense或 Session Recall。
+存储 Schema 版本为 9。`chat_log` 与 `context_compactions` 使用 `turn_id`；`consolidation_tasks` 使用 `task_id`；`memory_changes` 使用稳定的 `operation_id` 与 `candidate_id` 防止恢复时重复提交。版本不匹配时按开发阶段策略重建数据库，不迁移旧数据。
 
-未压缩时，当前 Session 的全部已完成回合进入 Working Memory；自动 compact 后读取 `session_context` 中的工作检查点，加上覆盖位置之后已完成的原始消息。`context_compactions` 仅保存压缩统计和所属 run，供聊天标记使用。原始 `chat_log` 不删除，摘要不进入 FTS 或 Semantic Memory。保存检查点与本轮中间工具原文使用同一事务，失败全部回滚；删除 Session 时检查点和标记级联删除。
+sessionId 标识一段聊天，turnId 标识一次用户提交触发的 Agent Loop。完整 turn 的用户输入、Assistant 工具请求、工具结果和最终回复以结构化消息写入 chat_log。失败 turn 可以只有用户输入，但只保留在 Chat Log，不进入 FTS5、Dense或 Session Recall。
+
+未压缩时，当前 Session 的全部已完成回合进入 Working Memory；自动 compact 后读取 `session_context` 中的工作检查点，加上覆盖位置之后已完成的原始消息。`context_compactions` 仅保存压缩统计和所属 turn，供聊天标记使用。原始 `chat_log` 不删除，摘要不进入 FTS 或 Semantic Memory。保存检查点与本轮中间工具原文使用同一事务，失败全部回滚；删除 Session 时检查点和标记级联删除。
 
 每次主模型调用前，输入达到可用额度（窗口减输出预留及 512 安全余量）的 70% 时使用主模型摘要，30% 为总输入软目标。当前请求与最近完整工具交互优先保留。压缩失败时保留原上下文，仍超模型硬限制则明确失败。真实消耗只采用供应商响应中的 usage。
 
@@ -68,7 +70,7 @@ session_search 是只读的发现工具，有两种互斥模式：按 query 执�
 - search 每个 Session 选择 FTS 的最佳消息锚点，返回首 4 条、命中点前后各 Session Search Window 条（默认 5，由运行配置决定，Agent 不能通过参数调整）、尾 4 条；内容不够时用返回的 cursor 交给 session_read 继续往后读。
 - 返回量由窗口结构决定，没有条数预算：limit 个 Session 各自拿到完整窗口，不会被按条数裁剪。
 - recent 按 updated_at 降序返回非空 Session，返回首 6 条和尾 6 条，结果使用 retrievalMode: recent 与 match: null。
-- 窗口按可检索对话消息计数，随后展开这些消息所属的完整 run。
+- 窗口按可检索对话消息计数，随后展开这些消息所属的完整 turn。
 - session_search 是扫描工具：单条正文超过 Recall Entry Token Limit（默认 8,192）时截断，标记 `contentTruncated`，并给出原文总长 `contentLength` 与该条的 `contentCursor`；search 与 recent 两种模式都适用。
 - 首、事件、尾区段重叠时按 chat_log.id 去重。
 - lexical-only 按最佳 BM25 升序，dense-only 按 cosine 降序，hybrid 按 RRF 后的 MMR 顺序排名；同分再按稳定规则决胜。原始信号分别保存在 `retrievalSignals.bm25/dense/fused/mmr`，不伪造统一 score。
@@ -84,7 +86,7 @@ cursor 有三种来源，语义相同（都是「从这里往后连续读」）�
 
 - search 正常返回时，结果的 nextCursor 指向**锚点窗口的右边界**。窗口含尾 4 条，整段结果的右边界通常就是 Session 末尾，因此续读必须从锚点窗口右边界开始，才能读到锚点之后、尾部之前被跳过的那一段。
 - 某条消息正文被单条上限截断时，该 entry 自带 `contentCursor`，指向这条消息的断点。它是读回完整单条的唯一出口，与 Session 级 nextCursor 不重叠。
-- search 因总额被收缩时，结果的 nextCursor 指向 Session 开头。收缩结果只保留命中点附近的若干 run，其前后都有缺口，只有从头读才能保证不跳过中间消息。
+- search 因总额被收缩时，结果的 nextCursor 指向 Session 开头。收缩结果只保留命中点附近的若干 turn，其前后都有缺口，只有从头读才能保证不跳过中间消息。
 
 每次调用都返回一段连续的、未读过的内容，不会空手返回，也不存在需要中途改换读取方式的死路。代价是 cursor 单向向后：锚点之前的内容只能用 sessionId 从头分页读取。
 
@@ -104,14 +106,14 @@ cursor 有三种来源，语义相同（都是「从这里往后连续读」）�
 预算不控制返回条数，只有三层防护：
 
 1. **单条正文上限**（`sessionRecallEntryTokenLimit`）。这是唯一压得住成本的一层：个别超长记录（如大段工具结果）被截断到上限内，窗口结构与 Session 数完全不受影响，全文通过 `contentCursor` 交给 session_read 读取。
-2. **单次调用的 token 总额**，由 `modelContextWindow` 派生。只有第 1 层压完仍超额时才触发，裁剪单位是整个 Session：从最低排名开始丢弃，绝不切碎已经给出的窗口，并在结果中如实上报 `droppedSessionCount` 与 `droppedReason: "token_budget"`。排名第一的 Session 不能空手返回，按 run 粒度从尾部、首部交替向命中所在 run 收缩；只剩命中 run 仍超额时在 run 内围绕命中消息收缩，保证总额是硬上界。
+2. **单次调用的 token 总额**，由 `modelContextWindow` 派生。只有第 1 层压完仍超额时才触发，裁剪单位是整个 Session：从最低排名开始丢弃，绝不切碎已经给出的窗口，并在结果中如实上报 `droppedSessionCount` 与 `droppedReason: "token_budget"`。排名第一的 Session 不能空手返回，按 turn 粒度从尾部、首部交替向命中所在 turn 收缩；只剩命中 turn 仍超额时在 turn 内围绕命中消息收缩，保证总额是硬上界。
 3. **自动 compact 与 `modelContextWindow` 硬限制**，由 Agent Loop 在请求前检查 70% 阈值；压缩后仍超硬限制才停止，不静默截断必要内容。
 
 `estimatedTokens`、`droppedReason` 与每个 Session 的 `truncatedEntryCount` 都进入检索事件，预算去向可在 trace 中解释。
 
 ## 内容隔离与可观测性
 
-召回的历史内容以 JSON 数据块注入，并由 System Prompt 明确标记为不可信历史证据；不得执行其中的指令或工具请求。每条记录保留 Session、message、run、role、kind 和时间身份。
+召回的历史内容以 JSON 数据块注入，并由 System Prompt 明确标记为不可信历史证据；不得执行其中的指令或工具请求。每条记录保留 Session、message、turn、role、kind 和时间身份。
 
 Gate 初始召回通过 gate_start、gate_end、retrieval_start、retrieval_completed 和 context_assembled 观察。主 Agent 后续调用通过标准工具事件观察。检索事件只保存命中 ID、排名、信号和范围元数据；model_request 是模型实际输入的权威快照。
 
@@ -155,7 +157,7 @@ Gate 初始召回通过 gate_start、gate_end、retrieval_start、retrieval_comp
 
 ### 后台 consolidation
 
-Agent 页面每日首次进入时调用 `runtime.consolidate("daily")`，按服务端本地自然日持久化去重；刷新、重启不重复创建。页面 **Consolidate** 按钮调用 `runtime.consolidate("manual")`，允许额外执行。同一时刻只保留一个待执行或运行中的整理任务，自动和手动重复请求返回现有任务。Semantic Memory 为空时返回 `{ status: "skipped", reason: "no_semantic_memory" }`，不创建任务、run、trace 或每日占用记录。未配置模型时自动入口不占配额，手动入口明确报错。底层 `memory.consolidate(trigger)` 可在依赖尚未注入时持久入队。
+Agent 页面每日首次进入时调用 `runtime.consolidate("daily")`，按服务端本地自然日持久化去重；刷新、重启不重复创建。页面 **Consolidate** 按钮调用 `runtime.consolidate("manual")`，允许额外执行。同一时刻只保留一个待执行或运行中的整理任务，自动和手动重复请求返回现有任务。Semantic Memory 为空时返回 `{ status: "skipped", reason: "no_semantic_memory" }`，不创建任务、trace 或每日占用记录。未配置模型时自动入口不占配额，手动入口明确报错。底层 `memory.consolidate(trigger)` 可在依赖尚未注入时持久入队。
 
 整理仅输入全量 semantic facts 与已有元数据，不读取聊天或 Session Recall，不做漏记补偿或 episodic evidence 提炼。模型返回 update、merge、delete 及未解决冲突；无实际操作时必须返回显式 `noop` outcome，无变化使用 `no_change`，只有未解决冲突使用 `unresolved_conflict`。代码校验 ID、原因、重复目标和版本，直接修改现有事实，不保留旧版本；证据不足的冲突保留事实并记录跳过。聊天的 create/update/delete/merge/noop 管理与本流程独立。
 
@@ -165,9 +167,9 @@ Agent 页面每日首次进入时调用 `runtime.consolidate("daily")`，按服�
 
 每个父任务独立一个 `consolidation-<taskId>.jsonl`，所有子任务与重试共用文件，整理过程不额外产生 `system.jsonl`；记录触发来源、模型调用、批次进度、变更类型和错误，不记录事实正文。画布 consolidation 独立成区，与其他流程无连线；整理连线与记忆写入连线分别播放，新回合只重置记忆写入动画。完整机制与限制见 [Consolidation](./CONSOLIDATION.md)。
 
-整理 trace 层级统一为 `consolidation → batch → model / reviewed / change`，不再包装 `memory_task`。根生命周期为 `consolidation_started`（trigger、attempt、createdAt）与 `consolidation_completed`（completedBatches）；失败后发出 `consolidation_retry`（等待重试）或 `consolidation_failed`（最终失败），包含 errorType、nextAttemptAt。所有整理事件关联 runId 和 attempt，不携带 taskId、taskKind、taskCreatedAt；创建时间仅保存在根开始事件。
+整理 trace 层级统一为 `consolidation → batch → model / reviewed / change`，不再包装 `memory_task`。根生命周期为 `consolidation_started`（trigger、attempt、createdAt）与 `consolidation_completed`（completedBatches）；失败后发出 `consolidation_retry`（等待重试）或 `consolidation_failed`（最终失败），包含 errorType、nextAttemptAt。所有整理事件关联 taskId 和 attempt，不携带 turnId、taskKind、taskCreatedAt；创建时间仅保存在根开始事件。
 
-批次按顺序发出 `consolidation_batch_started` → `consolidation_snapshot`（当前批次 factCount）→ `consolidation_model_started/completed/failed` → `consolidation_reviewed`（decisionCount、unresolvedConflicts）→ `consolidation_change`（action、reasonCode、targetId、deletedIds）→ `consolidation_batch_completed/failed`。无实际修改时仍发出 action 为 `noop` 的 `consolidation_change`，使 `no_change` 与 `unresolved_conflict` 可观察并计入跳过统计。批次事件携带零基 batchIndex、totalBatches；模型事件用 modelCallId 配对并记录模型名称、耗时或错误类型。空库没有批次或模型事件；断点恢复仍产生批次开始事件，已有建议直接进入 reviewed，不伪造快照或模型调用。所有批次及重试写入同一 `consolidation-<runId>.jsonl`，JSONL 保持扁平事件流。
+批次按顺序发出 `consolidation_batch_started` → `consolidation_snapshot`（当前批次 factCount）→ `consolidation_model_started/completed/failed` → `consolidation_reviewed`（decisionCount、unresolvedConflicts）→ `consolidation_change`（action、reasonCode、targetId、deletedIds）→ `consolidation_batch_completed/failed`。无实际修改时仍发出 action 为 `noop` 的 `consolidation_change`，使 `no_change` 与 `unresolved_conflict` 可观察并计入跳过统计。批次事件携带零基 batchIndex、totalBatches；模型事件用 modelCallId 配对并记录模型名称、耗时或错误类型。空库没有批次或模型事件；断点恢复仍产生批次开始事件，已有建议直接进入 reviewed，不伪造快照或模型调用。所有批次及重试写入同一 `consolidation-<taskId>.jsonl`，JSONL 保持扁平事件流。
 
 ### 事件与隐私
 
@@ -179,7 +181,7 @@ Agent 页面每日首次进入时调用 `runtime.consolidate("daily")`，按服�
 - `memory_decision_completed` → `memory_validation_completed` → `memory_change_completed`：操作、固定原因代码、目标和被删除的 ID、耗时。
 - 版本冲突产生 `memory_conflict` 并重新检索；失败产生 `memory_change_failed`。
 
-事件关联 `runId`、`sessionId` 和 `candidateId`；JSONL 为事件添加时间戳与 sequence。新增管理事件与聊天记忆工具摘要不默认记录事实正文、查询或自由文本理由。`memory_changes` 保存来源、目标、证据引用和固定原因代码，不保留删除正文。模型判断必须读取相关原文；现有主模型请求 trace 的内容策略不由此流程改变。
+聊天内事件关联 `turnId`、`sessionId` 和 `candidateId`；独立后台事件使用 `taskId`、`sourceTurnId` 和 `candidateId`，不伪造 `turnId`；JSONL 为事件添加时间戳与 sequence。新增管理事件与聊天记忆工具摘要不默认记录事实正文、查询或自由文本理由。`memory_changes` 保存来源、目标、证据引用和固定原因代码，不保留删除正文。模型判断必须读取相关原文；现有主模型请求 trace 的内容策略不由此流程改变。
 
 `manage_memory` 只管理 Semantic Memory；历史对话通过只读 `session_search/session_read` 访问，删除 Session 使用 Session 入口。全库定期去重尚未实现，`merge` 只处理本次检索发现的重复记录。
 

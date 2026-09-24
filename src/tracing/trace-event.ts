@@ -1,10 +1,15 @@
 export interface TraceRecord {
-  version: 1 | 2;
+  version: 3;
   eventId?: string;
   type: string;
   timestamp: string;
   sequence?: number;
-  runId: string;
+  /** 采用真实回合、任务或操作标识的轨迹归组键。 */
+  traceId: string;
+  /** 仅聊天回合携带；后台任务用 sourceTurnId 关联来源。 */
+  turnId?: string;
+  taskId?: string;
+  sourceTurnId?: string;
   sessionId?: string;
   iteration?: number;
   modelCallId?: string;
@@ -17,18 +22,20 @@ export interface TraceRecord {
 export function createTraceEventFactory(now: () => Date = () => new Date()) {
   const sequences = new Map<string, number>();
   return (type: string, event: Record<string, unknown>): TraceRecord => {
-    const runId = typeof event.runId === "string" ? event.runId
+    // traceId 是观测归组键，优先采用后台任务标识，避免派生任务混入聊天回合。
+    const traceId = typeof event.taskId === "string" ? event.taskId
+      : typeof event.turnId === "string" ? event.turnId
       : typeof event.rebuildId === "string" ? event.rebuildId
       : typeof event.operationId === "string" ? event.operationId : crypto.randomUUID();
-    const sequence = (sequences.get(runId) ?? 0) + 1;
-    sequences.set(runId, sequence);
-    return { version: 2, eventId: crypto.randomUUID(), type, timestamp: localIsoMilliseconds(now()), sequence, runId, ...traceEventFields(type, event) };
+    const sequence = (sequences.get(traceId) ?? 0) + 1;
+    sequences.set(traceId, sequence);
+    return { version: 3, eventId: crypto.randomUUID(), type, timestamp: localIsoMilliseconds(now()), sequence, traceId, ...traceEventFields(type, event) };
   };
 }
 
 function traceEventFields(type: string, event: Record<string, unknown>): Record<string, unknown> {
   const payloadFields: Record<string, string[]> = {
-    run_started: ["userInput", "provider", "model", "settings", "runtime"],
+    turn_started: ["userInput", "provider", "model", "settings", "runtime"],
     context_assembled: ["messageCount", "historyMessageCount", "hasSystemPrompt", "semanticMemoryIds", "sessionRecallSessionIds", "sessionRecallRanges", "sessionRecallEntryCount", "sessionRecallEstimatedTokens", "sessionRecallTruncated"],
     compact_started: ["beforeTokens", "targetTokens", "availableInputTokens"],
     compact_completed: ["beforeTokens", "afterTokens", "targetTokens", "availableInputTokens", "targetReached", "ms"],
@@ -48,13 +55,13 @@ function traceEventFields(type: string, event: Record<string, unknown>): Record<
     tool_started: ["tool"],
     tool_completed: ["tool", "arguments", "result", "summary", "isError", "ms", "outputLength"],
     tool_failed: ["tool", "arguments", "result", "summary", "isError", "ms", "outputLength"],
-    run_completed: [
+    turn_completed: [
       "provider", "model", "reply", "iterations", "stopReason", "toolCallCount", "failedToolCallCount",
       "derivedTaskIds", "ms", "retrievalMs", "modelMs", "toolMs",
       "contextWindow", "maxTokens", "contextSafetyTokens", "availableInputTokens",
       "peakEstimatedInputTokens", "peakInputTokens",
     ],
-    run_failed: [
+    turn_failed: [
       "provider", "model", "errorType", "errorMessage", "iterations", "cancelled", "timedOut",
       "derivedTaskIds", "ms", "retrievalMs",
     ],
@@ -106,7 +113,7 @@ function traceEventFields(type: string, event: Record<string, unknown>): Record<
     langfuse_export_failed: ["message"],
   };
   const output: Record<string, unknown> = {};
-  for (const key of ["compactionId", "taskId", "taskKind", "taskCreatedAt", "sourceRunId", "operationId", "parentOperationId"]) if (typeof event[key] === "string") output[key] = event[key];
+  for (const key of ["turnId", "rebuildId", "compactionId", "taskId", "taskKind", "taskCreatedAt", "sourceTurnId", "operationId", "parentOperationId"]) if (typeof event[key] === "string") output[key] = event[key];
   if (typeof event.sessionId === "string") output.sessionId = event.sessionId;
   if (typeof event.iteration === "number") output.iteration = event.iteration;
   if (typeof event.modelCallId === "string") output.modelCallId = event.modelCallId;

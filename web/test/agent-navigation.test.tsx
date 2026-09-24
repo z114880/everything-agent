@@ -89,8 +89,8 @@ it("离开页面期间运行完成，返回后可发送下一轮", async () => {
     api.memoryAction.mockImplementation(async ({ action }) => action === "select_session" ? {
       sessions: [{ id: "session-1", title: "当前会话", messageCount: 2 }],
       messages: [
-        { runId: "run-1", kind: "user_message", content: "后台执行" },
-        { runId: "run-1", kind: "assistant_message", content: "执行完成" },
+        { turnId: "run-1", kind: "user_message", content: "后台执行" },
+        { turnId: "run-1", kind: "assistant_message", content: "执行完成" },
       ],
     } : null);
     await act(async () => {
@@ -170,8 +170,8 @@ it("历史回复按记录时间计算耗时，新回合计时不会改变旧回�
   api.memoryAction.mockResolvedValue({
     sessions: [{ id: "session-1", title: "当前会话", messageCount: 2 }],
     messages: [
-      { runId: "history", kind: "user_message", content: "历史问题", createdAt: "2026-09-24T00:00:00.000Z" },
-      { runId: "history", kind: "assistant_message", content: "历史回复", createdAt: "2026-09-24T00:00:12.500Z" },
+      { turnId: "history", kind: "user_message", content: "历史问题", createdAt: "2026-09-24T00:00:00.000Z" },
+      { turnId: "history", kind: "assistant_message", content: "历史回复", createdAt: "2026-09-24T00:00:12.500Z" },
     ],
   });
   await act(async () => { root.unmount(); root = createRoot(container); root.render(<App />); });
@@ -215,8 +215,8 @@ it.each([
   api.memoryAction.mockResolvedValue({
     sessions: [{ id: "session-1", title: "当前会话", messageCount: 2 }],
     messages: [
-      { runId: "history", kind: "user_message", content: "历史问题", createdAt: start },
-      ...(completed ? [{ runId: "history", kind: "assistant_message", content: "历史回复", createdAt: end }] : []),
+      { turnId: "history", kind: "user_message", content: "历史问题", createdAt: start },
+      ...(completed ? [{ turnId: "history", kind: "assistant_message", content: "历史回复", createdAt: end }] : []),
     ],
   });
   await act(async () => { root.unmount(); root = createRoot(container); root.render(<App />); });

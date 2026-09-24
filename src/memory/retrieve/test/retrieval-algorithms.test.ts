@@ -215,7 +215,7 @@ describe("Memory Retrieval 算法", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const controller = new AbortController();
     expect(await client.embed(["large-a", "large-b"], [5_000, 5_000], {
-      purpose: "query", runId: "run", signal: controller.signal,
+      purpose: "query", turnId: "run", signal: controller.signal,
     })).toHaveLength(2);
     expect(fetchMock).toHaveBeenCalledTimes(4);
     vi.unstubAllGlobals();

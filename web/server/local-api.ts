@@ -264,7 +264,7 @@ async function handleAgentRequest(
 
   if (request.method === "GET" && pathname === `${agentApiPrefix}/traces`) {
     const query = new URL(request.url ?? "/", "http://localhost").searchParams;
-    sendJson(response, 200, await loadTraceDashboard({ ...(query.get("cursor") ? { cursor: query.get("cursor")! } : {}), ...(query.get("runId") ? { runId: query.get("runId")! } : {}) }));
+    sendJson(response, 200, await loadTraceDashboard({ ...(query.get("cursor") ? { cursor: query.get("cursor")! } : {}), ...(query.get("traceId") ? { traceId: query.get("traceId")! } : {}) }));
     return;
   }
 
@@ -296,7 +296,7 @@ async function handleAgentRequest(
     return;
   }
 
-  if (request.method === "POST" && pathname === `${agentApiPrefix}/run`) {
+  if (request.method === "POST" && pathname === `${agentApiPrefix}/turn`) {
     const body = await readJsonBody(request);
     const controller = new AbortController();
     response.on("close", () => {

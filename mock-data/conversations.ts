@@ -61,7 +61,7 @@ export function buildSessions(dataset: Dataset, count: number, seed = 1): SeedSe
     }
     // 少量失败的工具调用：模型引用了一个已经不存在的会话 ID。
     // 真实使用中这类失败一定会出现，模拟数据里也需要有，否则 tool_failed 与
-    // run_completed.failedToolCallCount 永远为零，无法验证展示与统计。
+    // turn_completed.failedToolCallCount 永远为零，无法验证展示与统计。
     if (index > 0 && random() > 0.88) {
       turns.push({
         prompt: "把我们最早那次讨论的原始记录调出来看看。",

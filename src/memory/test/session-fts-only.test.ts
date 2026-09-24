@@ -11,8 +11,8 @@ it("Session 归档、重建和 dense_only 下历史搜索均不调用 embedding"
   try {
     memory.configureRetrieval({ mode: "lexical_only", embedding, allowIncompleteIndex: true });
     const session = memory.createSession();
-    memory.startRun(session.id, "r1", "我喜欢红茶");
-    await memory.completeRun(session.id, "r1", [{ role: "assistant", content: "好的" }]);
+    memory.startTurn(session.id, "r1", "我喜欢红茶");
+    await memory.completeTurn(session.id, "r1", [{ role: "assistant", content: "好的" }]);
     await memory.rebuildEmbeddings();
     memory.configureRetrieval({ mode: "dense_only", embedding });
     const result = await memory.searchSessions({ query: "红茶" }, { searchWindow: 5, entryTokenLimit: 4_000, tokenLimit: 50000, tokenEstimator: { estimateText: (text) => text.length } });

@@ -15,7 +15,7 @@ export interface JsonlTracerOptions {
   now?: () => Date;
 }
 
-/** 按本地日期目录与 run JSONL 文件持久化 classic loop 和 memory 事件。 */
+/** 按本地日期目录与 turn / task JSONL 文件持久化 classic loop 和 memory 事件。 */
 export class JsonlTracer {
   private readonly traceDirectory: string;
   private readonly onWarning: (message: string) => void;
@@ -50,20 +50,20 @@ export class JsonlTracer {
   }
 
   // 固定使用前台运行首个事件的本地日期，避免跨午夜拆分。
-  private readonly runDates = new Map<string, string>();
+  private readonly turnDates = new Map<string, string>();
   private readonly consolidationDates = new Map<string, string>();
 
   private async write(record: TraceRecord): Promise<void> {
-    const consolidation = record.type.startsWith("consolidation_") || this.consolidationDates.has(record.runId);
-    if (consolidation && !this.consolidationDates.has(record.runId)) {
-      this.consolidationDates.set(record.runId, typeof record.payload?.createdAt === "string" ? record.payload.createdAt : record.timestamp);
+    const consolidation = record.type.startsWith("consolidation_") || this.consolidationDates.has(record.traceId);
+    if (consolidation && !this.consolidationDates.has(record.traceId)) {
+      this.consolidationDates.set(record.traceId, typeof record.payload?.createdAt === "string" ? record.payload.createdAt : record.timestamp);
     }
-    if (record.sessionId && !this.runDates.has(record.runId)) {
-      this.runDates.set(record.runId, record.timestamp);
+    if (record.turnId && !this.turnDates.has(record.traceId)) {
+      this.turnDates.set(record.traceId, record.timestamp);
     }
-    const dateDirectory = join(this.traceDirectory, (this.consolidationDates.get(record.runId) ?? (typeof record.taskCreatedAt === "string" ? record.taskCreatedAt : this.runDates.get(record.runId) ?? record.timestamp)).slice(0, 10));
+    const dateDirectory = join(this.traceDirectory, (this.consolidationDates.get(record.traceId) ?? (typeof record.taskCreatedAt === "string" ? record.taskCreatedAt : this.turnDates.get(record.traceId) ?? record.timestamp)).slice(0, 10));
     await mkdir(dateDirectory, { recursive: true });
-    const traceFile = traceFileName(consolidation ? `consolidation-${record.runId}` : typeof record.taskId === "string" ? `${record.taskKind}-${record.taskId}` : record.sessionId ? `run-${record.runId}` : `system-${this.systemId}`);
+    const traceFile = traceFileName(consolidation ? `consolidation-${record.traceId}` : typeof record.taskId === "string" ? `${record.taskKind}-${record.taskId}` : record.turnId ? `turn-${record.turnId}` : `system-${this.systemId}`);
     const primaryPath = await numberedTracePath(dateDirectory, traceFile);
     let path = this.recoveryPaths.get(primaryPath) ?? primaryPath;
     if (!this.checkedPaths.has(path)) {
@@ -111,16 +111,16 @@ export async function readTraceFiles(home: string): Promise<TraceFile[]> {
         if (!line.trim()) continue;
         try {
           const record = JSON.parse(line) as TraceRecord;
-          if (!record || typeof record.runId !== "string" || typeof record.type !== "string" || typeof record.timestamp !== "string" || !Number.isFinite(Date.parse(record.timestamp))) throw new Error("运行记录字段无效");
+          if (!record || record.version !== 3 || typeof record.traceId !== "string" || typeof record.type !== "string" || typeof record.timestamp !== "string" || !Number.isFinite(Date.parse(record.timestamp))) throw new Error("运行记录字段无效");
           records.push(record);
         } catch {
           records.push({
-            version: 2,
+            version: 3,
             eventId: createHash("sha256").update(`${dateDirectory}/${file}:${lineIndex}`).digest("hex"),
             type: "trace_read_error",
             timestamp: `${dateDirectory}T23:59:59Z`,
             sequence: 0,
-            runId: `corrupt-${createHash("sha256").update(`${dateDirectory}/${file}`).digest("hex")}`,
+            traceId: `corrupt-${createHash("sha256").update(`${dateDirectory}/${file}`).digest("hex")}`,
             payload: { file: `${dateDirectory}/${file}` },
           });
         }

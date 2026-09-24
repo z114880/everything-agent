@@ -19,7 +19,7 @@ export class MemorySearch {
   }
 
   /** 按全局模式搜索 Semantic Memory；Dense 与 Lexical 始终在独立候选池中执行。 */
-  async searchSemantic(query: { denseQuery: string; lexicalQuery: string }, limit = 100, providedQueryVector?: Float32Array, runId?: string, observer = this.embedding.retrieval.observer, options: { purpose?: "recall" | "management"; signal?: AbortSignal } = {}): Promise<SemanticMemory[]> {
+  async searchSemantic(query: { denseQuery: string; lexicalQuery: string }, limit = 100, providedQueryVector?: Float32Array, turnId?: string, observer = this.embedding.retrieval.observer, options: { purpose?: "recall" | "management"; signal?: AbortSignal } = {}): Promise<SemanticMemory[]> {
     options.signal?.throwIfAborted();
     const denseQuery = query.denseQuery.trim();
     const lexicalQuery = query.lexicalQuery.trim();
@@ -29,7 +29,7 @@ export class MemorySearch {
     const lexical = mode !== "dense_only" ? searchSemanticLexical(this.storage.connection, lexicalQuery, 50) : [];
     if (mode !== "dense_only") await observer?.("lexical_retrieval_completed", { corpus: "semantic", candidateCount: lexical.length });
     if (this.embedding.retrieval.mode === "lexical_only") return lexical.slice(0, limit);
-    const queryVector = providedQueryVector ?? await this.embedding.embedQuery(denseQuery, runId, observer, options.signal);
+    const queryVector = providedQueryVector ?? await this.embedding.embedQuery(denseQuery, turnId, observer, options.signal);
     options.signal?.throwIfAborted();
     const stored = this.embedding.vectors.listActive("semantic");
     const dense = rankDenseSources(queryVector, stored, this.embedding.retrieval.embedding!.profile.minimumSimilarity);
@@ -59,7 +59,7 @@ export class MemorySearch {
     });
   }
 
-  async sessionSearchCandidates(query: string, currentSessionId?: string, providedQueryVector?: Float32Array, runId?: string, observer = this.embedding.retrieval.observer): Promise<SearchCandidate[]> {
+  async sessionSearchCandidates(query: string, currentSessionId?: string, providedQueryVector?: Float32Array, turnId?: string, observer = this.embedding.retrieval.observer): Promise<SearchCandidate[]> {
     const lexical = this.searchCandidates(query, currentSessionId).slice(0, 50);
     await observer?.("lexical_retrieval_completed", { corpus: "session", candidateCount: lexical.length });
     // Session 始终使用 FTS；全局检索模式只控制 Semantic Memory。

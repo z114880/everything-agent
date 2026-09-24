@@ -5,7 +5,7 @@ export { SEMANTIC_MEMORY_CATEGORIES } from "./types.ts";
 export type {
   MemoryCandidate, MemoryReasonCode, MemorySource, MemoryDecision, MemoryAction, MemoryManagementOptions, MemoryManagementResult,
   ChatLogEntry,
-  ConsolidationRun,
+  ConsolidationTask,
   MemoryModelOptions,
   MemoryOverview,
   MemoryRetrievalConfiguration,
@@ -18,7 +18,7 @@ export type {
   SemanticMemory,
   SemanticMemoryCategory,
   SessionSummary,
-  StoredRun,
+  StoredTurn,
 } from "./types.ts";
 export { readMemoryCandidate } from "./management.ts";
 

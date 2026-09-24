@@ -23,13 +23,13 @@ export class MemoryManagement {
   /** 一次只处理一个独立事实；版本冲突最多重新检索、判断三次。 */
   async manage(candidate: MemoryCandidate, options: MemoryManagementOptions): Promise<MemoryManagementResult> {
     const candidateId = options.candidateId ?? crypto.randomUUID();
-    const runId = options.runId ?? crypto.randomUUID();
+    const operationId = options.taskId ?? options.turnId ?? crypto.randomUUID();
     const startedAt = performance.now();
     const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000);
-    const emit = async (kind: string, fields: Record<string, unknown> = {}) => options.observer?.(kind, { runId, sessionId: options.currentSessionId, candidateId, ...fields });
+    const emit = async (kind: string, fields: Record<string, unknown> = {}) => options.observer?.(kind, { operationId, ...(options.turnId ? { turnId: options.turnId } : {}), ...(options.taskId ? { taskId: options.taskId } : {}), ...(options.sourceTurnId ? { sourceTurnId: options.sourceTurnId } : {}), sessionId: options.currentSessionId, candidateId, ...fields });
     try {
       candidate = readMemoryCandidate(candidate);
-      const committed = this.semantic.committedResult(runId, candidateId);
+      const committed = this.semantic.committedResult(operationId, candidateId);
       if (committed) {
         await emit("memory_change_replayed", { action: committed.action, targetId: committed.targetId });
         return committed;
@@ -42,19 +42,19 @@ export class MemoryManagement {
         const revision = this.semantic.revision();
         // 属性查询不依赖新值，避免“住上海”漏掉旧值“住北京”；仍按全局检索模式执行。
         const query = `${candidate.subject} ${candidate.attribute} ${candidate.content}`;
-        const matches = await abortable(this.search.searchSemantic({ denseQuery: query, lexicalQuery: query }, 12, undefined, runId, emit, { purpose: "management", signal }), signal);
+        const matches = await abortable(this.search.searchSemantic({ denseQuery: query, lexicalQuery: query }, 12, undefined, options.turnId, emit, { purpose: "management", signal }), signal);
         signal.throwIfAborted();
         const facts = matches.map((item) => this.semantic.getSemantic(item.id)).filter((item) => item !== null);
         await emit("memory_search_completed", { attempt, revision, candidateIds: facts.map((item) => item.id) });
         if (this.semantic.revision() !== revision) { await emit("memory_conflict", { attempt }); continue }
-        const decision = validateDecision(await this.ask(DECISION_PROMPT, { candidate, evidence, relatedFacts: facts, revision }, { ...options, runId }, signal, candidateId), candidate, new Set(facts.map((item) => item.id)));
+        const decision = validateDecision(await this.ask(DECISION_PROMPT, { candidate, evidence, relatedFacts: facts, revision }, { ...options, observer: emit }, signal, candidateId), candidate, new Set(facts.map((item) => item.id)));
         await emit("memory_decision_completed", { attempt, action: decision.action, reasonCode: decision.reasonCode, targetId: decision.targetId, sourceIds: decision.sourceIds ?? [], evidenceMessageIds: decision.evidenceMessageIds });
         signal.throwIfAborted();
         // 模型期间用户可能删除 Session；提交前再次验证证据仍存在且属于允许范围。
         this.evidence(decision.evidenceMessageIds, options);
         await emit("memory_validation_completed", { attempt, action: decision.action });
         const result = await abortable(this.semantic.applyDecision(decision, revision, evidence.filter((item) => decision.evidenceMessageIds.includes(item.messageId)), {
-          runId, candidateId, sessionId: options.currentSessionId, source: options.source ?? "agent", signal, observer: emit,
+          operationId, candidateId, sessionId: options.currentSessionId, source: options.source ?? "agent", signal, observer: emit,
         }), signal);
         if (!result) { await emit("memory_conflict", { attempt }); continue }
         await emit("memory_change_completed", { action: result.action, reasonCode: result.reasonCode, targetId: result.targetId, deletedIds: result.deletedIds, durationMs: Math.round(performance.now() - startedAt) });
@@ -75,8 +75,8 @@ export class MemoryManagement {
   private evidence(ids: number[], options: MemoryManagementOptions): Evidence[] {
     return ids.map((id) => {
       const row = this.storage.connection.prepare(`SELECT c.* FROM chat_log c WHERE c.id=? AND c.session_id=? AND c.kind='user_message'
-        AND (EXISTS (SELECT 1 FROM chat_log done WHERE done.session_id=c.session_id AND done.run_id=c.run_id AND done.kind='assistant_message')
-          OR (?='agent' AND c.run_id=?))`).get(id, options.currentSessionId, options.source ?? "agent", options.sourceRunId ?? options.runId ?? "") as Row | undefined;
+        AND (EXISTS (SELECT 1 FROM chat_log done WHERE done.session_id=c.session_id AND done.turn_id=c.turn_id AND done.kind='assistant_message')
+          OR (?='agent' AND c.turn_id=?))`).get(id, options.currentSessionId, options.source ?? "agent", options.sourceTurnId ?? options.turnId ?? "") as Row | undefined;
       if (!row) throw new TypeError("记忆证据必须来自当前 Session 的有效用户消息");
       return { sessionId: String(row.session_id), messageId: id, createdAt: String(row.created_at), text: plainText(parseJson(String(row.content_json))) };
     });
@@ -85,7 +85,7 @@ export class MemoryManagement {
   private async ask(system: string, payload: unknown, options: MemoryManagementOptions, signal: AbortSignal, candidateId?: string): Promise<Record<string, unknown>> {
     signal.throwIfAborted();
     const startedAt = performance.now();
-    const fields = { runId: options.runId, sessionId: options.currentSessionId, candidateId, model: options.model, modelCallId: crypto.randomUUID() };
+    const fields = { sessionId: options.currentSessionId, candidateId, model: options.model, modelCallId: crypto.randomUUID() };
     await options.observer?.("memory_model_started", fields);
     try {
       const response = await abortable(Promise.resolve(options.client.messages.create({ model: options.model, system,

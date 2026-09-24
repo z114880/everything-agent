@@ -41,7 +41,7 @@ export class MemoryConsolidation {
       progress.batches = planBatches(facts, fits);
       save();
     }
-    this.storage.connection.prepare("UPDATE consolidation_runs SET total_batches=? WHERE run_id=?").run(progress.batches.length, taskId);
+    this.storage.connection.prepare("UPDATE consolidation_tasks SET total_batches=? WHERE task_id=?").run(progress.batches.length, taskId);
     while (progress.completed < progress.batches.length) {
       const batchIndex = progress.completed;
       const batch = progress.batches[batchIndex]!;
@@ -79,7 +79,7 @@ export class MemoryConsolidation {
         while (pending.decisions.length) {
           const decision = pending.decisions[0]!;
           const result = await this.semantic.applyDecision(decision, pending.revision, [], {
-            runId: taskId, candidateId: `${pending.id}:${pending.index}`, sessionId: "", source: "consolidation", signal, observer: emit,
+            operationId: taskId, candidateId: `${pending.id}:${pending.index}`, sessionId: "", source: "consolidation", signal, observer: emit,
             onCommitted: () => {
               pending.decisions.shift(); pending.index++; pending.revision = this.semantic.revision(); save();
             },
@@ -90,7 +90,7 @@ export class MemoryConsolidation {
         this.storage.transaction(() => {
           progress.completed++;
           delete progress.pending;
-          this.storage.connection.prepare("UPDATE consolidation_runs SET completed_batches=?, unresolved_conflicts=unresolved_conflicts+? WHERE run_id=?").run(progress.completed, pending.conflicts, taskId);
+          this.storage.connection.prepare("UPDATE consolidation_tasks SET completed_batches=?, unresolved_conflicts=unresolved_conflicts+? WHERE task_id=?").run(progress.completed, pending.conflicts, taskId);
           save();
         });
       } catch (error) {

@@ -1,4 +1,4 @@
-export const MEMORY_SCHEMA_VERSION = 8;
+export const MEMORY_SCHEMA_VERSION = 9;
 
 export const MEMORY_SCHEMA = `
 PRAGMA foreign_keys = ON;
@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS chat_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  run_id TEXT NOT NULL,
+  turn_id TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
   kind TEXT NOT NULL CHECK (kind IN ('user_message', 'assistant_tool_call', 'tool_result', 'assistant_message')),
   content_json TEXT NOT NULL,
@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS chat_log (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS chat_log_session_id_id ON chat_log(session_id, id);
-CREATE INDEX IF NOT EXISTS chat_log_run_id ON chat_log(run_id);
+CREATE INDEX IF NOT EXISTS chat_log_turn_id ON chat_log(turn_id);
 
 CREATE TABLE IF NOT EXISTS session_context (
   session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
@@ -38,10 +38,10 @@ CREATE TABLE IF NOT EXISTS session_context (
 CREATE TABLE IF NOT EXISTS context_compactions (
   id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  run_id TEXT NOT NULL,
+  turn_id TEXT NOT NULL,
   metadata_json TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS context_compactions_run ON context_compactions(run_id);
+CREATE INDEX IF NOT EXISTS context_compactions_turn ON context_compactions(turn_id);
 
 
 CREATE VIRTUAL TABLE IF NOT EXISTS chat_log_fts USING fts5(
@@ -104,9 +104,9 @@ CREATE INDEX IF NOT EXISTS memory_tasks_status ON memory_tasks(status, next_atte
 
 CREATE TABLE IF NOT EXISTS consolidation_days (day TEXT PRIMARY KEY, task_id TEXT NOT NULL);
 
-CREATE TABLE IF NOT EXISTS consolidation_runs (
+CREATE TABLE IF NOT EXISTS consolidation_tasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  run_id TEXT NOT NULL UNIQUE,
+  task_id TEXT NOT NULL UNIQUE,
   trigger TEXT NOT NULL,
   status TEXT NOT NULL,
   total_batches INTEGER NOT NULL DEFAULT 0,
@@ -193,7 +193,7 @@ CREATE TABLE IF NOT EXISTS semantic_sources (
 );
 CREATE TABLE IF NOT EXISTS memory_changes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  run_id TEXT NOT NULL,
+  operation_id TEXT NOT NULL,
   candidate_id TEXT NOT NULL,
   action TEXT NOT NULL,
   target_id INTEGER,
@@ -204,6 +204,6 @@ CREATE TABLE IF NOT EXISTS memory_changes (
   source TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
-CREATE UNIQUE INDEX IF NOT EXISTS memory_changes_operation ON memory_changes(run_id, candidate_id);
-CREATE INDEX IF NOT EXISTS memory_changes_run_action ON memory_changes(run_id, action);
+CREATE UNIQUE INDEX IF NOT EXISTS memory_changes_operation ON memory_changes(operation_id, candidate_id);
+CREATE INDEX IF NOT EXISTS memory_changes_operation_action ON memory_changes(operation_id, action);
 `;

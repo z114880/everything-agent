@@ -122,12 +122,12 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
     serializeToolEvent = defaultToolEvent,
   } = options;
 
-  const runId = options.runId ?? crypto.randomUUID();
+  const turnId = options.turnId ?? crypto.randomUUID();
   const startedAt = performance.now();
   const deadline = timeoutMs === undefined ? null : Date.now() + timeoutMs;
   const guard: GuardOptions = { signal, deadline, timeoutMs: timeoutMs ?? 0 };
   const toolCalls: ToolCallRecord[] = [];
-  const notify: AgentObserver = async (kind, event = {}) => observer(kind, { ...event, runId });
+  const notify: AgentObserver = async (kind, event = {}) => observer(kind, { ...event, turnId });
   let iterations = 0;
   let workingMessages = [...messages];
   const protectedMessage = [...messages].reverse().find(isUserRequest);

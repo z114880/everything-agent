@@ -129,36 +129,36 @@ describe("合并写入现有数据目录", () => {
 
     // 验证真实生成产物：同一会话的多轮执行必须分文件，不能重新合并为 Session 文件。
     const traceFiles = await readTraceFiles(home);
-    const runFiles = traceFiles.filter((file) => /\/\d+-run-/.test(file.path));
-    expect(runFiles).toHaveLength(result.runsExecuted);
-    expect(runFiles.length).toBeGreaterThan(result.sessionsCreated);
+    const turnFiles = traceFiles.filter((file) => /\/\d+-turn-/.test(file.path));
+    expect(turnFiles).toHaveLength(result.turnsExecuted);
+    expect(turnFiles.length).toBeGreaterThan(result.sessionsCreated);
     expect(traceFiles.some((file) => /\/\d+-session-/.test(file.path))).toBe(false);
-    for (const file of runFiles) {
-      const runId = file.records[0]!.runId;
-      expect(file.path.endsWith(`-run-${runId}.jsonl`)).toBe(true);
-      expect(new Set(file.records.map((record) => record.runId))).toEqual(new Set([runId]));
+    for (const file of turnFiles) {
+      const turnId = file.records[0]!.turnId;
+      expect(file.path.endsWith(`-turn-${turnId}.jsonl`)).toBe(true);
+      expect(new Set(file.records.map((record) => record.turnId))).toEqual(new Set([turnId]));
       expect(new Set(file.records.map((record) => record.sessionId)).size).toBe(1);
-      expect(file.records[0]).toMatchObject({ type: "run_started", sessionId: expect.any(String) });
-      expect(file.records.filter((record) => record.type === "run_completed")).toHaveLength(1);
+      expect(file.records[0]).toMatchObject({ type: "turn_started", sessionId: expect.any(String) });
+      expect(file.records.filter((record) => record.type === "turn_completed")).toHaveLength(1);
     }
 
     const records = await readTraceRecords(home);
-    const runs = records.filter((record) => record.type === "run_completed").map((record) => record.payload);
-    expect(runs.length).toBeGreaterThan(0);
+    const turns = records.filter((record) => record.type === "turn_completed").map((record) => record.payload);
+    expect(turns.length).toBeGreaterThan(0);
 
     // 三段耗时都存在，且合计不超过整轮墙钟时间。
-    expect(runs.every((run) => run.retrievalMs + run.modelMs + run.toolMs <= run.ms)).toBe(true);
+    expect(turns.every((turn) => turn.retrievalMs + turn.modelMs + turn.toolMs <= turn.ms)).toBe(true);
     // 供应商 usage 随请求体量变化，而不是固定常数，否则水位在模拟数据上不可观察。
-    expect(new Set(runs.map((run) => run.peakInputTokens)).size).toBeGreaterThan(1);
+    expect(new Set(turns.map((turn) => turn.peakInputTokens)).size).toBeGreaterThan(1);
     // 估算与供应商分词之间保留固定偏差，可用来观察估算器误差。
-    expect(runs.every((run) => run.peakInputTokens > run.peakEstimatedInputTokens)).toBe(true);
-    expect(runs.every((run) => run.availableInputTokens === run.contextWindow - run.maxTokens - run.contextSafetyTokens)).toBe(true);
+    expect(turns.every((turn) => turn.peakInputTokens > turn.peakEstimatedInputTokens)).toBe(true);
+    expect(turns.every((turn) => turn.availableInputTokens === turn.contextWindow - turn.maxTokens - turn.contextSafetyTokens)).toBe(true);
 
-    expect(runs.some((run) => run.failedToolCallCount > 0)).toBe(true);
+    expect(turns.some((turn) => turn.failedToolCallCount > 0)).toBe(true);
     expect(records.some((record) => record.type === "tool_failed")).toBe(true);
 
     // 派生任务 ID 必须能对上独立的后台任务 trace 文件。
-    const derived = runs.flatMap((run) => run.derivedTaskIds);
+    const derived = turns.flatMap((turn) => turn.derivedTaskIds);
     expect(derived.length).toBeGreaterThan(0);
     const files = await readdir(join(home, "traces"), { recursive: true });
     expect(derived.every((taskId) => files.some((file) => String(file).includes(`memory_write-${taskId}.jsonl`)))).toBe(true);

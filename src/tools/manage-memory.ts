@@ -41,7 +41,7 @@ export class ManageMemoryTool {
     if (Object.keys(args).some((key) => !["action", "query", "intent", "subject", "attribute", "content"].includes(key))) throw new TypeError("不支持的记忆参数");
     if (args.action === "search") {
       if (typeof args.query !== "string" || !args.query.trim()) throw new TypeError("query 不能为空");
-      return this.memory.searchSemantic(args.query, 20, undefined, this.options?.runId, notify);
+      return this.memory.searchSemantic(args.query, 20, undefined, this.options?.turnId, notify);
     }
     if (args.action !== "submit") throw new TypeError("未知的 memory action");
     if (!this.options) throw new Error("记忆提交缺少当前回合的模型与证据");

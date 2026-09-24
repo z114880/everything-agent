@@ -31,9 +31,9 @@ describe("Memory Runtime", () => {
     expect(await memory.searchSemantic("上午")).toEqual([]);
   });
 
-  it("当前 Session 的全部完整回合进入 Working Memory，失败 run 不进入", async () => {
+  it("当前 Session 的全部完整回合进入 Working Memory，失败 turn 不进入", async () => {
     const memory = await createMemory(); const session = memory.createSession();
-    memory.startRun(session.id, "failed", "未完成问题");
+    memory.startTurn(session.id, "failed", "未完成问题");
     await addCompletedRun(memory, session.id, "done-1", "第一问", "第一答");
     await addCompletedRun(memory, session.id, "done-2", "第二问", "第二答");
     expect(memory.getWorkingMemory(session.id)).toHaveLength(4);
@@ -45,8 +45,8 @@ describe("Memory Runtime", () => {
 
   it("只索引用户消息和最终回复，但命中窗口展开完整工具 run", async () => {
     const memory = await createMemory(); const session = memory.createSession("工具讨论");
-    memory.startRun(session.id, "r1", "查询发布状态");
-    await memory.completeRun(session.id, "r1", [
+    memory.startTurn(session.id, "r1", "查询发布状态");
+    await memory.completeTurn(session.id, "r1", [
       { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "lookup", input: { query: "发布" } }] },
       { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "内部结果代号 ZEBRA" }] },
       { role: "assistant", content: [{ type: "text", text: "发布已经完成" }] },
@@ -113,7 +113,7 @@ describe("Memory Runtime", () => {
     const found = await memory.searchSessions({ query: "ALPHA", limit: 4 }, { ...recall, searchWindow: 2 });
     expect(found).toMatchObject({ returnedSessionCount: 4, droppedSessionCount: 0, droppedReason: null, truncated: false });
     for (const item of found.sessions) {
-      // 首 4 + 命中前后各 2 + 尾 4，按 run 展开后每条都完整，没有被预算切过。
+      // 首 4 + 命中前后各 2 + 尾 4，按 turn 展开后每条都完整，没有被预算切过。
       expect(item.entries.map((entry) => entry.id)).toContain(item.match!.messageId);
       expect(item.truncated).toBe(false);
       expect(item.entries.some((entry) => entry.contentTruncated)).toBe(false);
@@ -123,9 +123,9 @@ describe("Memory Runtime", () => {
 
   it("search 窗口由首 4、命中两侧各 Session Search Window 条与尾 4 构成", async () => {
     const memory = await createMemory(); const session = memory.createSession("窗口");
-    // run a 写入 3 条可检索消息，让首段边界落在 run 之间：首 3 只覆盖 a，首 4 还要带上 b 的第一条。
-    memory.startRun(session.id, "a", "A 问题");
-    await memory.completeRun(session.id, "a", [
+    // turn a 写入 3 条可检索消息，让首段边界落在 turn 之间：首 3 只覆盖 a，首 4 还要带上 b 的第一条。
+    memory.startTurn(session.id, "a", "A 问题");
+    await memory.completeTurn(session.id, "a", [
       { role: "assistant", content: [{ type: "text", text: "A 中间回答" }] },
       { role: "assistant", content: [{ type: "text", text: "A 最终回答" }] },
     ]);
@@ -135,8 +135,8 @@ describe("Memory Runtime", () => {
     const found = await memory.searchSessions({ query: "命中标记" }, { ...recall, searchWindow: 1 });
     const result = found.sessions[0]!;
     expect(result.match?.messageId).toEqual(expect.any(Number));
-    // 首 4（a、b）、命中前后各 1 条（f、g）、尾 4（i、j）；每个 run 按完整行展开。
-    expect(result.entries.map((entry) => entry.runId)).toEqual([
+    // 首 4（a、b）、命中前后各 1 条（f、g）、尾 4（i、j）；每个 turn 按完整行展开。
+    expect(result.entries.map((entry) => entry.turnId)).toEqual([
       "a", "a", "a", "b", "b", "f", "f", "g", "g", "i", "i", "j", "j",
     ]);
     expect(result.returnedRanges).toEqual([
@@ -185,7 +185,7 @@ describe("Memory Runtime", () => {
     for (const item of found.sessions) expect(item.truncated).toBe(false);
   });
 
-  it("排名第一的 Session 超额时按 run 收缩兜底，始终带着命中返回", async () => {
+  it("排名第一的 Session 超额时按 turn 收缩兜底，始终带着命中返回", async () => {
     const memory = await createMemory(); const session = memory.createSession();
     for (let index = 0; index < 12; index += 1) {
       await addCompletedRun(memory, session.id, "r" + index, "问题" + index, index === 6 ? "关键决定 ALPHA" : "回答".repeat(100));
@@ -334,9 +334,9 @@ describe("Memory Runtime", () => {
 
   it("Session 元数据标记完整与失败 run，删除同步清除 Recall", async () => {
     const memory = await createMemory(); const session = memory.createSession();
-    memory.startRun(session.id, "failed", "失败独有代号 ZEBRA");
+    memory.startTurn(session.id, "failed", "失败独有代号 ZEBRA");
     await addCompletedRun(memory, session.id, "done", "完成目标", "完成结果");
-    expect(memory.listSessions()[0]).toMatchObject({ completedRunCount: 1, incompleteRunCount: 1 });
+    expect(memory.listSessions()[0]).toMatchObject({ completedTurnCount: 1, incompleteTurnCount: 1 });
     expect((await memory.searchSessions({ query: "ZEBRA" }, recall)).sessions).toEqual([]);
     memory.deleteSession(session.id);
     expect((await memory.searchSessions({ query: "ZEBRA" }, recall)).sessions).toEqual([]);
@@ -345,14 +345,14 @@ describe("Memory Runtime", () => {
   it("覆盖 Session、Semantic 与检索参数的公开错误边界", async () => {
     const memory = await createMemory();
     const session = memory.createSession(" ");
-    memory.startRun(session.id, "r1", " ");
-    await memory.completeRun(session.id, "r1", [{ role: "user", content: "补充" }, { role: "assistant", content: "完成" }]);
+    memory.startTurn(session.id, "r1", " ");
+    await memory.completeTurn(session.id, "r1", [{ role: "user", content: "补充" }, { role: "assistant", content: "完成" }]);
     expect(memory.getChatLog()).toHaveLength(3);
     expect(memory.getChatLog(session.id, 0)).toHaveLength(1);
     expect(memory.ensureSession().id).toBe(session.id);
     expect(() => memory.renameSession(session.id, " ")).toThrow("标题不能为空");
     expect(() => memory.renameSession("missing", "标题")).toThrow("Session 不存在");
-    expect(() => memory.startRun("missing", "r2", "问题")).toThrow("Session 不存在");
+    expect(() => memory.startTurn("missing", "r2", "问题")).toThrow("Session 不存在");
     expect(() => memory.deleteSession("missing")).toThrow("Session 不存在");
     await expect(memory.createSemantic(" ", "内容")).rejects.toThrow("Subject");
     await expect(memory.createSemantic("主题", " ")).rejects.toThrow("Content");
@@ -408,9 +408,9 @@ describe("Memory Runtime", () => {
 async function createMemory(): Promise<MemoryRuntime> {
   const memory = new MemoryRuntime(await mkdtemp(join(tmpdir(), "everything-memory-"))); runtimes.push(memory); return memory;
 }
-async function addCompletedRun(memory: MemoryRuntime, sessionId: string, runId: string, prompt: string, reply: string): Promise<void> {
-  memory.startRun(sessionId, runId, prompt);
-  await memory.completeRun(sessionId, runId, [{ role: "assistant", content: [{ type: "text", text: reply }] }]);
+async function addCompletedRun(memory: MemoryRuntime, sessionId: string, turnId: string, prompt: string, reply: string): Promise<void> {
+  memory.startTurn(sessionId, turnId, prompt);
+  await memory.completeTurn(sessionId, turnId, [{ role: "assistant", content: [{ type: "text", text: reply }] }]);
 }
 function response(text: string): ModelResponse { return { content: [{ type: "text", text }], stop_reason: "end_turn" } }
 function scriptedClient(items: Array<ModelResponse | Error>): AgentModelClient {

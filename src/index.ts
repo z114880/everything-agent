@@ -50,8 +50,8 @@ export * from "./agent-runtime/index.ts";
 
 export * from "./evaluation/index.ts";
 
-export { listTraceRuns, readTraceRun } from "./tracing/run-reader.ts";
-export type { TraceRunSummary, TraceRunPage, TracePageOptions } from "./tracing/run-reader.ts";
+export { listTraces, readTrace } from "./tracing/trace-reader.ts";
+export type { TraceSummary, TracePage, TracePageOptions } from "./tracing/trace-reader.ts";
 export { createLangfuseTracer, readLangfuseConfiguration } from "./tracing/langfuse/index.ts";
 export type { LangfuseConfiguration as LangfuseTracingConfiguration } from "./tracing/langfuse/index.ts";
 export { createRuntimeTracer } from "./tracing/runtime-tracer.ts";

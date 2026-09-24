@@ -42,12 +42,12 @@ console.log(`\n目标目录 ${result.home}`);
 for (const outcome of result.outcomes) {
   console.log(outcome.skipped
     ? `  ${outcome.datasetId}：跳过（${outcome.reason}）`
-    : `  ${outcome.datasetId}：写入 ${outcome.sessionCount} 个会话 / ${outcome.runCount} 个回合 / ${outcome.toolCallCount} 次工具调用`);
+    : `  ${outcome.datasetId}：写入 ${outcome.sessionCount} 个会话 / ${outcome.turnCount} 个回合 / ${outcome.toolCallCount} 次工具调用`);
 }
 if (result.sessionsCreated) {
   console.log(`
 本次新增
-  会话 / 回合     ${result.sessionsCreated} / ${result.runsExecuted}
+  会话 / 回合     ${result.sessionsCreated} / ${result.turnsExecuted}
   Chat Log 记录   ${result.chatLogAdded}
   Semantic Memory ${result.semanticMemoryAdded}
   Consolidation   ${result.consolidationRan ? "已执行" : "未执行"}

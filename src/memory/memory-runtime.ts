@@ -1,7 +1,7 @@
 import type { AgentMessage } from "../agent-loop/agent-loop.ts";
 import { decideRetrieval } from "./retrieve/retrieval-gate.ts";
 import type { EmbeddingProfile } from "./retrieve/index.ts";
-import type { ChatLogEntry, MemoryCandidate, MemoryManagementOptions, MemoryManagementResult, ConsolidationRun, MemoryModelOptions, MemoryOverview, MemoryRetrievalConfiguration, RetrievalResult, SemanticMemory, SessionReadResult, SessionRecallSettings, SessionSearchResult, SessionSummary } from "./types.ts";
+import type { ChatLogEntry, MemoryCandidate, MemoryManagementOptions, MemoryManagementResult, ConsolidationTask, MemoryModelOptions, MemoryOverview, MemoryRetrievalConfiguration, RetrievalResult, SemanticMemory, SessionReadResult, SessionRecallSettings, SessionSearchResult, SessionSummary } from "./types.ts";
 import type { Row } from "./storage/records.ts";
 import { SemanticStore } from "./storage/semantic-store.ts";
 import { MemorySearch } from "./retrieve/memory-search.ts";
@@ -44,13 +44,13 @@ export class MemoryRuntime {
     const operationId = crypto.randomUUID();
     await observer("retrieval_start", { operationId, mode: this.embedding.retrieval.mode, intent: decision.intent });
     const semantic = decision.intent === "fact_with_evidence"
-      ? await this.search.searchSemantic({ denseQuery: decision.denseQuery, lexicalQuery: decision.lexicalQuery }, DEFAULT_SEMANTIC_LIMIT, undefined, options.runId, options.observer)
+      ? await this.search.searchSemantic({ denseQuery: decision.denseQuery, lexicalQuery: decision.lexicalQuery }, DEFAULT_SEMANTIC_LIMIT, undefined, options.turnId, options.observer)
       : [];
     const recallDecision = decision.intent === "past_episode" || decision.intent === "fact_with_evidence"
       ? decision.sessionRecall
       : null;
     const sessionRecall = recallDecision?.mode === "search"
-      ? await this.recall.searchSessions({ query: recallDecision.query, currentSessionId: options.currentSessionId }, options.recall, undefined, options.runId, options.observer)
+      ? await this.recall.searchSessions({ query: recallDecision.query, currentSessionId: options.currentSessionId }, options.recall, undefined, options.turnId, options.observer)
       : recallDecision?.mode === "recent"
         ? await this.recall.searchSessions({ recent: true, currentSessionId: options.currentSessionId }, options.recall)
         : null;
@@ -128,7 +128,7 @@ export class MemoryRuntime {
     return this.sessions.ensureSession();
   }
 
-  /** 列出最近活跃的 Session，并显式统计完整与未完成 run。 */
+  /** 列出最近活跃的 Session，并显式统计完整与未完成 turn。 */
   listSessions(): SessionSummary[] {
     return this.sessions.listSessions();
   }
@@ -143,18 +143,18 @@ export class MemoryRuntime {
   }
 
   /** 保存一次运行的用户输入；失败运行只保留在 Chat Log，不进入检索。 */
-  startRun(sessionId: string, runId: string, prompt: string): ChatLogEntry {
-    return this.sessions.startRun(sessionId, runId, prompt);
+  startTurn(sessionId: string, turnId: string, prompt: string): ChatLogEntry {
+    return this.sessions.startTurn(sessionId, turnId, prompt);
   }
 
-  /** 保存成功 run；仅在本地事务中提交原文与 FTS。 */
-  completeRun(sessionId: string, runId: string, messages: AgentMessage[]): Promise<void> {
-    return this.sessions.completeRun(sessionId, runId, messages);
+  /** 保存成功 turn；仅在本地事务中提交原文与 FTS。 */
+  completeTurn(sessionId: string, turnId: string, messages: AgentMessage[]): Promise<void> {
+    return this.sessions.completeTurn(sessionId, turnId, messages);
   }
 
   /** 原子保存压缩检查点与本轮原始消息，不写入长期记忆。 */
-  saveCompaction(sessionId: string, runId: string, messages: AgentMessage[], compaction: import("../agent-loop/agent-loop.ts").ContextCompaction): void {
-    this.sessions.saveCompaction(sessionId, runId, messages, compaction);
+  saveCompaction(sessionId: string, turnId: string, messages: AgentMessage[], compaction: import("../agent-loop/agent-loop.ts").ContextCompaction): void {
+    this.sessions.saveCompaction(sessionId, turnId, messages, compaction);
   }
 
   /** 返回 Session 的全部持久化消息，供聊天界面读取。 */
@@ -168,8 +168,8 @@ export class MemoryRuntime {
   }
 
   /** 直接按全局模式搜索 Semantic Memory，不调用 Gate；两路使用同一输入文本，各自编码与召回。 */
-  searchSemantic(query: string, limit = 100, providedQueryVector?: Float32Array, runId?: string, observer = this.embedding.retrieval.observer): Promise<SemanticMemory[]> {
-    return this.search.searchSemantic({ denseQuery: query, lexicalQuery: query }, limit, providedQueryVector, runId, observer);
+  searchSemantic(query: string, limit = 100, providedQueryVector?: Float32Array, turnId?: string, observer = this.embedding.retrieval.observer): Promise<SemanticMemory[]> {
+    return this.search.searchSemantic({ denseQuery: query, lexicalQuery: query }, limit, providedQueryVector, turnId, observer);
   }
 
   /**
@@ -180,10 +180,10 @@ export class MemoryRuntime {
     input: { query?: string; recent?: boolean; limit?: number; currentSessionId?: string },
     settings: SessionRecallSettings,
     providedQueryVector?: Float32Array,
-    runId?: string,
+    turnId?: string,
     observer = this.embedding.retrieval.observer,
   ): Promise<SessionSearchResult> {
-    return this.recall.searchSessions(input, settings, providedQueryVector, runId, observer);
+    return this.recall.searchSessions(input, settings, providedQueryVector, turnId, observer);
   }
 
   /**
@@ -241,13 +241,13 @@ export class MemoryRuntime {
   stopBackgroundTasks(): void { this.background.stop(); }
   listBackgroundTasks() { return this.background.list(); }
 
-  listConsolidations(limit = 100): ConsolidationRun[] {
+  listConsolidations(limit = 100): ConsolidationTask[] {
     return (this.storage.connection.prepare(`SELECT r.*,
-      (SELECT COUNT(*) FROM memory_changes c WHERE c.run_id=r.run_id AND c.action='delete') AS facts_deleted,
-      (SELECT COUNT(*) FROM memory_changes c WHERE c.run_id=r.run_id AND c.action='merge') AS facts_merged,
-      (SELECT COUNT(*) FROM memory_changes c WHERE c.run_id=r.run_id AND c.action='update') AS facts_updated,
-      (SELECT COUNT(*) FROM memory_changes c WHERE c.run_id=r.run_id AND c.action='noop') AS facts_skipped
-      FROM consolidation_runs r ORDER BY r.id DESC LIMIT ?`).all(limit) as Row[]).map(consolidationFromRow);
+      (SELECT COUNT(*) FROM memory_changes c WHERE c.operation_id=r.task_id AND c.action='delete') AS facts_deleted,
+      (SELECT COUNT(*) FROM memory_changes c WHERE c.operation_id=r.task_id AND c.action='merge') AS facts_merged,
+      (SELECT COUNT(*) FROM memory_changes c WHERE c.operation_id=r.task_id AND c.action='update') AS facts_updated,
+      (SELECT COUNT(*) FROM memory_changes c WHERE c.operation_id=r.task_id AND c.action='noop') AS facts_skipped
+      FROM consolidation_tasks r ORDER BY r.id DESC LIMIT ?`).all(limit) as Row[]).map(consolidationFromRow);
   }
 
 }

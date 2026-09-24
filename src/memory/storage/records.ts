@@ -1,5 +1,5 @@
 import type { AgentMessage } from "../../agent-loop/agent-loop.ts";
-import type { ChatLogEntry, ConsolidationRun, SemanticMemory, SessionSummary } from "../types.ts";
+import type { ChatLogEntry, ConsolidationTask, SemanticMemory, SessionSummary } from "../types.ts";
 
 export interface Row extends Record<string, unknown> {}
 
@@ -42,7 +42,7 @@ export function plainText(content: unknown): string {
 export function sessionFromRow(row: Row): SessionSummary {
   return {
     id: String(row.id), title: String(row.title), messageCount: Number(row.message_count ?? 0),
-    completedRunCount: Number(row.completed_run_count ?? 0), incompleteRunCount: Number(row.incomplete_run_count ?? 0),
+    completedTurnCount: Number(row.completed_turn_count ?? 0), incompleteTurnCount: Number(row.incomplete_turn_count ?? 0),
     createdAt: String(row.created_at), updatedAt: String(row.updated_at),
   };
 }
@@ -50,7 +50,7 @@ export function sessionFromRow(row: Row): SessionSummary {
 /** 还原 Chat Log 记录；损坏的 JSON 不静默忽略。 */
 export function chatFromRow(row: Row): ChatLogEntry {
   return {
-    id: Number(row.id), sessionId: String(row.session_id), runId: String(row.run_id), role: String(row.role),
+    id: Number(row.id), sessionId: String(row.session_id), turnId: String(row.turn_id), role: String(row.role),
     kind: String(row.kind), content: parseJson(String(row.content_json)), createdAt: String(row.created_at),
   };
 }
@@ -65,9 +65,9 @@ export function semanticFromRow(row: Row): SemanticMemory {
 }
 
 /** 转换整理任务记录，保留错误类型和完成状态。 */
-export function consolidationFromRow(row: Row): ConsolidationRun {
+export function consolidationFromRow(row: Row): ConsolidationTask {
   return {
-    id: Number(row.id), runId: String(row.run_id), trigger: String(row.trigger),
+    id: Number(row.id), taskId: String(row.task_id), trigger: String(row.trigger),
     status: String(row.status), totalBatches: Number(row.total_batches), completedBatches: Number(row.completed_batches), unresolvedConflicts: Number(row.unresolved_conflicts), factsCreated: Number(row.facts_created),
     factsUpdated: Number(row.facts_updated), factsSkipped: Number(row.facts_skipped),
     factsDeleted: Number(row.facts_deleted ?? 0), factsMerged: Number(row.facts_merged ?? 0),

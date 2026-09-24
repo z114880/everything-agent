@@ -102,8 +102,8 @@ describe("统一 FTS 分词", () => {
   it("删除 Session 后清除带符号名称的索引", async () => {
     const memory = await createMemory();
     const session = memory.createSession();
-    memory.startRun(session.id, "delete", "@scope/pkg");
-    await memory.completeRun(session.id, "delete", [{ role: "assistant", content: "收到" }]);
+    memory.startTurn(session.id, "delete", "@scope/pkg");
+    await memory.completeTurn(session.id, "delete", [{ role: "assistant", content: "收到" }]);
     memory.deleteSession(session.id);
     expect(await search(memory, "session", "@scope/pkg")).toEqual([]);
   });
@@ -139,8 +139,8 @@ async function createMemory(): Promise<MemoryRuntime> {
 async function insert(memory: MemoryRuntime, corpus: "semantic" | "session", text: string): Promise<string | number> {
   if (corpus === "semantic") return (await memory.createSemantic("主题", text)).id;
   const session = memory.createSession();
-  memory.startRun(session.id, session.id, text);
-  await memory.completeRun(session.id, session.id, [{ role: "assistant", content: "收到" }]);
+  memory.startTurn(session.id, session.id, text);
+  await memory.completeTurn(session.id, session.id, [{ role: "assistant", content: "收到" }]);
   return session.id;
 }
 

@@ -83,14 +83,14 @@ export class SemanticStore {
   }
 
   /** 读取同一持久任务已提交的操作凭据；删除和合并也不能在恢复时重放。 */
-  committedResult(runId: string, candidateId: string): MemoryManagementResult | null {
-    const row = this.storage.connection.prepare("SELECT * FROM memory_changes WHERE run_id=? AND candidate_id=?").get(runId, candidateId) as Row | undefined;
+  committedResult(operationId: string, candidateId: string): MemoryManagementResult | null {
+    const row = this.storage.connection.prepare("SELECT * FROM memory_changes WHERE operation_id=? AND candidate_id=?").get(operationId, candidateId) as Row | undefined;
     return row ? { action: row.action as MemoryManagementResult["action"], reason: "已提交", reasonCode: row.reason_code as MemoryManagementResult["reasonCode"],
       ...(row.target_id === null ? {} : { targetId: Number(row.target_id) }), deletedIds: JSON.parse(String(row.deleted_ids)) as number[] } : null;
   }
 
   /** 向量预计算后重新检查版本，再原子更新事实、来源、索引与审计；冲突返回 null。 */
-  async applyDecision(decision: MemoryDecision, revision: number, evidence: MemorySource[], context: { runId: string; candidateId: string; sessionId: string; source: string; signal: AbortSignal; observer: AgentObserver; onCommitted?: () => void }): Promise<MemoryManagementResult | null> {
+  async applyDecision(decision: MemoryDecision, revision: number, evidence: MemorySource[], context: { operationId: string; candidateId: string; sessionId: string; source: string; signal: AbortSignal; observer: AgentObserver; onCommitted?: () => void }): Promise<MemoryManagementResult | null> {
     // 相同正文的 create 即使被模型误判，也不能增加重复事实。
     if (decision.action === "create") {
       const same = this.storage.connection.prepare("SELECT id FROM semantic_memory WHERE subject=? AND content=? ORDER BY id LIMIT 1").get(decision.subject!, decision.content!) as Row | undefined;
@@ -98,18 +98,18 @@ export class SemanticStore {
     }
     const { action } = decision;
     context.signal.throwIfAborted();
-    const committed = this.committedResult(context.runId, context.candidateId);
+    const committed = this.committedResult(context.operationId, context.candidateId);
     if (committed) return committed;
     if (this.revision() !== revision) return null;
     const writesContent = action === "create" || action === "update" || action === "merge";
     this.embedding.assertNoEmbeddingRebuild();
     const subject = writesContent ? requiredMemoryText(decision.subject!, "主题") : "";
     const content = writesContent ? requiredMemoryText(decision.content!, "内容") : "";
-    const dense = writesContent ? await this.embedding.embedDocument(`主题：${subject}\n内容：${content}`, "memory_create", undefined, context.signal, context.runId, context.observer) : [];
+    const dense = writesContent ? await this.embedding.embedDocument(`主题：${subject}\n内容：${content}`, "memory_create", undefined, context.signal, undefined, context.observer) : [];
     context.signal.throwIfAborted();
     this.embedding.assertNoEmbeddingRebuild();
     return this.storage.transaction(() => {
-      const committed = this.committedResult(context.runId, context.candidateId);
+      const committed = this.committedResult(context.operationId, context.candidateId);
       if (committed) return committed;
       if (this.revision() !== revision) return null;
       for (const item of evidence) {
@@ -139,7 +139,7 @@ export class SemanticStore {
         this.audit("semantic", id, "delete", context.source);
       }
       // 模型自由文本理由只返回调用方；持久审计不保存可能包含私人正文的理由。
-      this.storage.connection.prepare("INSERT INTO memory_changes(run_id, candidate_id, action, target_id, reason_code, deleted_ids, evidence_ids, session_id, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(context.runId, context.candidateId, action, targetId ?? null, decision.reasonCode, JSON.stringify(deletedIds), JSON.stringify(evidence.map((item) => item.messageId)), context.sessionId, context.source, nowUtc());
+      this.storage.connection.prepare("INSERT INTO memory_changes(operation_id, candidate_id, action, target_id, reason_code, deleted_ids, evidence_ids, session_id, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(context.operationId, context.candidateId, action, targetId ?? null, decision.reasonCode, JSON.stringify(deletedIds), JSON.stringify(evidence.map((item) => item.messageId)), context.sessionId, context.source, nowUtc());
       context.onCommitted?.();
       return { action, reason: decision.reason, reasonCode: decision.reasonCode, ...(targetId === undefined ? {} : { targetId }), deletedIds };
     });

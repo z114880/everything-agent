@@ -233,3 +233,7 @@ pnpm run verify:package # 验证发布包可独立启动
 - 随工具扩展完善权限、外部写入确认和审计能力。
 
 这些方向尚未全部实现，具体可用能力以当前代码与模块文档为准。
+
+### 会话与执行标识
+
+`sessionId` 标识会话，`turnId` 标识一次用户提交到回复、失败或取消的完整回合。回合内使用 `iteration` 区分推理迭代，后台任务使用 `taskId`，并通过 `sourceTurnId` 关联来源回合。Trace 使用 `traceId` 统一归组，聊天生命周期事件为 `turn_started`、`turn_completed`、`turn_failed`。Engine 的 `runGraph()` 与评估实验的 Run 保留各自执行语义。完整术语见 [领域术语](./CONTEXT.md)，事件协议见 [Tracing](./src/tracing/README.md)。

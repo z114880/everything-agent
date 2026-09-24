@@ -24,7 +24,7 @@ export class SessionStore {
   /** 返回最近的已有 Session；仅在数据库为空时创建默认 Session。 */
   ensureSession(): SessionSummary { return this.listSessions()[0] ?? this.createSession() }
 
-  /** 列出最近活跃的 Session，并显式统计完整与未完成 run。 */
+  /** 列出最近活跃的 Session，并显式统计完整与未完成 turn。 */
   listSessions(): SessionSummary[] {
     return (this.storage.connection.prepare(sessionSummarySql("")).all() as Row[]).map(sessionFromRow);
   }
@@ -46,13 +46,13 @@ export class SessionStore {
   }
 
   /** 保存一次运行的用户输入；失败运行只保留在 Chat Log，不进入检索。 */
-  startRun(sessionId: string, runId: string, prompt: string): ChatLogEntry {
+  startTurn(sessionId: string, turnId: string, prompt: string): ChatLogEntry {
     if (!this.getSession(sessionId)) throw new Error("Session 不存在");
     const timestamp = nowUtc();
     const result = this.storage.connection.prepare(`
-      INSERT INTO chat_log(session_id, run_id, role, kind, content_json, search_text, created_at)
+      INSERT INTO chat_log(session_id, turn_id, role, kind, content_json, search_text, created_at)
       VALUES (?, ?, 'user', 'user_message', ?, ?, ?)
-    `).run(sessionId, runId, JSON.stringify(prompt), "", timestamp);
+    `).run(sessionId, turnId, JSON.stringify(prompt), "", timestamp);
     const current = this.requireSession(sessionId);
     const title = current.messageCount === 1 && current.title === "新对话"
       ? prompt.trim().replace(/\s+/g, " ").slice(0, 60) || "新对话" : current.title;
@@ -60,46 +60,46 @@ export class SessionStore {
     return this.getChatEntry(Number(result.lastInsertRowid));
   }
 
-  /** 保存成功 run；原文与 FTS 在本地事务中原子提交，不依赖远程服务。 */
-  async completeRun(sessionId: string, runId: string, messages: AgentMessage[]): Promise<void> {
+  /** 保存成功 turn；原文与 FTS 在本地事务中原子提交，不依赖远程服务。 */
+  async completeTurn(sessionId: string, turnId: string, messages: AgentMessage[]): Promise<void> {
     const promptRow = this.storage.connection.prepare(`
       SELECT id, content_json FROM chat_log
-      WHERE session_id = ? AND run_id = ? AND kind = 'user_message'
+      WHERE session_id = ? AND turn_id = ? AND kind = 'user_message'
       ORDER BY id LIMIT 1
-    `).get(sessionId, runId) as Row | undefined;
-    if (!promptRow) throw new Error("Run 的用户消息不存在");
+    `).get(sessionId, turnId) as Row | undefined;
+    if (!promptRow) throw new Error("回合的用户消息不存在");
     const finalMessage = [...messages].reverse().find((message) => messageKind(message) === "assistant_message");
-    if (!finalMessage) throw new Error("成功 Run 必须包含最终 Assistant 回复");
+    if (!finalMessage) throw new Error("成功回合必须包含最终 Assistant 回复");
     const prompt = plainText(parseJson(String(promptRow.content_json)));
     this.storage.transaction(() => {
       this.storage.connection.prepare("UPDATE chat_log SET search_text = ? WHERE id = ?")
         .run(toSearchText(prompt), Number(promptRow.id));
-      this.appendRunMessages(sessionId, runId, messages);
+      this.appendTurnMessages(sessionId, turnId, messages);
       this.storage.connection.prepare("UPDATE sessions SET updated_at = ? WHERE id = ?").run(nowUtc(), sessionId);
     });
   }
 
   /** 原始新增消息与压缩检查点一并提交；失败时不会改变旧检查点。 */
-  saveCompaction(sessionId: string, runId: string, messages: AgentMessage[], compaction: ContextCompaction): void {
+  saveCompaction(sessionId: string, turnId: string, messages: AgentMessage[], compaction: ContextCompaction): void {
     this.requireSession(sessionId);
     this.storage.transaction(() => {
-      this.appendRunMessages(sessionId, runId, messages);
+      this.appendTurnMessages(sessionId, turnId, messages);
       const coveredId = Number(this.storage.connection.prepare("SELECT MAX(id) AS id FROM chat_log WHERE session_id = ?").get(sessionId)!.id);
       this.storage.connection.prepare(`INSERT INTO session_context VALUES (?, ?, ?)
         ON CONFLICT(session_id) DO UPDATE SET covered_id=excluded.covered_id, messages_json=excluded.messages_json`)
         .run(sessionId, coveredId, JSON.stringify(removeCredentials(compaction.messages)));
       const { messages: _messages, ...metadata } = compaction;
       this.storage.connection.prepare("INSERT INTO context_compactions VALUES (?, ?, ?, ?)")
-        .run(compaction.compactionId, sessionId, runId, JSON.stringify(metadata));
+        .run(compaction.compactionId, sessionId, turnId, JSON.stringify(metadata));
     });
   }
 
-  // compact 已经保存的中间工具消息不能在 completeRun 时重复插入。
-  private appendRunMessages(sessionId: string, runId: string, messages: AgentMessage[]): void {
-    const rows = this.storage.connection.prepare("SELECT id FROM chat_log WHERE session_id = ? AND run_id = ? ORDER BY id").all(sessionId, runId);
-    if (!rows.length) throw new Error("Run 的用户消息不存在");
+  // compact 已经保存的中间工具消息不能在 completeTurn 时重复插入。
+  private appendTurnMessages(sessionId: string, turnId: string, messages: AgentMessage[]): void {
+    const rows = this.storage.connection.prepare("SELECT id FROM chat_log WHERE session_id = ? AND turn_id = ? ORDER BY id").all(sessionId, turnId);
+    if (!rows.length) throw new Error("回合的用户消息不存在");
     const insert = this.storage.connection.prepare(`
-      INSERT INTO chat_log(session_id, run_id, role, kind, content_json, search_text, created_at)
+      INSERT INTO chat_log(session_id, turn_id, role, kind, content_json, search_text, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
     for (const message of messages.slice(rows.length - 1)) {
@@ -107,7 +107,7 @@ export class SessionStore {
       const kind = messageKind(message);
       const content = removeCredentials(message.content);
       const searchText = kind === "user_message" || kind === "assistant_message" ? toSearchText(plainText(content)) : "";
-      insert.run(sessionId, runId, role, kind, JSON.stringify(content), searchText, nowUtc());
+      insert.run(sessionId, turnId, role, kind, JSON.stringify(content), searchText, nowUtc());
     }
   }
 
@@ -120,8 +120,8 @@ export class SessionStore {
     return this.decorateEntries(rows as Row[]).map((entry) => ({
       ...entry,
       ...(entry.kind === "user_message" ? {
-        compactions: this.storage.connection.prepare("SELECT metadata_json FROM context_compactions WHERE session_id = ? AND run_id = ? ORDER BY rowid")
-          .all(entry.sessionId, entry.runId).map((row) => parseJson(String(row.metadata_json)) as Omit<ContextCompaction, "messages">),
+        compactions: this.storage.connection.prepare("SELECT metadata_json FROM context_compactions WHERE session_id = ? AND turn_id = ? ORDER BY rowid")
+          .all(entry.sessionId, entry.turnId).map((row) => parseJson(String(row.metadata_json)) as Omit<ContextCompaction, "messages">),
       } : {}),
     }));
   }
@@ -132,24 +132,24 @@ export class SessionStore {
       ? this.storage.connection.prepare("SELECT * FROM session_context WHERE session_id = ?").get(sessionId) as Row | undefined
       : undefined;
     const prefix: AgentMessage[] = checkpoint ? parseJson(String(checkpoint.messages_json)) as AgentMessage[] : [];
-    let runRows: Row[];
+    let turnRows: Row[];
     if (turns === undefined) {
-      runRows = this.storage.connection.prepare(`
-        SELECT run_id, MIN(id) AS first_id FROM chat_log WHERE session_id = ?
-        GROUP BY run_id HAVING SUM(CASE WHEN kind = 'assistant_message' THEN 1 ELSE 0 END) > 0 ORDER BY first_id
+      turnRows = this.storage.connection.prepare(`
+        SELECT turn_id, MIN(id) AS first_id FROM chat_log WHERE session_id = ?
+        GROUP BY turn_id HAVING SUM(CASE WHEN kind = 'assistant_message' THEN 1 ELSE 0 END) > 0 ORDER BY first_id
       `).all(sessionId) as Row[];
     } else {
-      runRows = (this.storage.connection.prepare(`
-        SELECT run_id, MIN(id) AS first_id FROM chat_log WHERE session_id = ?
-        GROUP BY run_id HAVING SUM(CASE WHEN kind = 'assistant_message' THEN 1 ELSE 0 END) > 0
+      turnRows = (this.storage.connection.prepare(`
+        SELECT turn_id, MIN(id) AS first_id FROM chat_log WHERE session_id = ?
+        GROUP BY turn_id HAVING SUM(CASE WHEN kind = 'assistant_message' THEN 1 ELSE 0 END) > 0
         ORDER BY first_id DESC LIMIT ?
       `).all(sessionId, turns) as Row[]).reverse();
     }
-    const runIds = runRows.map((row) => String(row.run_id));
-    if (!runIds.length) return prefix;
-    const placeholders = runIds.map(() => "?").join(",");
-    const suffix = (this.storage.connection.prepare(`SELECT * FROM chat_log WHERE session_id = ? AND run_id IN (${placeholders}) AND id > ? ORDER BY id`)
-      .all(sessionId, ...runIds, checkpoint ? Number(checkpoint.covered_id) : 0) as Row[])
+    const turnIds = turnRows.map((row) => String(row.turn_id));
+    if (!turnIds.length) return prefix;
+    const placeholders = turnIds.map(() => "?").join(",");
+    const suffix = (this.storage.connection.prepare(`SELECT * FROM chat_log WHERE session_id = ? AND turn_id IN (${placeholders}) AND id > ? ORDER BY id`)
+      .all(sessionId, ...turnIds, checkpoint ? Number(checkpoint.covered_id) : 0) as Row[])
       .map((row) => ({ role: String(row.role), content: parseJson(String(row.content_json)) }));
     return [...prefix, ...suffix];
   }
@@ -170,17 +170,17 @@ export class SessionStore {
     const checkpoint = this.storage.connection.prepare("SELECT covered_id FROM session_context WHERE session_id = ?").get(sessionId);
     if (!checkpoint) return null;
     return this.storage.connection.prepare(`SELECT c.* FROM chat_log c WHERE c.session_id = ? AND c.id <= ?
-      AND (EXISTS (SELECT 1 FROM chat_log done WHERE done.session_id=c.session_id AND done.run_id=c.run_id AND done.kind='assistant_message')
-        OR EXISTS (SELECT 1 FROM context_compactions compact WHERE compact.session_id=c.session_id AND compact.run_id=c.run_id)) ORDER BY c.id`)
+      AND (EXISTS (SELECT 1 FROM chat_log done WHERE done.session_id=c.session_id AND done.turn_id=c.turn_id AND done.kind='assistant_message')
+        OR EXISTS (SELECT 1 FROM context_compactions compact WHERE compact.session_id=c.session_id AND compact.turn_id=c.turn_id)) ORDER BY c.id`)
       .all(sessionId, Number(checkpoint.covered_id)) as Row[];
   }
 
-  completedRunRows(sessionId: string): Row[] {
+  completedTurnRows(sessionId: string): Row[] {
     return this.storage.connection.prepare(`
       SELECT c.* FROM chat_log c
       WHERE c.session_id = ? AND EXISTS (
         SELECT 1 FROM chat_log done
-        WHERE done.session_id = c.session_id AND done.run_id = c.run_id
+        WHERE done.session_id = c.session_id AND done.turn_id = c.turn_id
           AND done.kind = 'assistant_message'
       )
       ORDER BY c.id
@@ -192,8 +192,8 @@ export class SessionStore {
   decorateEntries(rows: Row[]): ChatLogEntry[] { return this.decorateEntriesFromEntries(rows.map(chatFromRow), rows) }
 
   decorateEntriesFromEntries(entries: ChatLogEntry[], allRows: Row[]): ChatLogEntry[] {
-    const completed = new Set(allRows.filter((row) => row.kind === "assistant_message").map((row) => String(row.run_id)));
-    return entries.map((entry) => ({ ...entry, runComplete: completed.has(entry.runId) }));
+    const completed = new Set(allRows.filter((row) => row.kind === "assistant_message").map((row) => String(row.turn_id)));
+    return entries.map((entry) => ({ ...entry, turnComplete: completed.has(entry.turnId) }));
   }
 }
 
@@ -201,11 +201,11 @@ function sessionSummarySql(where: string): string {
   return `
     SELECT s.*, COUNT(c.id) AS message_count,
       COUNT(DISTINCT CASE WHEN EXISTS (
-        SELECT 1 FROM chat_log done WHERE done.session_id=c.session_id AND done.run_id=c.run_id AND done.kind='assistant_message'
-      ) THEN c.run_id END) AS completed_run_count,
+        SELECT 1 FROM chat_log done WHERE done.session_id=c.session_id AND done.turn_id=c.turn_id AND done.kind='assistant_message'
+      ) THEN c.turn_id END) AS completed_turn_count,
       COUNT(DISTINCT CASE WHEN NOT EXISTS (
-        SELECT 1 FROM chat_log done WHERE done.session_id=c.session_id AND done.run_id=c.run_id AND done.kind='assistant_message'
-      ) THEN c.run_id END) AS incomplete_run_count
+        SELECT 1 FROM chat_log done WHERE done.session_id=c.session_id AND done.turn_id=c.turn_id AND done.kind='assistant_message'
+      ) THEN c.turn_id END) AS incomplete_turn_count
     FROM sessions s LEFT JOIN chat_log c ON c.session_id=s.id ${where}
     GROUP BY s.id ORDER BY s.updated_at DESC, s.id ASC
   `;

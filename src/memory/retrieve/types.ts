@@ -25,9 +25,9 @@ export interface EmbeddedVector {
 
 /** Embedding 模块的可观察上下文。 */
 export interface EmbeddingCallContext {
-  purpose: "query" | "memory_create" | "run_complete" | "rebuild" | "config_probe";
+  purpose: "query" | "memory_create" | "rebuild" | "config_probe";
   observer?: AgentObserver;
-  runId?: string;
+  turnId?: string;
   rebuildId?: string;
   signal?: AbortSignal;
 }

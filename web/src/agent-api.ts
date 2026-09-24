@@ -52,20 +52,20 @@ export interface SessionSummary {
   createdAt: string;
   updatedAt: string;
 
-  completedRunCount: number;
-  incompleteRunCount: number;
+  completedTurnCount: number;
+  incompleteTurnCount: number;
 }
 
 export interface ChatLogEntry {
   compactions?: CompactionRecord[];
   id: number;
   sessionId: string;
-  runId: string;
+  turnId: string;
   role: string;
   kind: string;
   content: unknown;
   createdAt: string;
-  runComplete?: boolean;
+  turnComplete?: boolean;
   contentTruncated?: boolean;
   contentFragment?: boolean;
   contentOffset?: number;
@@ -109,22 +109,22 @@ export interface SemanticMemory {
   id: number; subject: string; content: string; source: string; createdAt: string; updatedAt: string;
 }
 
-export interface ConsolidationRun {
-  id: number; runId: string; trigger: string; status: string; totalBatches: number; completedBatches: number; unresolvedConflicts: number;
+export interface ConsolidationTask {
+  id: number; taskId: string; trigger: string; status: string; totalBatches: number; completedBatches: number; unresolvedConflicts: number;
   factsCreated: number; factsUpdated: number; factsSkipped: number; factsDeleted: number; factsMerged: number;
   errorType: string | null; startedAt: string; completedAt: string | null;
 }
 
 export interface MemoryDashboard {
-  overview: { semanticCount: number; indexedSessionCount: number; indexedMessageCount: number; sessionCount: number; databasePath: string; latestConsolidation: ConsolidationRun | null };
+  overview: { semanticCount: number; indexedSessionCount: number; indexedMessageCount: number; sessionCount: number; databasePath: string; latestConsolidation: ConsolidationTask | null };
   sessions: SessionSummary[];
   semantic: SemanticMemory[];
   chatLog: ChatLogEntry[];
-  consolidations: ConsolidationRun[];
+  consolidations: ConsolidationTask[];
 }
 
 export interface TraceRecord {
-  version: number; eventId?: string; type: string; timestamp: string; sequence?: number; runId: string; sessionId?: string;
+  version: 3; eventId?: string; type: string; timestamp: string; sequence?: number; traceId: string; turnId?: string; taskId?: string; sourceTurnId?: string; sessionId?: string;
   iteration?: number; modelCallId?: string; toolCallId?: string; payload?: Record<string, unknown>; [key: string]: unknown;
 }
 
@@ -134,7 +134,7 @@ export interface TraceFile {
 }
 
 export interface TraceDashboard {
-  runs: { runId: string; startedAt: string; eventCount: number; status: string }[];
+  traces: { traceId: string; startedAt: string; eventCount: number; status: string }[];
   nextCursor: string | null;
 }
 
@@ -220,7 +220,7 @@ export interface AgentEvent {
   taskKind?: string;
   taskId?: string;
   intent?: "none" | "past_episode" | "fact_with_evidence";
-  runId?: string;
+  turnId?: string;
   iteration?: number;
   delta?: string;
   tool?: string;
@@ -246,7 +246,7 @@ export interface AgentEvent {
   boundary?: string;
 }
 
-export interface AgentRunResult {
+export interface AgentTurnResult {
   reply: string;
   iterations: number;
   stopReason: "completed" | "max_iterations";
@@ -425,8 +425,8 @@ export function loadTraces(cursor?: string): Promise<TraceDashboard> {
   return requestJson(`${endpoint}/traces${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
 }
 
-export function loadTraceRun(runId: string): Promise<{ files: TraceFile[] }> {
-  return requestJson(`${endpoint}/traces?runId=${encodeURIComponent(runId)}`);
+export function loadTrace(traceId: string): Promise<{ files: TraceFile[] }> {
+  return requestJson(`${endpoint}/traces?traceId=${encodeURIComponent(traceId)}`);
 }
 
 /** 读取 state.db 中排除索引中间表后的普通表。 */
@@ -497,8 +497,8 @@ export async function runAgent(
   sessionId: string,
   onEvent: (kind: string, event: AgentEvent) => void,
   signal: AbortSignal,
-): Promise<AgentRunResult> {
-  const response = await fetch(`${endpoint}/run`, {
+): Promise<AgentTurnResult> {
+  const response = await fetch(`${endpoint}/turn`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt, sessionId }),
@@ -509,14 +509,14 @@ export async function runAgent(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let result: AgentRunResult | null = null;
+  let result: AgentTurnResult | null = null;
   const consumeLine = (line: string) => {
     if (!line.trim()) return;
     const message = JSON.parse(line) as {
       type: "event" | "result" | "error";
       kind?: string;
       event?: AgentEvent;
-      result?: AgentRunResult;
+      result?: AgentTurnResult;
       error?: string;
     };
     if (message.type === "event" && message.kind && message.event) onEvent(message.kind, message.event);

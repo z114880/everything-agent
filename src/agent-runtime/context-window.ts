@@ -34,7 +34,7 @@ export function availableInputTokens(contextWindow: number, maxTokens: number): 
   return contextWindow - maxTokens - CONTEXT_SAFETY_TOKENS;
 }
 
-/** 把 Loop 报告的峰值补齐成完整水位，供 run_completed 与前端共用同一组分母。 */
+/** 把 Loop 报告的峰值补齐成完整水位，供 turn_completed 与前端共用同一组分母。 */
 export function contextWaterline(
   contextWindow: number,
   maxTokens: number,

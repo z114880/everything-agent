@@ -31,7 +31,7 @@ export class SessionRecall {
     input: { query?: string; recent?: boolean; limit?: number; currentSessionId?: string },
     settings: SessionRecallSettings,
     providedQueryVector?: Float32Array,
-    runId?: string,
+    turnId?: string,
     observer = this.embedding.retrieval.observer,
   ): Promise<SessionSearchResult> {
     const query = input.query?.trim() ?? "";
@@ -39,7 +39,7 @@ export class SessionRecall {
     const requestedLimit = boundedInteger(input.limit ?? 4, 1, SEARCH_SESSION_LIMIT, "limit");
     const radius = settings.searchWindow;
     const candidates = query
-      ? (await this.search.sessionSearchCandidates(query, input.currentSessionId, providedQueryVector, runId, observer)).slice(0, requestedLimit)
+      ? (await this.search.sessionSearchCandidates(query, input.currentSessionId, providedQueryVector, turnId, observer)).slice(0, requestedLimit)
       : this.search.recentCandidates(input.currentSessionId, requestedLimit);
     const sessions: SessionRecallResult[] = [];
     let usedTokens = 0; let exceededBudget = false;
@@ -49,7 +49,7 @@ export class SessionRecall {
       let size = settings.tokenEstimator.estimateText(JSON.stringify(result.entries));
       if (usedTokens + size > settings.tokenLimit) {
         // 总额不足时整个 Session 一起丢弃，绝不切碎已经给出的窗口；
-        // 只有排名第一的 Session 不能空手返回，按 run 粒度收缩到装得下为止。
+        // 只有排名第一的 Session 不能空手返回，按 turn 粒度收缩到装得下为止。
         if (sessions.length) { exceededBudget = true; break }
         result = this.shrinkToBudget(result, settings);
         size = settings.tokenEstimator.estimateText(JSON.stringify(result.entries));
@@ -86,8 +86,8 @@ export class SessionRecall {
 
   private buildRecallResult(candidate: SearchCandidate, rank: number, radius: number, mode: "search" | "recent", settings: SessionRecallSettings): SessionRecallResult {
     const session = this.sessions.requireSession(candidate.sessionId);
-    // 失败 run 仍保存在 Chat Log，但 Session Recall 的发现与读取都完全忽略它。
-    const rows = this.sessions.completedRunRows(candidate.sessionId);
+    // 失败 turn 仍保存在 Chat Log，但 Session Recall 的发现与读取都完全忽略它。
+    const rows = this.sessions.completedTurnRows(candidate.sessionId);
     const indexed = rows.filter((row) => row.kind === "user_message" || row.kind === "assistant_message");
     const chosen = new Set<number>();
     let anchorIndex = -1;
@@ -99,13 +99,13 @@ export class SessionRecall {
       anchorIndex = indexed.findIndex((row) => Number(row.id) === candidate.messageId);
       if (anchorIndex >= 0) add(indexed.slice(Math.max(0, anchorIndex - radius), anchorIndex + radius + 1));
     }
-    const selectedRuns = new Set(rows.filter((row) => chosen.has(Number(row.id))).map((row) => String(row.run_id)));
-    const selectedRows = rows.filter((row) => selectedRuns.has(String(row.run_id)));
+    const selectedRuns = new Set(rows.filter((row) => chosen.has(Number(row.id))).map((row) => String(row.turn_id)));
+    const selectedRows = rows.filter((row) => selectedRuns.has(String(row.turn_id)));
     const entries = capEntries(this.sessions.decorateEntries(selectedRows), selectedRows, settings);
     const isComplete = entries.length === rows.length && !entries.some((entry) => entry.contentTruncated);
     // 窗口含固定尾段，整段 entries 的右边界通常就是 Session 末尾；续读必须从锚点窗口的
     // 右边界开始，才能读到锚点之后、尾部之前被跳过的那一段。
-    const resumeAfterId = isComplete || anchorIndex < 0 ? 0 : runEndRowId(rows, indexed[Math.min(anchorIndex + radius, indexed.length - 1)]!);
+    const resumeAfterId = isComplete || anchorIndex < 0 ? 0 : turnEndRowId(rows, indexed[Math.min(anchorIndex + radius, indexed.length - 1)]!);
     const nextCursor = resumeAfterId && resumeAfterId !== Number(rows[rows.length - 1]?.id)
       ? encodeCursor({ version: 1, sessionId: candidate.sessionId, afterId: resumeAfterId, contentOffset: 0 })
       : null;
@@ -128,15 +128,15 @@ export class SessionRecall {
   }
 
   /**
-   * 排名第一的 Session 自己就超总额时的兜底：按 run 分组，先丢尾部 run、再丢首部 run，
-   * 交替向命中所在 run 收缩；只剩命中 run 仍超额时，在 run 内围绕命中消息收缩，
+   * 排名第一的 Session 自己就超总额时的兜底：按 turn 分组，先丢尾部 turn、再丢首部 turn，
+   * 交替向命中所在 turn 收缩；只剩命中 turn 仍超额时，在 turn 内围绕命中消息收缩，
    * 保证 tokenLimit 始终是硬上界。
    */
   private shrinkToBudget(result: SessionRecallResult, settings: SessionRecallSettings): SessionRecallResult {
     const groups: ChatLogEntry[][] = [];
     for (const entry of result.entries) {
       const last = groups[groups.length - 1];
-      if (last && last[0]!.runId === entry.runId) last.push(entry); else groups.push([entry]);
+      if (last && last[0]!.turnId === entry.turnId) last.push(entry); else groups.push([entry]);
     }
     const anchor = Math.max(0, groups.findIndex((group) => group.some((entry) => entry.id === result.match?.messageId)));
     const size = (items: ChatLogEntry[]): number => settings.tokenEstimator.estimateText(JSON.stringify(items));
@@ -149,18 +149,18 @@ export class SessionRecall {
     const entries = size(kept) > settings.tokenLimit
       ? fitEntriesAroundAnchor(kept, result.match?.messageId, settings)
       : kept;
-    const allRows = this.sessions.completedRunRows(result.session.id);
+    const allRows = this.sessions.completedTurnRows(result.session.id);
     return {
       ...result, entries, returnedMessageCount: entries.length, returnedRanges: rangesFor(entries, allRows),
       isComplete: false, truncated: true,
-      // 收缩结果只保留命中点附近的若干 run，其前后都有缺口；从头分页才能保证不跳过中间消息。
+      // 收缩结果只保留命中点附近的若干 turn，其前后都有缺口；从头分页才能保证不跳过中间消息。
       nextCursor: encodeCursor({ version: 1, sessionId: result.session.id, afterId: 0, contentOffset: 0 }),
     };
   }
 
   private async readSequential(cursor: Cursor, settings: SessionRecallSettings, compactedRows?: Row[]): Promise<SessionReadResult> {
     const session = this.sessions.requireSession(cursor.sessionId);
-    const allRows = compactedRows ?? this.sessions.completedRunRows(cursor.sessionId);
+    const allRows = compactedRows ?? this.sessions.completedTurnRows(cursor.sessionId);
     const startIndex = cursor.afterId === 0 ? 0 : Math.max(0, allRows.findIndex((row) => Number(row.id) === cursor.afterId));
     const selected: ChatLogEntry[] = []; let next: Cursor | null = null;
     for (let index = startIndex; index < allRows.length; index += 1) {
@@ -231,17 +231,17 @@ function cappedContentLength(raw: string, settings: SessionRecallSettings): numb
 /** Cursor 只有一种语义：从 afterId / contentOffset 记录的位置往后连续读。 */
 interface Cursor { version: 1; sessionId: string; afterId: number; contentOffset: number }
 
-/** 返回某条消息所属 run 在 rows 中的最后一行 id，保证续读起点落在 run 边界上。 */
-function runEndRowId(rows: Row[], anchor: Row): number {
-  const runId = String(anchor.run_id);
+/** 返回某条消息所属 turn 在 rows 中的最后一行 id，保证续读起点落在 turn 边界上。 */
+function turnEndRowId(rows: Row[], anchor: Row): number {
+  const turnId = String(anchor.turn_id);
   for (let index = rows.length - 1; index >= 0; index -= 1) {
-    if (String(rows[index]!.run_id) === runId) return Number(rows[index]!.id);
+    if (String(rows[index]!.turn_id) === turnId) return Number(rows[index]!.id);
   }
   return 0;
 }
 
 /**
- * 收缩到只剩命中所在 run 仍超额时使用：先放下锚点那条消息，再在 token 额度内
+ * 收缩到只剩命中所在 turn 仍超额时使用：先放下锚点那条消息，再在 token 额度内
  * 交替向后、向前扩展。截断绝不能丢掉命中内容，否则搜索结果只剩无关语境。
  */
 function fitEntriesAroundAnchor(entries: ChatLogEntry[], anchorId: number | undefined, settings: SessionRecallSettings): ChatLogEntry[] {

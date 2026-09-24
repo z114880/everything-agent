@@ -11,7 +11,7 @@ afterEach(() => memories.splice(0).forEach((memory) => memory.close()));
 it("聊天写入必须先检索，Agent Model 把重复事实判为 noop", async () => {
   const memory = new MemoryRuntime(await mkdtemp(join(tmpdir(), "memory-management-"))); memories.push(memory);
   const session = memory.createSession();
-  const evidence = memory.startRun(session.id, "run", "我喜欢红茶");
+  const evidence = memory.startTurn(session.id, "run", "我喜欢红茶");
   const old = await memory.createSemantic("饮品偏好", "喜欢红茶");
   const events: string[] = [];
   const client: AgentModelClient = { messages: { async create(request) {
@@ -19,7 +19,7 @@ it("聊天写入必须先检索，Agent Model 把重复事实判为 noop", async
     return { content: [{ type: "text", text: JSON.stringify({ action: "noop", reason: "已有相同事实", evidenceMessageIds: [evidence.id] }) }], stop_reason: "end_turn" };
   } } };
   const result = await memory.manageMemory({ intent: "remember", subject: "用户", attribute: "饮品偏好", content: "喜欢红茶", evidenceMessageIds: [evidence.id] }, {
-    client, model: "small", currentSessionId: session.id, runId: "run", observer: (kind) => { events.push(kind) },
+    client, model: "small", currentSessionId: session.id, turnId: "run", observer: (kind) => { events.push(kind) },
   });
   expect(result.action).toBe("noop");
   expect(memory.listSemantic()).toHaveLength(1);
@@ -29,9 +29,9 @@ it("聊天写入必须先检索，Agent Model 把重复事实判为 noop", async
 it("新增保存证据，更新保留 ID 和来源，不同事实可独立新增", async () => {
   const { memory, candidate, options, evidence } = await setup();
   const created = await memory.manageMemory(candidate, { ...options, client: model(() => write("create", evidence.id)) });
-  const second = memory.startRun(options.currentSessionId, "next", "我现在喜欢绿茶");
+  const second = memory.startTurn(options.currentSessionId, "next", "我现在喜欢绿茶");
   const updated = await memory.manageMemory({ ...candidate, content: "现在喜欢绿茶", evidenceMessageIds: [second.id] }, {
-    ...options, runId: "next", client: model(() => ({ ...write("update", second.id), targetId: created.targetId, content: "现在喜欢绿茶" })),
+    ...options, turnId: "next", client: model(() => ({ ...write("update", second.id), targetId: created.targetId, content: "现在喜欢绿茶" })),
   });
   expect(updated.targetId).toBe(created.targetId);
   expect(memory.listSemantic()).toMatchObject([{ content: "现在喜欢绿茶", sources: [{ messageId: evidence.id }, { messageId: second.id }] }]);
@@ -42,8 +42,8 @@ it("新增保存证据，更新保留 ID 和来源，不同事实可独立新增
 it.each(["lexical_only", "dense_only", "hybrid"] as const)("%s 管理检索保留重复候选，合并后只留一个 ID 且来源完整", async (mode) => {
   const { memory, candidate, options, evidence } = await setup();
   const first = await memory.manageMemory(candidate, { ...options, client: model(() => write("create", evidence.id)) });
-  const secondEvidence = memory.startRun(options.currentSessionId, "second", "我上午喜欢喝红茶");
-  const second = await memory.manageMemory({ ...candidate, evidenceMessageIds: [secondEvidence.id] }, { ...options, runId: "second", client: model(() => ({ ...write("create", secondEvidence.id), content: "上午喜欢喝红茶" })) });
+  const secondEvidence = memory.startTurn(options.currentSessionId, "second", "我上午喜欢喝红茶");
+  const second = await memory.manageMemory({ ...candidate, evidenceMessageIds: [secondEvidence.id] }, { ...options, turnId: "second", client: model(() => ({ ...write("create", secondEvidence.id), content: "上午喜欢喝红茶" })) });
   await configureEmbedding(memory, mode);
   if (mode !== "lexical_only") expect(await memory.searchSemantic("红茶")).toHaveLength(1);
   const events: string[] = [];
@@ -179,11 +179,11 @@ it("忘记意图不能转成新增，明确目标时直接删除", async () => {
 it("拒绝其他 Session、Assistant 和失败历史回合的证据", async () => {
   const { memory, candidate, options, evidence } = await setup();
   const other = memory.createSession();
-  const foreign = memory.startRun(other.id, "other", "我喜欢红茶");
-  await memory.completeRun(other.id, "other", [{ role: "assistant", content: "不能作为事实证据" }]);
+  const foreign = memory.startTurn(other.id, "other", "我喜欢红茶");
+  await memory.completeTurn(other.id, "other", [{ role: "assistant", content: "不能作为事实证据" }]);
   const client = model(() => write("create", evidence.id));
   for (const id of [foreign.id, foreign.id + 1, 999]) await expect(memory.manageMemory({ ...candidate, evidenceMessageIds: [id] }, { ...options, client })).rejects.toThrow("用户消息");
-  await expect(memory.manageMemory(candidate, { ...options, runId: "different", client })).rejects.toThrow("用户消息");
+  await expect(memory.manageMemory(candidate, { ...options, turnId: "different", client })).rejects.toThrow("用户消息");
   expect(memory.listSemantic()).toEqual([]);
 });
 
@@ -203,10 +203,10 @@ it("模型截断时失败，事件不暴露候选内容或自由文本理由", a
 
 async function setup() {
   const memory = new MemoryRuntime(await mkdtemp(join(tmpdir(), "memory-management-"))); memories.push(memory);
-  const session = memory.createSession(); const evidence = memory.startRun(session.id, "run", "我喜欢红茶");
+  const session = memory.createSession(); const evidence = memory.startTurn(session.id, "run", "我喜欢红茶");
   return { memory, evidence,
     candidate: { intent: "remember" as const, subject: "用户", attribute: "饮品偏好", content: "喜欢红茶", evidenceMessageIds: [evidence.id] },
-    options: { currentSessionId: session.id, runId: "run", model: "small" },
+    options: { currentSessionId: session.id, turnId: "run", model: "small" },
   };
 }
 function write(action: string, evidence: number) {

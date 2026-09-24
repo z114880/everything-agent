@@ -27,7 +27,7 @@ import {
   subscribeBackgroundEvents,
   type AgentBootstrap,
   type AgentEvent,
-  type AgentRunResult,
+  type AgentTurnResult,
   type ChatLogEntry,
   type ContextUsage,
   type PendingApproval,
@@ -74,7 +74,7 @@ interface AssistantChatMessage {
   startedAt?: number;
   /** 已结束回合使用固定耗时，不能随其他回合的刷新继续计时。 */
   elapsedMs?: number;
-  result?: AgentRunResult;
+  result?: AgentTurnResult;
   streamFallback?: boolean;
   compactions?: CompactionView[];
 }
@@ -1132,13 +1132,13 @@ function updateAssistant(
 function toChatMessages(entries: ChatLogEntry[]): ChatMessage[] {
   const groups = new Map<string, ChatLogEntry[]>();
   for (const entry of entries)
-    groups.set(entry.runId, [...(groups.get(entry.runId) ?? []), entry]);
+    groups.set(entry.turnId, [...(groups.get(entry.turnId) ?? []), entry]);
   const messages: ChatMessage[] = [];
-  for (const [runId, rows] of groups) {
+  for (const [turnId, rows] of groups) {
     const user = rows.find((row) => row.kind === "user_message");
     if (!user) continue;
     messages.push({
-      id: `${runId}-user`,
+      id: `${turnId}-user`,
       role: "user",
       content: plainText(user.content),
     });
@@ -1154,7 +1154,7 @@ function toChatMessages(entries: ChatLogEntry[]): ChatMessage[] {
     // 历史回合使用持久化记录的时间差；未完成或缺少有效时间时不伪造耗时。
     const elapsedMs = final ? Date.parse(final.createdAt) - Date.parse(user.createdAt) : NaN;
     messages.push({
-      id: `${runId}-assistant`,
+      id: `${turnId}-assistant`,
       role: "assistant",
       content: final ? plainText(final.content) : "",
       compactions: user.compactions?.map((item) => ({ ...item, status: "done" })),

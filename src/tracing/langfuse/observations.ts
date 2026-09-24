@@ -11,7 +11,7 @@ export interface ObservationContext { traceId: string; rootId?: string; attribut
 export function identifier(value: string, length = 32): string { return createHash("sha256").update(value).digest("hex").slice(0, length); }
 
 // 只保留明确的标识、枚举和统计字段；查询、理由、路径和正文需要另行选择上传。
-const metadataKeys = new Set("compactionId beforeTokens afterTokens targetTokens availableInputTokens targetReached eventId sequence rebuildId result semantic sessionRecall sessions hits session id tool runId sessionId iteration modelCallId toolCallId operationId parentOperationId sourceRunId taskId taskKind attempt batchIndex candidateId action intent reasonCode targetId deletedIds evidenceMessageIds candidateIds revision completedBatches totalBatches factCount decisionCount unresolvedConflicts semanticCount sessionCount mode corpus candidateCount selected excludedAsDuplicate skill contentHash instructionLength count model provider ms durationMs tokenUsage inputTokens outputTokens totalTokens stopReason isError errorType returnedSessionCount returnedMessageCount returnedRanges isComplete truncated requestedLimit droppedSessionCount retrievalMode outputLength estimatedTokens itemCount dimensions purpose rank match retrievalSignals sessionRecallSessionIds semanticMemoryIds sessionRecallRanges sessionRecallEstimatedTokens sessionRecallTruncated approved networkAllowed exitCode timedOut".split(" "));
+const metadataKeys = new Set("compactionId beforeTokens afterTokens targetTokens availableInputTokens targetReached eventId sequence rebuildId result semantic sessionRecall sessions hits session id tool traceId turnId sessionId iteration modelCallId toolCallId operationId parentOperationId sourceTurnId taskId taskKind attempt batchIndex candidateId action intent reasonCode targetId deletedIds evidenceMessageIds candidateIds revision completedBatches totalBatches factCount decisionCount unresolvedConflicts semanticCount sessionCount mode corpus candidateCount selected excludedAsDuplicate skill contentHash instructionLength count model provider ms durationMs tokenUsage inputTokens outputTokens totalTokens stopReason isError errorType returnedSessionCount returnedMessageCount returnedRanges isComplete truncated requestedLimit droppedSessionCount retrievalMode outputLength estimatedTokens itemCount dimensions purpose rank match retrievalSignals sessionRecallSessionIds semanticMemoryIds sessionRecallRanges sessionRecallEstimatedTokens sessionRecallTruncated approved networkAllowed exitCode timedOut".split(" "));
 const containerKeys = new Set(["result", "semantic", "sessionRecall", "sessions", "hits", "session", "selected", "match", "retrievalSignals", "tokenUsage"]);
 export function safeMetadata(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(safeMetadata);
@@ -26,7 +26,7 @@ export function safeMetadata(value: unknown): unknown {
 }
 const lifecycle: Record<string, [string, string, "start" | "end"]> = {
   embedding_rebuild_started: ["span", "rebuild", "start"], embedding_rebuild_completed: ["span", "rebuild", "end"], embedding_rebuild_failed: ["span", "rebuild", "end"], embedding_rebuild_cancelled: ["span", "rebuild", "end"],
-  run_started: ["agent", "run", "start"], run_completed: ["agent", "run", "end"], run_failed: ["agent", "run", "end"],
+  turn_started: ["agent", "turn", "start"], turn_completed: ["agent", "turn", "end"], turn_failed: ["agent", "turn", "end"],
   compact_started: ["span", "compact", "start"], compact_completed: ["span", "compact", "end"], compact_failed: ["span", "compact", "end"],
   compact_model_started: ["generation", "compact_model", "start"], compact_model_completed: ["generation", "compact_model", "end"], compact_model_failed: ["generation", "compact_model", "end"],
   model_request: ["generation", "model", "start"], model_response: ["generation", "model", "end"], model_failed: ["generation", "model", "end"],
@@ -56,9 +56,9 @@ export class ObservationMapper {
       // 不允许失联任务无限占用内存；丢失开始事件后只产生瞬时事件。
       if (this.starts.size >= 4096) { this.starts.delete(this.starts.keys().next().value!); this.onWarning("Langfuse 活跃步骤超过上限，部分步骤无法完整关联"); }
       this.starts.set(key, record);
-      if (["run", "task", "consolidation", "rebuild"].includes(spec[1])) {
+      if (["turn", "task", "consolidation", "rebuild"].includes(spec[1])) {
         if (this.roots.size >= 4096) this.roots.delete(this.roots.keys().next().value!);
-        this.roots.set(record.runId, this.spanId(record, key));
+        this.roots.set(record.traceId, this.spanId(record, key));
       }
       return null;
     }
@@ -74,16 +74,16 @@ export class ObservationMapper {
     return identifier(`${key}:${record.eventId ?? record.sequence ?? record.timestamp}`, 16);
   }
   private key(r: TraceRecord, family: string): string {
-    const callId = ["run", "task", "consolidation", "rebuild"].includes(family) ? ""
+    const callId = ["turn", "task", "consolidation", "rebuild"].includes(family) ? ""
       : family === "compact" ? r.compactionId ?? ""
       : family === "tool" ? r.toolCallId ?? ""
       : family === "batch" ? r.payload?.batchIndex ?? "" : r.modelCallId ?? r.operationId ?? "";
-    return `${r.runId}:${family}:${callId}:${r.payload?.attempt ?? ""}`;
+    return `${r.traceId}:${family}:${callId}:${r.payload?.attempt ?? ""}`;
   }
   private convert(start: TraceRecord, end: TraceRecord, type: string, family: string, key: string): Observation {
     const context = this.context(end);
-    const root = ["run", "task", "consolidation", "rebuild"].includes(family);
-    const runRootId = this.roots.get(end.runId);
+    const root = ["turn", "task", "consolidation", "rebuild"].includes(family);
+    const traceRootId = this.roots.get(end.traceId);
     const spanId = this.spanId(start, key);
     const toolKey = this.key(end, "tool");
     const toolStart = this.starts.get(toolKey);
@@ -94,7 +94,7 @@ export class ObservationMapper {
     const parent = root ? context.rootId
       : compactStart && family !== "compact" ? this.spanId(compactStart, compactKey)
       : toolStart && family !== "tool" ? this.spanId(toolStart, toolKey)
-      : batchStart && family !== "batch" ? this.spanId(batchStart, batchKey) : runRootId ?? context.rootId;
+      : batchStart && family !== "batch" ? this.spanId(batchStart, batchKey) : traceRootId ?? context.rootId;
     const payload = { ...start.payload, ...end.payload };
     const attributes: Record<string, unknown> = {
       ...context.attributes, "langfuse.session.id": end.sessionId,

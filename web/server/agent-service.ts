@@ -1,4 +1,4 @@
-import { listTraceRuns, readTraceRun } from "../../src/tracing/run-reader.ts";
+import { listTraces, readTrace } from "../../src/tracing/trace-reader.ts";
 import { describeHarnessRetrieval, harnessEdgeLabels } from "../../src/agent-graph/harness-graph.ts";
 import { join } from "node:path";
 import { agentHarnessGraph, createAgentRuntime } from "../../src/index.ts";
@@ -249,6 +249,6 @@ function modelConnectionInput(value: unknown, label: string): ModelConnectionInp
 }
 
 /** 组装 trace 页面的文件列表。 */
-export async function loadTraceDashboard(options: { cursor?: string; runId?: string } = {}) {
-  return options.runId ? { files: await readTraceRun(localAgentHome, options.runId) } : await listTraceRuns(localAgentHome, options);
+export async function loadTraceDashboard(options: { cursor?: string; traceId?: string } = {}) {
+  return options.traceId ? { files: await readTrace(localAgentHome, options.traceId) } : await listTraces(localAgentHome, options);
 }

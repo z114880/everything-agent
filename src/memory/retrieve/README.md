@@ -7,7 +7,7 @@
 Memory Retrieval 为两个互相隔离的语料域提供相关性检索：
 
 - Semantic Memory：记忆写入后形成、由 consolidation 整理的稳定属性、偏好、持续项目事实、约束和承诺。
-- Session Recall：历史 Session 中已经成功完成的 run，用于恢复事件经过和原始证据。
+- Session Recall：历史 Session 中已经成功完成的 turn，用于恢复事件经过和原始证据。
 
 Semantic Memory 支持 Dense 与 FTS5 + BM25；Session Recall 始终只使用 FTS5 + BM25，不生成向量，不执行 RRF 或 MMR。Semantic Memory 与 Session Recall 不进入同一个候选池，也不互相竞争名额。
 
@@ -105,7 +105,7 @@ OpenAI Compatible 请求固定发送 `dimensions: 1024`；Gemini 每个请求的
 - 429、5xx、超时和网络错误均不自动重试。
 - 查询向量始终单独请求。
 
-只有 Semantic Query 生成查询向量，Session Query 不调用 embedding。查询向量和查询文本不写入 SQLite，不做跨 run 持久缓存。
+只有 Semantic Query 生成查询向量，Session Query 不调用 embedding。查询向量和查询文本不写入 SQLite，不做跨 turn 持久缓存。
 
 ## Token 估算与预算
 
@@ -177,7 +177,7 @@ interface TokenEstimator {
 
 所有聊天与 Embedding 预算使用同一估算器，并保留 512-token 聊天安全余量。超过预算直接抛出异常，不静默裁剪 Working Memory 或工具结果。
 
-真实 token 消耗只来自成功响应。`model_response` 与 `embedding_completed` 的 `tokenUsage` 均为 `{ inputTokens, outputTokens, totalTokens }`；供应商缺失或返回不完整 usage 时为 `null`。Embedding 没有生成式输出，因此有真实 usage 时 `outputTokens` 为 `0`。系统逐次记录 API 调用，不汇总整个 run。
+真实 token 消耗只来自成功响应。`model_response` 与 `embedding_completed` 的 `tokenUsage` 均为 `{ inputTokens, outputTokens, totalTokens }`；供应商缺失或返回不完整 usage 时为 `null`。Embedding 没有生成式输出，因此有真实 usage 时 `outputTokens` 为 `0`。系统逐次记录 API 调用，不汇总整个 turn。
 
 ## 索引语义
 
@@ -192,9 +192,9 @@ interface TokenEstimator {
 
 ### Session Recall
 
-成功 run 的用户输入与助手最终回复只维护消息级 FTS，不切块或生成向量；归档在本地事务中保存 Chat Log 和 FTS 投影。远程 embedding 故障不影响本轮归档。数据库版本不匹配时直接删除旧库并创建新库，不迁移旧数据。
+成功 turn 的用户输入与助手最终回复只维护消息级 FTS，不切块或生成向量；归档在本地事务中保存 Chat Log 和 FTS 投影。远程 embedding 故障不影响本轮归档。数据库版本不匹配时直接删除旧库并创建新库，不迁移旧数据。
 
-失败或未完成 run 只保留在 Chat Log 中供 UI 和审计查看，不进入 FTS；consolidation 不读取任何聊天回合。Session 摘要继续统计 `incompleteRunCount`。
+失败或未完成 turn 只保留在 Chat Log 中供 UI 和审计查看，不进入 FTS；consolidation 不读取任何聊天回合。Session 摘要继续统计 `incompleteTurnCount`。
 
 ## Lexical 检索
 
@@ -213,14 +213,14 @@ Session FTS 与 Semantic FTS 的写入、更新和查询共用同一检索投影
 
 Token 估算不参与 FTS5；Lexical 检索继续使用独立的中英文规范化规则。
 
-Semantic Memory 的主题和正文分别保存分词投影，使用 2:1 的加权 BM25，原文保持原样。Session Recall 仍在消息级 FTS5 上搜索，按 `run_id` 聚合后按 Session 去重。
+Semantic Memory 的主题和正文分别保存分词投影，使用 2:1 的加权 BM25，原文保持原样。Session Recall 仍在消息级 FTS5 上搜索，按 `turn_id` 聚合后按 Session 去重。
 
 ## 候选聚合
 
-同一事实的多个 chunk、同一 run 的多个消息命中不累加：
+同一事实的多个 chunk、同一 turn 的多个消息命中不累加：
 
 - Dense 按事实 ID 分组，取最高 cosine 的 chunk 作为查询 anchor。
-- BM25 按事实 ID 或 `run_id` 分组，取最佳 BM25 消息作为 anchor。
+- BM25 按事实 ID 或 `turn_id` 分组，取最佳 BM25 消息作为 anchor。
 - 分组完成后再取每路 Top 50，避免长文因 chunk 多而获得不公平优势。
 - 命中总数只进入 trace，不参与排序。
 
@@ -257,9 +257,9 @@ rrfScore(candidate) = Σ 1 / (60 + rankInRoute)
 - 候选缺席某一路时，只贡献存在路线的分数。
 - 分数相同时依次按 Dense rank、BM25 rank 和稳定 ID 决胜。
 
-Semantic Memory 以 memory ID 为候选身份。Session Recall 以 `run_id` 为候选身份，避免同一 run 的多个消息或 chunk 挤占候选位。
+Semantic Memory 以 memory ID 为候选身份。Session Recall 以 `turn_id` 为候选身份，避免同一 turn 的多个消息或 chunk 挤占候选位。
 
-Session Recall 在最终截断前还会按 `session_id` 保留每个 Session 排名最高的 run。Session 搜索固定使用 FTS，此约束不受 Semantic 检索模式影响，因此只要存在足够多的合格候选，最终 4 条一定来自 4 个不同 Session；同一 Session 的次优 run 不占返回名额。
+Session Recall 在最终截断前还会按 `session_id` 保留每个 Session 排名最高的 turn。Session 搜索固定使用 FTS，此约束不受 Semantic 检索模式影响，因此只要存在足够多的合格候选，最终 4 条一定来自 4 个不同 Session；同一 Session 的次优 turn 不占返回名额。
 
 ## MMR 原理与代码语义
 
@@ -371,7 +371,7 @@ Embedding Provider、Base URL、Model、固定维度、Document Template、文�
 配置页先保存 profile，再由“重建 Embedding 索引”创建单一作业：
 
 1. 重建请求保持等待并关联 `rebuildId`，页面显示运行状态且可另行发送取消请求。
-2. 暂停新的 Agent run 和所有会改变检索语料的 Memory 写操作。
+2. 暂停新的 Agent turn 和所有会改变检索语料的 Memory 写操作。
 3. 保留当前配置与 active generation。
 4. 使用新配置串行构建影子 generation。
 5. 全部 chunk 成功、维度一致且数量校验通过后，在一个 SQLite 事务中切换 active generation。
@@ -422,9 +422,9 @@ embedding_rebuild_cancelled
 embedding_generation_activated
 ```
 
-检索事件的 observer 由调用方提供：回合内的检索（自动召回、`manage_memory` 的 `search`、`session_search`）必须使用 Agent Loop 传给工具的回合观察者，事件才会带上 `runId` 与 `sessionId` 并写入该 run 的独立 trace 文件。只有确实不属于任何回合的操作（如 Embedding 索引重建）才回落到检索配置上的全局 observer。
+检索事件的 observer 由调用方提供：回合内的检索（自动召回、`manage_memory` 的 `search`、`session_search`）必须使用 Agent Loop 传给工具的回合观察者，事件才会带上 `turnId` 与 `sessionId` 并写入该 turn 的独立 trace 文件。只有确实不属于任何回合的操作（如 Embedding 索引重建）才回落到检索配置上的全局 observer。
 
-事件需要关联 run、corpus、generation 和有序时间信息。重建事件关联 `rebuildId`。不同模式只发出真正执行过的阶段：lexical-only 不伪造 Dense/RRF/MMR，dense-only 不伪造 Lexical/RRF。
+事件需要关联 turn、corpus、generation 和有序时间信息。重建事件关联 `rebuildId`。不同模式只发出真正执行过的阶段：lexical-only 不伪造 Dense/RRF/MMR，dense-only 不伪造 Lexical/RRF。
 
 `embedding_failed` 的 purpose 至少区分 `query`、`memory_create`、`rebuild` 和 `config_probe`。事件名称、关键字段和相对顺序必须通过行为测试验证。
 
@@ -438,11 +438,11 @@ embedding_generation_activated
 - 400/512/64/80 estimated-token 规则覆盖段落、长句和短尾块。
 - 维度、非法浮点、缺失 index、超时和 HTTP 错误立即失败且零重试。
 - Semantic 与 Session 候选池严格隔离。
-- 多 chunk/run 只以最高命中参与排名。
+- 多 chunk/turn 只以最高命中参与排名。
 - Dense/BM25 Top 50、RRF `k=60`、等权和平分决胜确定可重复。
 - MMR λ=0.7、多 chunk 最大相似度及 `>=0.999` 排除符合本文公式。
 - 三种模式只执行并观察真实阶段。
-- 失败 run 不进入 FTS5 或 Dense；consolidation 不读取聊天。
+- 失败 turn 不进入 FTS5 或 Dense；consolidation 不读取聊天。
 - 已配置 Embedding 时，lexical-only 写入仍同步维护 active generation。
 - 未配置 Embedding 时 lexical-only 不发起远程请求。
 - 影子重建成功原子切换；失败、取消和重启中断都保留旧 generation。

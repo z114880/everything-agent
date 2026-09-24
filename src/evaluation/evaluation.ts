@@ -215,7 +215,7 @@ export class EvaluationService {
  * 审批命令、理由和详情保留在本地记录里供审计；这些事件不在 publish 的回传范围内，
  * 所以它们不会出现在平台上。新增回传事件类型时必须重新检查这条前提。
  */
-const SAFE_EVENT_KEYS = ['runId', 'sessionId', 'iteration', 'modelCallId', 'toolCallId', 'tool', 'isError', 'ms', 'outputLength', 'tokenUsage', 'stopReason', 'approvalId', 'kind', 'command', 'reason', 'detail', 'approved', 'errorType', 'summary'];
+const SAFE_EVENT_KEYS = ['turnId', 'sessionId', 'iteration', 'modelCallId', 'toolCallId', 'tool', 'isError', 'ms', 'outputLength', 'tokenUsage', 'stopReason', 'approvalId', 'kind', 'command', 'reason', 'detail', 'approved', 'errorType', 'summary'];
 /** 工具结果里允许进入评估记录的键；工作目录、检索查询、技能说明和工具正文都不在其中。 */
 const SAFE_TOOL_RESULT_KEYS = ['command', 'exitCode', 'stdoutLength', 'stderrLength', 'truncated', 'timedOut', 'instructionLength'];
 /** 命令上限：完整命令仍留在本地 Runtime trace 的 JSONL 里，评估记录和平台回传只保留前缀。 */

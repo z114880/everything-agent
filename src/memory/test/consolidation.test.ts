@@ -11,17 +11,17 @@ afterEach(async () => { vi.useRealTimers(); for (const memory of memories.splice
 it("后台写入立即 queued，聊天归档不等待；重试已提交操作不会再调用模型或重复写入", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
   const memory = await setup(); const session = memory.createSession();
-  const evidence = memory.startRun(session.id, "chat", "喜欢红茶");
+  const evidence = memory.startTurn(session.id, "chat", "喜欢红茶");
   let release!: () => void; let entered!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
   const started = new Promise<void>((resolve) => { entered = resolve; });
   let modelCalls = 0; let failOnce = true;
-  const config = { ...options(async () => { modelCalls++; entered(); await gate; return createDecision(evidence.id); }), currentSessionId: session.id, runId: "chat" };
+  const config = { ...options(async () => { modelCalls++; entered(); await gate; return createDecision(evidence.id); }), currentSessionId: session.id, turnId: "chat" };
   memory.startBackgroundTasks(async () => ({ ...config, observer: (kind) => { if (kind === "memory_change_completed" && failOnce) { failOnce = false; throw new Error("提交后中断"); } } }));
   const queued = memory.enqueueMemory(candidate(evidence.id), config);
   expect(queued).toMatchObject({ status: "queued" });
   await started;
-  await memory.completeRun(session.id, "chat", [{ role: "assistant", content: "已接收" }]);
+  await memory.completeTurn(session.id, "chat", [{ role: "assistant", content: "已接收" }]);
   expect(memory.listSemantic()).toEqual([]);
   release();
   await vi.waitFor(() => expect(memory.listBackgroundTasks()[0]).toMatchObject({ status: "pending", attempts: 1 }));
@@ -32,7 +32,7 @@ it("后台写入立即 queued，聊天归档不等待；重试已提交操作不
 });
 
 async function setup() { const memory = new MemoryRuntime(await mkdtemp(join(tmpdir(), "memory-background-"))); memories.push(memory); return memory; }
-async function complete(memory: MemoryRuntime, sessionId: string, runId: string) { memory.startRun(sessionId, runId, "我喜欢红茶"); await memory.completeRun(sessionId, runId, [{ role: "assistant", content: "收到" }]); }
+async function complete(memory: MemoryRuntime, sessionId: string, turnId: string) { memory.startTurn(sessionId, turnId, "我喜欢红茶"); await memory.completeTurn(sessionId, turnId, [{ role: "assistant", content: "收到" }]); }
 function candidate(id: number): MemoryCandidate { return { intent: "remember", subject: "用户", attribute: "饮品偏好", content: "喜欢红茶", evidenceMessageIds: [id] }; }
 function createDecision(id: number) { return { action: "create", reason: "新偏好", reasonCode: "new_fact", subject: "饮品偏好", content: "喜欢红茶", evidenceMessageIds: [id], category: "preference", stable: true, futureUseful: true }; }
 function options(decide: (payload: Record<string, unknown>) => unknown | Promise<unknown>): MemoryManagementOptions {
@@ -41,8 +41,8 @@ function options(decide: (payload: Record<string, unknown>) => unknown | Promise
 }
 
 it("模型误判完全相同事实为 create 时仍只保存一条", async () => {
-  const memory = await setup(); const session = memory.createSession(); const evidence = memory.startRun(session.id, "chat", "喜欢红茶");
-  const config = { ...options(() => createDecision(evidence.id)), currentSessionId: session.id, runId: "chat" };
+  const memory = await setup(); const session = memory.createSession(); const evidence = memory.startTurn(session.id, "chat", "喜欢红茶");
+  const config = { ...options(() => createDecision(evidence.id)), currentSessionId: session.id, turnId: "chat" };
   const first = memory.enqueueMemory(candidate(evidence.id), config);
   const second = memory.enqueueMemory(candidate(evidence.id), config);
   expect(first.taskId).not.toBe(second.taskId);
@@ -59,8 +59,8 @@ it("真实进程在事实提交后退出，重启恢复不重放模型和数据�
     import { MemoryRuntime } from ${JSON.stringify(entry)};
     const memory = new MemoryRuntime(process.argv[1]);
     const session = memory.createSession();
-    const evidence = memory.startRun(session.id, 'source', '我喜欢红茶');
-    const options = { currentSessionId: session.id, runId: 'source', model: 'small',
+    const evidence = memory.startTurn(session.id, 'source', '我喜欢红茶');
+    const options = { currentSessionId: session.id, turnId: 'source', model: 'small',
       client: { messages: { create: () => ({ content: [{ type: 'text', text: JSON.stringify({ action: 'create', reason: '偏好', subject: '饮品偏好', content: '喜欢红茶', category: 'preference', stable: true, futureUseful: true, evidenceMessageIds: [evidence.id] }) }] }) } },
       observer: (kind) => { if (kind === 'memory_change_completed') process.exit(0); } };
     memory.enqueueMemory({ intent: 'remember', subject: '用户', attribute: '偏好', content: '喜欢红茶', evidenceMessageIds: [evidence.id] }, options);
@@ -299,7 +299,7 @@ it("模型失败先关闭批次再重试，尝试和调用关联明确且最终�
       "consolidation_model_started", "consolidation_model_failed", "consolidation_batch_failed",
       attempt < 3 ? "consolidation_retry" : "consolidation_failed",
     ]);
-    expect(current.every(({ event }) => event.runId === queued.taskId && !("taskId" in event))).toBe(true);
+    expect(current.every(({ event }) => event.taskId === queued.taskId && !("turnId" in event))).toBe(true);
     expect(current[3]?.event.modelCallId).toBe(current[4]?.event.modelCallId);
     expect(current[5]?.event).toMatchObject({ batchIndex: 0, totalBatches: 1, errorType: "TypeError" });
   }

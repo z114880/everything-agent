@@ -26,7 +26,7 @@ export interface DatasetOutcome {
   skipped: boolean;
   reason?: string;
   sessionCount: number;
-  runCount: number;
+  turnCount: number;
   toolCallCount: number;
 }
 
@@ -34,7 +34,7 @@ export interface SeedResult {
   home: string;
   outcomes: DatasetOutcome[];
   sessionsCreated: number;
-  runsExecuted: number;
+  turnsExecuted: number;
   toolCallsExecuted: number;
   chatLogAdded: number;
   semanticMemoryAdded: number;
@@ -74,7 +74,7 @@ export async function seedMockData(options: SeedOptions): Promise<SeedResult> {
   const outcomes: DatasetOutcome[] = [];
   let restoreConfiguration: (() => Promise<void>) | null = null;
   let sessionsCreated = 0;
-  let runsExecuted = 0;
+  let turnsExecuted = 0;
   let toolCallsExecuted = 0;
   let chatLogBefore = 0;
   let semanticBefore = 0;
@@ -96,7 +96,7 @@ export async function seedMockData(options: SeedOptions): Promise<SeedResult> {
         outcomes.push({
           datasetId: dataset.id, skipped: true,
           reason: `已于 ${decision.previous!.appliedAt} 写入 ${decision.previous!.sessionCount} 个会话${changed}`,
-          sessionCount: 0, runCount: 0, toolCallCount: 0,
+          sessionCount: 0, turnCount: 0, toolCallCount: 0,
         });
         report(`跳过 ${dataset.id}：已写入过`);
         continue;
@@ -106,7 +106,7 @@ export async function seedMockData(options: SeedOptions): Promise<SeedResult> {
     }
     if (!pending.length) {
       return finish(options.home, outcomes, {
-        sessionsCreated: 0, runsExecuted: 0, toolCallsExecuted: 0, chatLogAdded: 0, semanticMemoryAdded: 0,
+        sessionsCreated: 0, turnsExecuted: 0, toolCallsExecuted: 0, chatLogAdded: 0, semanticMemoryAdded: 0,
         consolidationRan: false, embeddingIndexPresent, providerStats: provider.stats, ms: performance.now() - startedAt,
       });
     }
@@ -123,7 +123,7 @@ export async function seedMockData(options: SeedOptions): Promise<SeedResult> {
       provider.setPlan((prompt) => scripts.get(prompt));
 
       const createdSessionIds: string[] = [];
-      let datasetRuns = 0;
+      let datasetTurns = 0;
       let datasetToolCalls = 0;
       for (const [index, session] of sessions.entries()) {
         const created = await runtime.createSession();
@@ -133,7 +133,7 @@ export async function seedMockData(options: SeedOptions): Promise<SeedResult> {
             { sessionId: created.id, prompt: turn.prompt },
             { observer: silentObserver, signal: AbortSignal.timeout(120_000) },
           );
-          datasetRuns += 1;
+          datasetTurns += 1;
           datasetToolCalls += result.toolCallCount;
         }
         if ((index + 1) % 10 === 0 || index === sessions.length - 1) {
@@ -147,11 +147,11 @@ export async function seedMockData(options: SeedOptions): Promise<SeedResult> {
         appliedAt: new Date().toISOString(), sessionCount: createdSessionIds.length, sessionIds: createdSessionIds,
       });
       sessionsCreated += createdSessionIds.length;
-      runsExecuted += datasetRuns;
+      turnsExecuted += datasetTurns;
       toolCallsExecuted += datasetToolCalls;
       outcomes.push({
         datasetId: dataset.id, skipped: false,
-        sessionCount: createdSessionIds.length, runCount: datasetRuns, toolCallCount: datasetToolCalls,
+        sessionCount: createdSessionIds.length, turnCount: datasetTurns, toolCallCount: datasetToolCalls,
       });
     }
 
@@ -163,7 +163,7 @@ export async function seedMockData(options: SeedOptions): Promise<SeedResult> {
     }
 
     return finish(options.home, outcomes, {
-      sessionsCreated, runsExecuted, toolCallsExecuted,
+      sessionsCreated, turnsExecuted, toolCallsExecuted,
       chatLogAdded: memory.getChatLog(undefined, 1_000_000).length - chatLogBefore,
       semanticMemoryAdded: memory.listSemantic().length - semanticBefore,
       consolidationRan, embeddingIndexPresent, providerStats: provider.stats,

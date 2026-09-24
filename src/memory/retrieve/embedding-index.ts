@@ -154,7 +154,7 @@ export class EmbeddingIndex {
     purpose: "memory_create" | "rebuild",
     rebuildId?: string,
     signal?: AbortSignal,
-    runId?: string,
+    turnId?: string,
     observer: AgentObserver | undefined = this.retrieval.observer,
   ): Promise<PendingStoredChunk[]> {
     const embedding = this.retrieval.embedding;
@@ -169,7 +169,7 @@ export class EmbeddingIndex {
         ...(observer ? { observer } : {}),
         ...(rebuildId ? { rebuildId } : {}),
         ...(signal ? { signal } : {}),
-        ...(runId ? { runId } : {}),
+        ...(turnId ? { turnId } : {}),
       },
     );
     const byIndex = new Map(vectors.map((item) => [item.index, item.vector]));
@@ -183,7 +183,7 @@ export class EmbeddingIndex {
     });
   }
 
-  async embedQuery(query: string, runId?: string, observer = this.retrieval.observer, signal?: AbortSignal): Promise<Float32Array> {
+  async embedQuery(query: string, turnId?: string, observer = this.retrieval.observer, signal?: AbortSignal): Promise<Float32Array> {
     const embedding = this.retrieval.embedding;
     if (!embedding) throw new Error("尚未配置 Embedding");
     const text = applyTemplate(embedding.profile.queryTemplate, query);
@@ -191,14 +191,14 @@ export class EmbeddingIndex {
     if (estimatedTokens < 1 || estimatedTokens > 512) throw new Error("Embedding Query 估算量必须为 1–512 tokens");
     const [result] = await embedding.client.embed([text], [estimatedTokens], {
       purpose: "query", ...(observer ? { observer } : {}), ...(signal ? { signal } : {}),
-      ...(runId ? { runId } : {}),
+      ...(turnId ? { turnId } : {}),
     });
     if (!result) throw new Error("Embedding Query 未返回向量");
     return result.vector;
   }
 
   assertNoEmbeddingRebuild(): void {
-    if (this.activeRebuild) throw new Error("Embedding 索引重建期间暂停 Agent run 与 Memory 写入");
+    if (this.activeRebuild) throw new Error("Embedding 索引重建期间暂停 Agent turn 与 Memory 写入");
   }
 }
 

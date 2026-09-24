@@ -17,9 +17,9 @@ afterEach(() => memories.splice(0).forEach((memory) => memory.close()));
 describe("本地记忆工具", () => {
   it("提交缺少字段时明确指出字段，避免把有效 content 报为记忆文本错误", async () => {
     const runtime = await memory(); const session = runtime.createSession();
-    const evidence = runtime.startRun(session.id, "r1", "我喜欢布偶猫");
+    const evidence = runtime.startTurn(session.id, "r1", "我喜欢布偶猫");
     const tool = new ManageMemoryTool(runtime, {
-      currentSessionId: session.id, runId: "r1", evidenceMessageId: evidence.id, model: "small",
+      currentSessionId: session.id, turnId: "r1", evidenceMessageId: evidence.id, model: "small",
       client: { messages: { create: () => { throw new Error("无效提交不得调用模型"); } } },
     });
     expect(() => tool.execute({ action: "submit", content: "用户喜欢布偶猫" }, noop)).toThrow("submit 缺少必填字段：intent、subject、attribute");
@@ -35,9 +35,9 @@ describe("本地记忆工具", () => {
 
   it("submit 绑定当前用户证据并由小模型选择写入，search 仍只读", async () => {
     const runtime = await memory(); const session = runtime.createSession();
-    const evidence = runtime.startRun(session.id, "r1", "我喜欢红茶");
+    const evidence = runtime.startTurn(session.id, "r1", "我喜欢红茶");
     const tool = new ManageMemoryTool(runtime, {
-      currentSessionId: session.id, runId: "r1", evidenceMessageId: evidence.id, model: "small",
+      currentSessionId: session.id, turnId: "r1", evidenceMessageId: evidence.id, model: "small",
       client: { messages: { create: () => ({ content: [{ type: "text", text: JSON.stringify({ action: "create", reason: "新偏好", evidenceMessageIds: [evidence.id], subject: "饮品偏好", content: "喜欢红茶", category: "preference", stable: true, futureUseful: true }) }], stop_reason: "end_turn" }) } },
     });
     const registry = new LocalToolRegistry(runtime, tool);
@@ -49,8 +49,8 @@ describe("本地记忆工具", () => {
 
   it("提交忘记意图后直接删除，不需要确认令牌", async () => {
     const runtime = await memory(); const item = await runtime.createSemantic("饮品偏好", "喜欢红茶");
-    const session = runtime.createSession(); const evidence = runtime.startRun(session.id, "r1", "忘记我的饮品偏好");
-    const tool = new ManageMemoryTool(runtime, { currentSessionId: session.id, runId: "r1", evidenceMessageId: evidence.id, model: "small",
+    const session = runtime.createSession(); const evidence = runtime.startTurn(session.id, "r1", "忘记我的饮品偏好");
+    const tool = new ManageMemoryTool(runtime, { currentSessionId: session.id, turnId: "r1", evidenceMessageId: evidence.id, model: "small",
       client: { messages: { create: () => ({ content: [{ type: "text", text: JSON.stringify({ action: "delete", targetId: item.id, reason: "用户明确要求忘记", evidenceMessageIds: [evidence.id] }) }], stop_reason: "end_turn" }) } },
     });
     expect(tool.execute({ action: "submit", intent: "forget", subject: "用户", attribute: "饮品偏好", content: "忘记饮品偏好" }, noop)).toMatchObject({ status: "queued" });
@@ -83,7 +83,7 @@ describe("本地记忆工具", () => {
     const read = await registry.execute("session_read", { sessionId: historical.id }, async () => {}, context) as { entries: unknown[] };
     expect(read.entries).not.toHaveLength(0);
     await expect(registry.execute("session_read", { sessionId: current.id }, async () => {}, context)).rejects.toThrow("当前 Session");
-    runtime.startRun(current.id, "compact-run", "继续");
+    runtime.startTurn(current.id, "compact-run", "继续");
     runtime.saveCompaction(current.id, "compact-run", [], {
       compactionId: "c", iteration: 1, beforeTokens: 700, afterTokens: 200, targetTokens: 300,
       availableInputTokens: 1000, targetReached: true, ms: 10,
@@ -125,7 +125,7 @@ describe("本地记忆工具", () => {
 async function memory(): Promise<MemoryRuntime> {
   const runtime = new MemoryRuntime(await mkdtemp(join(tmpdir(), "everything-manage-memory-"))); memories.push(runtime); return runtime;
 }
-async function addRun(memory: MemoryRuntime, sessionId: string, runId: string, prompt: string, reply: string): Promise<void> {
-  memory.startRun(sessionId, runId, prompt);
-  await memory.completeRun(sessionId, runId, [{ role: "assistant", content: reply }]);
+async function addRun(memory: MemoryRuntime, sessionId: string, turnId: string, prompt: string, reply: string): Promise<void> {
+  memory.startTurn(sessionId, turnId, prompt);
+  await memory.completeTurn(sessionId, turnId, [{ role: "assistant", content: reply }]);
 }

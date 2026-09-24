@@ -53,7 +53,7 @@ try {
 
 路径由宿主提供。实例独立持有 Memory、Tracer、工具和会话锁；不同实例应使用不同数据目录。同一目录的多实例并发协调尚未实现。
 
-- `run(input, options)`：检索记忆、组装上下文、调用 Loop、保存完整回合及 trace，返回类型化结果。
+- `run(input, options)`：检索记忆、组装上下文、调用 Loop、保存完整回合及 trace，返回 `AgentTurnResult`（含 `turnId`）；输入和选项分别为 `AgentTurnInput`、`AgentTurnOptions`。Web 聊天入口为 `POST /api/local-agent/turn`。
 - `contextUsage(sessionId)`：估算下一轮回合起步就会占用的上下文，用于在超限之前展示水位。与 Loop 的硬限制共用估算器和额度公式（`availableInputTokens = modelContextWindow - maxTokens - 512`），统计系统提示、Skill 目录、工具 schema 与该会话当前工作记忆（压缩检查点与后续消息）；不含本轮检索注入的记忆，因此是下限。
 - `await createSession(previousSessionId?)`：复用空会话或创建新会话，不触发整理。
 - `await consolidate("daily" | "manual")`：每日首次进入 Agent 页面自动检查或手动全量事实整理；Semantic Memory 为空时返回 skipped 且不创建任务，未配置模型时自动返回 null、手动报错。
@@ -72,7 +72,7 @@ try {
 
 同一会话的回合串行执行，后续回合读取前一回合保存的工作记忆。不同会话可以并行。Loop 限制 10 次迭代和 5 分钟（300000ms）超时，并接收宿主取消信号；检索与排队阶段不在 Loop 超时范围内。
 
-沿用现有 AgentObserver 事件名称和含义，为转发事件关联 `runId`、`sessionId`，补充上下文来源元数据。每轮以 `skills_discovered` 记录可用目录，`read_skill` 成功后产生不含正文的 `skill_loaded`；对应工具完成事件也只公开名称、描述和正文长度。工具事件在共享执行层进行凭证移除，Session Recall 工具只公开检索元数据。JSONL Tracer 保留既有回合开始、完成、失败及模型/工具追踪语义。`run_completed` 与 `run_failed` 补充回合级事实：供应商与模型、`ms` 的三段拆分（`retrievalMs` 含 gate 小模型调用、`modelMs`、`toolMs`）、`failedToolCallCount`、`derivedTaskIds`（本回合入队的后台记忆写入任务，用于关联独立的任务 trace 文件）以及上下文水位字段；`run_failed` 另有 `cancelled` 与 `timedOut`，把用户主动停止和整轮超时同模型或工具故障区分开。静态 Harness 拓扑仍由 `agentHarnessGraph.describe()` 提供，Web 负责转换为画布格式；Runtime 不伪造 Graph 执行事件。
+沿用现有 AgentObserver 事件名称和含义，为转发事件关联 `turnId`、`sessionId`，补充上下文来源元数据。每轮以 `skills_discovered` 记录可用目录，`read_skill` 成功后产生不含正文的 `skill_loaded`；对应工具完成事件也只公开名称、描述和正文长度。工具事件在共享执行层进行凭证移除，Session Recall 工具只公开检索元数据。JSONL Tracer 保留既有回合开始、完成、失败及模型/工具追踪语义。`turn_completed` 与 `turn_failed` 补充回合级事实：供应商与模型、`ms` 的三段拆分（`retrievalMs` 含 gate 小模型调用、`modelMs`、`toolMs`）、`failedToolCallCount`、`derivedTaskIds`（本回合入队的后台记忆写入任务，用于关联独立的任务 trace 文件）以及上下文水位字段；`turn_failed` 另有 `cancelled` 与 `timedOut`，把用户主动停止和整轮超时同模型或工具故障区分开。静态 Harness 拓扑仍由 `agentHarnessGraph.describe()` 提供，Web 负责转换为画布格式；Runtime 不伪造 Graph 执行事件。
 
 ## 本地配置
 
@@ -90,7 +90,7 @@ Consolidation 按服务端本地自然日自动至多一次，Agent 页面首次
 
 写入和 consolidation 共用持久化串行队列，失败最多执行三次，间隔 1 秒、2 秒。稳定候选 ID 与事务内提交凭据防止中断恢复重复写入。后台每个任务独立 trace JSONL，一次 consolidation 的所有子任务 共用一个文件，不发送到聊天 observer。`runtime.memory.listBackgroundTasks()` 只返回任务元数据，`waitForBackgroundTasks()` 供测试或显式等待使用，聊天不调用。
 
-`subscribeBackgroundEvents(observer)` 订阅独立后台队列的真实事件并返回取消订阅函数，普通记忆写入事件携带 `taskId`、`taskKind`、`runId` 和可用的 `sourceRunId`；整理直接发出 `consolidation_*`，通过 `runId`、`attempt`、`batchIndex`、`modelCallId` 关联运行、尝试、批次与模型调用。订阅不依赖聊天请求生命周期，Web 使用独立 SSE 连接消费；事件继续写入 Trace，不传输记忆正文。
+`subscribeBackgroundEvents(observer)` 订阅独立后台队列的真实事件并返回取消订阅函数，普通记忆写入事件携带 `taskId`、`taskKind` 和可用的 `sourceTurnId`，不携带 `turnId`；整理直接发出 `consolidation_*`，通过 `taskId`、`attempt`、`batchIndex`、`modelCallId` 关联运行、尝试、批次与模型调用。订阅不依赖聊天请求生命周期，Web 使用独立 SSE 连接消费；事件继续写入 Trace，不传输记忆正文。
 
 Web 配置页的 Memory Retrieval 区域提供 Retrieval Mode 与 Minimum Similarity，保存后下一回合生效，重新进入 Agent 页时流程图显示当前配置。Semantic 召回节点标明实际模式；Hybrid 展示 BM25 + Dense → RRF → MMR，历史对话召回始终标明 FTS5 + BM25。同一区域提供独立的 Embedding Provider（OpenAI Compatible / Google Gemini）、连接与索引管理，不展示 Query Template / Document Template，Web 保存使用 `{text}`。
 
@@ -98,7 +98,7 @@ Web 配置页的 Memory Retrieval 区域提供 Retrieval Mode 与 Minimum Simila
 
 配置页的运行参数支持修改“单次模型输出”和“Agent 最大迭代”，分别默认 **32,768 tokens** 和 **100 轮**。允许范围分别为 1–131,072 tokens 和 1–1,000 轮，保存后对新运行生效，恢复默认会重置这两个值。
 
-也可在 `.everything/config.json` 顶层设置 `maxTokens` 与 `maxIterations`。运行记录 `run_started.settings` 保存实际预算，模型请求使用配置的 `max_tokens`。输入估算、输出预算及 512 tokens 安全余量仍须合计不超过 `modelContextWindow`；输出预算需符合模型服务自身的限制。Agent Loop 超时仍为 300 秒。提高预算不会自动续写被截断的回答。
+也可在 `.everything/config.json` 顶层设置 `maxTokens` 与 `maxIterations`。运行记录 `turn_started.settings` 保存实际预算，模型请求使用配置的 `max_tokens`。输入估算、输出预算及 512 tokens 安全余量仍须合计不超过 `modelContextWindow`；输出预算需符合模型服务自身的限制。Agent Loop 超时仍为 300 秒。提高预算不会自动续写被截断的回答。
 
 配套默认预算为 `modelContextWindow: 262144`（256K）与 `sessionRecall.entryTokenLimit: 8192`（Recall Entry Token Limit，session_search 的单条正文上限）。单次 session_search 的 token 总额不是独立配置，固定取 `modelContextWindow` 的 25%（默认 65,536），配置页只读展示。初始化、缺省配置、配置页和恢复默认保持一致。预留 32,768 输出 tokens 与 512 安全余量后，输入预算为 228,864 tokens；召回总额占上下文窗口的四分之一，为系统提示、当前会话和工具结果留出空间。100 轮是执行上限，不表示预留 100 份输出；每轮仍检查实际累计上下文。
 

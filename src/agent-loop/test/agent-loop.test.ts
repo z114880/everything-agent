@@ -117,7 +117,7 @@ describe("runAgentLoop", () => {
       stopReason: "end_turn",
       tokenUsage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
     });
-    expect(events.every(({ event }) => typeof event.runId === "string")).toBe(true);
+    expect(events.every(({ event }) => typeof event.turnId === "string")).toBe(true);
   });
 
   it("执行模型请求的工具，并把观察结果加入下一轮工作记忆", async () => {

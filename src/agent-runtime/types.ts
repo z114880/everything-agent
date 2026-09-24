@@ -3,19 +3,19 @@ import type { AgentProvider } from "../model/model-client.ts";
 import type { ContextWaterline } from "./context-window.ts";
 
 /** 一次个人助理回合的输入。 */
-export interface AgentRunInput {
+export interface AgentTurnInput {
   sessionId: string;
   prompt: string;
 }
 
 /** 宿主提供的事件接收器与取消信号。 */
-export interface AgentRunOptions {
+export interface AgentTurnOptions {
   observer: AgentObserver;
   signal: AbortSignal;
 }
 
 /** 回合完成结果，不包含页面展示数据。 */
-export interface AgentRunResult extends ContextWaterline {
+export interface AgentTurnResult extends ContextWaterline {
   reply: string;
   iterations: number;
   stopReason: string;
@@ -31,5 +31,5 @@ export interface AgentRunResult extends ContextWaterline {
   retrievalMs: number;
   modelMs: number;
   toolMs: number;
-  runId: string;
+  turnId: string;
 }

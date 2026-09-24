@@ -79,7 +79,7 @@ describe("个人助理 Runtime", () => {
       await expect(runtime.run({ sessionId: session.id, prompt: "执行较长任务" }, options()))
         .resolves.toMatchObject({ reply: "完成" });
       const records = (await runtime.readTraces()).flatMap((file) => file.records);
-      expect(records.find((record) => record.type === "run_started")?.payload)
+      expect(records.find((record) => record.type === "turn_started")?.payload)
         .toMatchObject({ settings: { timeoutMs: 300_000 } });
     } finally {
       vi.useRealTimers();
@@ -160,7 +160,8 @@ describe("个人助理 Runtime", () => {
     expect(kinds.indexOf("gate_start")).toBeLessThan(kinds.indexOf("gate_end"));
     expect(kinds.indexOf("context_assembled")).toBeLessThan(kinds.indexOf("model_request"));
     expect(kinds.indexOf("model_request")).toBeLessThan(kinds.indexOf("model_response"));
-    expect(events.every(({ event }) => event.runId === result.runId && event.sessionId === session.id)).toBe(true);
+    expect(events.every(({ event }) => event.turnId === result.turnId && event.sessionId === session.id && !("runId" in event))).toBe(true);
+    expect(result).not.toHaveProperty("runId");
   });
 
   it("每个新回合按最新配置向模型公开可用工具", async () => {
@@ -282,7 +283,7 @@ describe("Runtime 配置与维护", () => {
       .resolves.toMatchObject({ iterations: 12, stopReason: "max_iterations" });
     expect(calls).toBe(12);
     const records = (await runtime.readTraces()).flatMap((file) => file.records);
-    expect(records.find((record) => record.type === "run_started")?.payload)
+    expect(records.find((record) => record.type === "turn_started")?.payload)
       .toMatchObject({ settings: { maxTokens: 8_192, maxIterations: 12 } });
     expect((await runtime.resetRuntimeSettings()).settings).toMatchObject({ maxTokens: 32_768, maxIterations: 100, modelContextWindow: 262_144, sessionRecallTokenLimit: 65_536 });
   });
@@ -462,7 +463,7 @@ it("聊天记忆使用 Agent Model 与当前证据，只有 gate 使用 Small Mo
   ]));
   expect(backgroundEvents[0]?.kind).toBe("memory_task_started");
   expect(backgroundEvents.at(-1)?.kind).toBe("memory_task_completed");
-  expect(backgroundEvents.every(({ event }) => event.taskId && event.taskKind === "memory_write" && event.sourceRunId)).toBe(true);
+  expect(backgroundEvents.every(({ event }) => event.taskId && event.taskKind === "memory_write" && event.sourceTurnId && !("turnId" in event) && !("runId" in event))).toBe(true);
   expect(JSON.stringify(backgroundEvents)).not.toContain("红茶");
   expect(runtime.memory.listSemantic()).toMatchObject([{ content: "喜欢红茶" }]);
   const memoryEvents = events.filter((item) => item.kind.startsWith("memory_") || item.kind === "tool_completed");
@@ -477,7 +478,7 @@ it("聊天记忆使用 Agent Model 与当前证据，只有 gate 使用 Small Mo
   expect(JSON.stringify(traces)).not.toContain("红茶");
 });
 
-it("run_completed 记录供应商、三段耗时、工具失败数与上下文水位", async () => {
+it("turn_completed 记录供应商、三段耗时、工具失败数与上下文水位", async () => {
   const runtime = await setup();
   const session = await runtime.createSession();
   let mainCalls = 0;
@@ -511,7 +512,7 @@ it("run_completed 记录供应商、三段耗时、工具失败数与上下文�
   // 三段耗时都被单独计量，且不会超过整轮墙钟时间。
   expect(result.retrievalMs + result.modelMs + result.toolMs).toBeLessThanOrEqual(result.ms);
   const completed = (await runtime.readTraces()).flatMap((file) => file.records)
-    .find((record) => record.type === "run_completed");
+    .find((record) => record.type === "turn_completed");
   expect(completed?.payload).toMatchObject({
     provider: "openai-compatible",
     model: "test",
@@ -545,11 +546,11 @@ it("记忆写入的 taskId 进入 derivedTaskIds，关联独立的后台任务 t
   expect(result.derivedTaskIds).toHaveLength(1);
   expect(runtime.memory.listBackgroundTasks().map((task) => task.id)).toContain(result.derivedTaskIds[0]);
   const completed = (await runtime.readTraces()).flatMap((file) => file.records)
-    .find((record) => record.type === "run_completed");
+    .find((record) => record.type === "turn_completed");
   expect(completed?.payload).toMatchObject({ derivedTaskIds: result.derivedTaskIds });
 });
 
-it("用户停止与整轮超时在 run_failed 中分别标记，不计入模型故障", async () => {
+it("用户停止与整轮超时在 turn_failed 中分别标记，不计入模型故障", async () => {
   const runtime = await setup();
   const session = await runtime.createSession();
   const controller = new AbortController();
@@ -563,7 +564,7 @@ it("用户停止与整轮超时在 run_failed 中分别标记，不计入模型�
     .rejects.toThrow();
 
   const failed = (await runtime.readTraces()).flatMap((file) => file.records)
-    .find((record) => record.type === "run_failed");
+    .find((record) => record.type === "turn_failed");
   expect(failed?.payload).toMatchObject({
     cancelled: true,
     timedOut: false,
@@ -585,7 +586,7 @@ it("整轮超时标记 timedOut 而不是 cancelled", async () => {
   try {
     await expect(runtime.run({ sessionId: session.id, prompt: "执行超长任务" }, options())).rejects.toThrow();
     const failed = (await runtime.readTraces()).flatMap((file) => file.records)
-      .find((record) => record.type === "run_failed");
+      .find((record) => record.type === "turn_failed");
     expect(failed?.payload).toMatchObject({ cancelled: false, timedOut: true });
   } finally {
     vi.useRealTimers();
@@ -612,8 +613,8 @@ it("长会话自动 compact 后水位下降，检查点、聊天标记与脱敏�
   const runtime = await setup();
   await runtime.saveAgentSettings({ ...modelSettings(), modelContextWindow: 32768, maxTokens: 2048 });
   const session = await runtime.createSession();
-  runtime.memory.startRun(session.id, "old-run", "历史任务".repeat(6000));
-  await runtime.memory.completeRun(session.id, "old-run", [{ role: "assistant", content: [{ type: "text", text: "已经完成" }] }]);
+  runtime.memory.startTurn(session.id, "old-run", "历史任务".repeat(6000));
+  await runtime.memory.completeTurn(session.id, "old-run", [{ role: "assistant", content: [{ type: "text", text: "已经完成" }] }]);
   create.mockImplementation(async (request) => {
     if (request.model === "small-test") return response('{"intent":"none"}');
     if (Array.isArray(request.tools) && request.tools.length === 0) return response("历史任务已完成，保持中文回答。");

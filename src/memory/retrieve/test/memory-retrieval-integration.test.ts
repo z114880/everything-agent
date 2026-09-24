@@ -99,13 +99,13 @@ describe("MemoryRuntime Dense/Hybrid 集成", () => {
     const memory = await createMemory();
     const dominant = memory.createSession("高频会话");
     for (let index = 0; index < 6; index += 1) {
-      memory.startRun(dominant.id, `dominant-${index}`, `ORBIT `.repeat(20) + "高频会话");
-      await memory.completeRun(dominant.id, `dominant-${index}`, [{ role: "assistant", content: "ORBIT 高频结果" }]);
+      memory.startTurn(dominant.id, `dominant-${index}`, `ORBIT `.repeat(20) + "高频会话");
+      await memory.completeTurn(dominant.id, `dominant-${index}`, [{ role: "assistant", content: "ORBIT 高频结果" }]);
     }
     for (const label of ["会话甲", "会话乙", "会话丙", "会话丁"]) {
       const session = memory.createSession(label);
-      memory.startRun(session.id, `run-${label}`, `ORBIT ${label} ` + "无关内容 ".repeat(20));
-      await memory.completeRun(session.id, `run-${label}`, [{ role: "assistant", content: `${label} 的结果` }]);
+      memory.startTurn(session.id, `run-${label}`, `ORBIT ${label} ` + "无关内容 ".repeat(20));
+      await memory.completeTurn(session.id, `run-${label}`, [{ role: "assistant", content: `${label} 的结果` }]);
     }
 
     const diverseClient: EmbeddingPort = {
@@ -142,8 +142,8 @@ describe("MemoryRuntime Dense/Hybrid 集成", () => {
     const coffee = await memory.createSemantic("饮品", "用户喜欢手冲咖啡");
     await memory.createSemantic("部署", "项目使用蓝绿发布");
     const session = memory.createSession("历史发布");
-    memory.startRun(session.id, "run-release", "上次如何发布服务");
-    await memory.completeRun(session.id, "run-release", [{ role: "assistant", content: "使用蓝绿发布" }]);
+    memory.startTurn(session.id, "run-release", "上次如何发布服务");
+    await memory.completeTurn(session.id, "run-release", [{ role: "assistant", content: "使用蓝绿发布" }]);
 
     memory.configureRetrieval({ mode: "lexical_only", embedding: { profile, client }, allowIncompleteIndex: true });
     await memory.rebuildEmbeddings("rebuild-test");
@@ -172,15 +172,15 @@ describe("MemoryRuntime Dense/Hybrid 集成", () => {
     expect(memory.listSemantic()).toEqual([]);
   });
 
-  it("Embedding 服务失败不影响成功 run 归档和 FTS", async () => {
+  it("Embedding 服务失败不影响成功 turn 归档和 FTS", async () => {
     const memory = await createMemory();
     memory.configureRetrieval({ mode: "lexical_only", embedding: { profile, client }, allowIncompleteIndex: true });
     await memory.rebuildEmbeddings();
     const failedClient: EmbeddingPort = { async embed() { throw new Error("run embedding 失败") } };
     memory.configureRetrieval({ mode: "lexical_only", embedding: { profile, client: failedClient } });
     const session = memory.createSession();
-    memory.startRun(session.id, "failed-run", "唯一代号 ORANGE");
-    await expect(memory.completeRun(session.id, "failed-run", [{ role: "assistant", content: "回答" }]))
+    memory.startTurn(session.id, "failed-run", "唯一代号 ORANGE");
+    await expect(memory.completeTurn(session.id, "failed-run", [{ role: "assistant", content: "回答" }]))
       .resolves.toBeUndefined();
     expect(memory.getChatLog(session.id)).toHaveLength(2);
     expect((await memory.searchSessions({ query: "ORANGE" }, recall())).sessions).toHaveLength(1);
@@ -200,8 +200,8 @@ describe("MemoryRuntime Dense/Hybrid 集成", () => {
     const memory = await createMemory();
     await memory.createSemantic("发布", "项目采用蓝绿发布");
     const session = memory.createSession();
-    memory.startRun(session.id, "r1", "发布方案");
-    await memory.completeRun(session.id, "r1", [{ role: "assistant", content: "蓝绿发布" }]);
+    memory.startTurn(session.id, "r1", "发布方案");
+    await memory.completeTurn(session.id, "r1", [{ role: "assistant", content: "蓝绿发布" }]);
     let calls = 0;
     const countingClient: EmbeddingPort = {
       async embed(texts) { calls += 1; return texts.map((text, index) => ({ index, vector: keywordVector(text) })) },
@@ -262,11 +262,11 @@ describe("MemoryRuntime Dense/Hybrid 集成", () => {
     await expect(memory.searchSemantic("发布")).rejects.toThrow("未返回向量");
   });
 
-  it("成功 run 必须有最终 Assistant 回复，Embedding 响应必须覆盖全部 chunk", async () => {
+  it("成功 turn 必须有最终 Assistant 回复，Embedding 响应必须覆盖全部 chunk", async () => {
     const memory = await createMemory();
     const session = memory.createSession();
-    memory.startRun(session.id, "no-answer", "问题");
-    await expect(memory.completeRun(session.id, "no-answer", [])).rejects.toThrow("最终 Assistant");
+    memory.startTurn(session.id, "no-answer", "问题");
+    await expect(memory.completeTurn(session.id, "no-answer", [])).rejects.toThrow("最终 Assistant");
 
     memory.configureRetrieval({ mode: "lexical_only", embedding: { profile, client }, allowIncompleteIndex: true });
     await memory.rebuildEmbeddings();

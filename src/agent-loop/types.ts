@@ -136,7 +136,7 @@ export interface AgentLoopOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
   serializeToolEvent?: (call: ToolCallRecord) => EventData;
-  runId?: string;
+  turnId?: string;
 }
 
 /** Agent Loop 的结束原因与执行结果。 */
