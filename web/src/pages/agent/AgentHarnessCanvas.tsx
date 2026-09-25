@@ -38,7 +38,7 @@ export function AgentHarnessCanvas({ workflow, nodeStates, activeEdges }: AgentH
           } else if (edge.source === "tool_schemas" && edge.target === "working_memory") {
             // 从节点顶部进入中间空隙，再向上接入 Working Memory 底部。
             x1 = source.x + 82; y1 = source.y; x2 = target.x + 45; y2 = target.y + 50;
-            path = `M ${x1} ${y1} V 420 H ${x2} V ${y2}`; lx = (x1 + x2) / 2; ly = 413;
+            path = `M ${x1} ${y1} V 427.5 H ${x2} V ${y2}`; lx = (x1 + x2) / 2; ly = 420.5;
           } else if (edge.target === "working_memory" && ["user_prompt", "session_chat_history", "retrieval_gate"].includes(edge.source)) {
             // 输入依赖走节点之间的空隙；三个入口以中心线为轴等距排列，左侧与底部工具入口共线。
             const lane = edge.source === "user_prompt" ? 75 : edge.source === "retrieval_gate" ? 105 : 315;
